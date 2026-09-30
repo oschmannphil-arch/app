@@ -26,6 +26,19 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      # Logik-Tests (Ausfall-/Klausur-Erkennung). Ein Fehlschlag verhindert die APK nicht,
+      # steht aber im Log und im Testbericht.
+      - name: Tests
+        id: tests
+        continue-on-error: true
+        run: gradle :app:testDebugUnitTest --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testbericht
+          path: app/build/reports/tests/testDebugUnitTest
+
       - name: Debug-APK bauen
         run: gradle :app:assembleDebug --no-daemon
 

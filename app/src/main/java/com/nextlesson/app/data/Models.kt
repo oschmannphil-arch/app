@@ -184,14 +184,18 @@ data class GesamtPlan(
             val kurs = l.kursKuerzel
             if (kurs == null || !(l.entfaellt || l.istKlausur)) return@map l
             // Sagt die Stunde selbst "… fällt aus", ohne einen anderen Kurs zu nennen, bleibt es Ausfall.
+            val kursMuster = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
             val eigenerAusfall = l.info.split(';').map { it.trim() }.any {
-                istAusfallText(it) && !nennt(it, alleKuerzel)
+                istAusfallText(it) && !nennt(it, alleKuerzel) && !kursMuster.containsMatchIn(it)
             }
             if (eigenerAusfall) return@map l
             val ausdruecklich = klausurSegmente.any { nennt(it, listOf(kurs)) }
             val alsAusfallGenannt = ausfallSegmente.any { nennt(it, listOf(kurs)) }
             if (ausdruecklich || (!alsAusfallGenannt && praefix(kurs) in genannteFaecher)) {
                 l.copy(entfaellt = false, status = LessonStatus.NORMAL, istKlausur = true)
+            } else if (l.istKlausur && l.entfaellt) {
+                // Der Kurs wird ausdrücklich als Ausfall genannt: das ist keine Klausur.
+                l.copy(istKlausur = false)
             } else l
         }
 
