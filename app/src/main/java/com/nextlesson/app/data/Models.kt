@@ -165,7 +165,10 @@ data class GesamtPlan(
         // erscheinen, aber NICHT als Ausfall genannt werden, schreiben die Klausur.
         // Das gilt nur für Kurse desselben Fachs wie die genannten (DEU1 neben DEU3/DEU4),
         // damit ein anderes, wirklich ausgefallenes Fach nicht zur Klausur wird.
-        val segmente = kopf.zusatzInfo.flatMap { it.split(';') }.map { it.trim() }.filter { it.isNotBlank() }
+        // Quellen: Tageshinweise der Schule UND die Info-Texte der eigenen Stunden (die Schule
+        // hängt "Klausur!; BIO3 … fällt aus; …" teils direkt an die Stunden).
+        val segmente = (kopf.zusatzInfo + rohStunden.map { it.info })
+            .flatMap { it.split(';') }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
         fun istAusfallText(s: String) = listOf("fällt aus", "faellt aus", "entfällt", "entfaellt")
             .any { s.contains(it, ignoreCase = true) }
         val klausurSegmente = segmente.filter {
@@ -179,7 +182,12 @@ data class GesamtPlan(
 
         val stunden = if (klausurSegmente.isEmpty()) rohStunden else rohStunden.map { l ->
             val kurs = l.kursKuerzel
-            if (!l.entfaellt || kurs == null || istAusfallText(l.info)) return@map l
+            if (kurs == null || !(l.entfaellt || l.istKlausur)) return@map l
+            // Sagt die Stunde selbst "… fällt aus", ohne einen anderen Kurs zu nennen, bleibt es Ausfall.
+            val eigenerAusfall = l.info.split(';').map { it.trim() }.any {
+                istAusfallText(it) && !nennt(it, alleKuerzel)
+            }
+            if (eigenerAusfall) return@map l
             val ausdruecklich = klausurSegmente.any { nennt(it, listOf(kurs)) }
             val alsAusfallGenannt = ausfallSegmente.any { nennt(it, listOf(kurs)) }
             if (ausdruecklich || (!alsAusfallGenannt && praefix(kurs) in genannteFaecher)) {

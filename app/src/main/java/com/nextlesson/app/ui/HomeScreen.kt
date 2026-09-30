@@ -666,6 +666,16 @@ private fun StundenZeile(
                     )
                 }
             }
+            // Hinweis des Plans (z.B. "Klausur!", "Aufgaben in Moodle") – so sieht man, warum.
+            if (lesson.info.isNotBlank()) {
+                Text(
+                    text = lesson.info,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = textNeben,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         // Raum bzw. Statusetikett

@@ -83,7 +83,8 @@ object IndiwareXmlParser {
             zeitstempel = kopfEl.kind("zeitstempel").textOrEmpty(),
             schulnummer = kopfEl.kind("schulnummer").textOrEmpty().ifBlank { schulnummerFallback },
             // <ZusatzInfo><ZiZeile>…</ZiZeile></ZusatzInfo>: Tageshinweise der Schule
-            zusatzInfo = root.kind("ZusatzInfo").kinder()
+            zusatzInfo = root.nachfahren("ZiZeile")
+                .ifEmpty { root.kind("ZusatzInfo").kinder() }
                 .map { it.textOrEmpty() }
                 .filter { it.isNotBlank() }
         )
@@ -206,8 +207,14 @@ object IndiwareXmlParser {
                 fachGeaendert = false
             }
 
-            val originalRoom = if (raumGeaendertAttribut) raumEl?.getAttribute("RaAe")?.trim()?.ifBlank { null } else null
-            val originalTeacher = if (lehrerGeaendert) lehrerEl?.getAttribute("LeAe")?.trim()?.ifBlank { null } else null
+            // Manche Pläne tragen statt des alten Raums/Lehrers nur einen Platzhalter
+            // ("RaGeaendert", "LeGeaendert") in RaAe/LeAe – der darf nicht angezeigt werden.
+            fun echterWert(text: String?): String? = text?.trim()?.takeIf {
+                it.isNotBlank() && !it.contains("geaendert", ignoreCase = true) &&
+                    !it.contains("geändert", ignoreCase = true)
+            }
+            val originalRoom = if (raumGeaendertAttribut) echterWert(raumEl?.getAttribute("RaAe")) else null
+            val originalTeacher = if (lehrerGeaendert) echterWert(lehrerEl?.getAttribute("LeAe")) else null
 
             // Priorität 3, 4 & 5: Status-Zuordnung und leeres Raumfeld-Schutz
             val raumGeaendert = raumGeaendertAttribut && raum.isNotBlank()
