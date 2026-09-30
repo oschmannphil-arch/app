@@ -1,24 +1,40 @@
 package com.nextlesson.app.data
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import android.content.Context
+import okhttp3.Response
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+/** Woher ein Plan stammt: frisch vom Server oder aus dem lokalen Cache. */
+enum class Quelle { NETZ, CACHE }
 
 sealed class PlanResult {
-    data class Success(val plan: GesamtPlan, val geprueftUm: Long = System.currentTimeMillis()) : PlanResult()
+    data class Success(
+        val plan: GesamtPlan,
+        val geprueftUm: Long = System.currentTimeMillis(),
+        val aus: Quelle = Quelle.NETZ
+    ) : PlanResult()
     object AuthFehler : PlanResult()           // 401 – Benutzername/Passwort falsch
     object KeinPlanFuerTag : PlanResult()      // 404 – Wochenende/Ferien, kein Plan vorhanden
     data class NetzwerkFehler(val nachricht: String) : PlanResult()
@@ -51,17 +67,15 @@ sealed class PersoenlicherResult {
  *
  * Zugangsdaten liegen verschlüsselt auf dem Gerät (CredentialsStore) und gehen per
  * HTTPS Basic-Auth ausschließlich an stundenplan24.de.
+ *
+ * Damit die App schnell bleibt, teilen sich alle Instanzen (App, Worker, Widget) einen
+ * HTTP-Client und ein kurzes Zwischengedächtnis: Wird derselbe Tag innerhalb von
+ * [FRISCH_MILLIS] mehrfach angefragt (z.B. App-Start + Hintergrund-Worker), geht nur der
+ * erste Abruf ins Netz.
  */
 class IndiwareRepository(context: Context) {
 
-    private val cache = PlanCache(context)
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
-
-    private val dateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
+    private val cache = PlanCache(context.applicationContext)
 
     private fun buildUrl(schulnummer: String, datum: LocalDate): String =
         "https://www.stundenplan24.de/$schulnummer/mobil/mobdaten/PlanKl${datum.format(dateFormatter)}.xml"
@@ -70,43 +84,78 @@ class IndiwareRepository(context: Context) {
         cache.aufraeumen()
     }
 
-    suspend fun holePlan(creds: IndiwareCredentials, datum: LocalDate): PlanResult =
+    /**
+     * Lädt den Plan eines Tages. [erzwingen] überspringt das Zwischengedächtnis
+     * (z.B. beim Tippen auf "Aktualisieren").
+     */
+    suspend fun holePlan(
+        creds: IndiwareCredentials,
+        datum: LocalDate,
+        erzwingen: Boolean = false
+    ): PlanResult = withContext(Dispatchers.IO) {
+        val key = "${creds.schulnummer}|${creds.benutzername}|${creds.passwort.hashCode()}|$datum"
+        if (!erzwingen) frischerTreffer(key)?.let { return@withContext it }
+
+        // Pro Tag nur ein Abruf gleichzeitig; wer wartet, bekommt danach das frische Ergebnis.
+        sperren.getOrPut(key) { Mutex() }.withLock {
+            if (!erzwingen) frischerTreffer(key)?.let { return@withLock it }
+            val ergebnis = ladeVomServer(creds, datum)
+            if (ergebnis is PlanResult.Success && ergebnis.aus == Quelle.NETZ) {
+                merken(key, ergebnis)
+            }
+            ergebnis
+        }
+    }
+
+    /** Nur aus dem lokalen Cache – für die sofortige Anzeige beim Start. Null = nichts gespeichert. */
+    suspend fun holePlanAusCache(creds: IndiwareCredentials, datum: LocalDate): PlanResult.Success? =
         withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url(buildUrl(creds.schulnummer, datum))
-                .header("Authorization", Credentials.basic(creds.benutzername, creds.passwort))
-                .header("User-Agent", "Indiware")
-                // Im Normalbetrieb frisch laden, aber bei Fehlern nehmen wir den Cache.
-                .header("Cache-Control", "no-cache")
-                .build()
+            val cached = cache.laden(creds.schulnummer, datum) ?: return@withContext null
+            val plan = ByteArrayInputStream(cached.xml).use { IndiwareXmlParser.parse(it, creds.schulnummer) }
+                ?: return@withContext null
+            PlanResult.Success(plan, cached.lastModified, Quelle.CACHE)
+        }
 
-            try {
-                client.newCall(request).execute().use { response ->
-                    when {
-                        response.code == 401 -> PlanResult.AuthFehler
-                        response.code == 404 -> PlanResult.KeinPlanFuerTag
-                        !response.isSuccessful -> ladeAusCacheOderFehler(creds.schulnummer, datum, "HTTP ${response.code}")
-                        else -> {
-                            val bodyBytes = response.body?.bytes()
-                            if (bodyBytes == null || bodyBytes.isEmpty()) {
-                                return@use ladeAusCacheOderFehler(creds.schulnummer, datum, "Leere Antwort")
-                            }
-                            
-                            // Im Hintergrund für später cachen
-                            val xmlString = String(bodyBytes)
-                            cache.speichern(creds.schulnummer, datum, xmlString)
+    private suspend fun ladeVomServer(creds: IndiwareCredentials, datum: LocalDate): PlanResult {
+        val request = Request.Builder()
+            .url(buildUrl(creds.schulnummer, datum))
+            .header("Authorization", Credentials.basic(creds.benutzername, creds.passwort))
+            .header("User-Agent", "Indiware")
+            // Im Normalbetrieb frisch laden, aber bei Fehlern nehmen wir den Cache.
+            .header("Cache-Control", "no-cache")
+            .build()
 
+        return try {
+            client.newCall(request).ausfuehren().use { response ->
+                when {
+                    response.code == 401 -> PlanResult.AuthFehler
+                    response.code == 404 -> PlanResult.KeinPlanFuerTag
+                    !response.isSuccessful ->
+                        ladeAusCacheOderFehler(creds.schulnummer, datum, "HTTP ${response.code}")
+                    else -> {
+                        val bodyBytes = response.body?.bytes()
+                        if (bodyBytes == null || bodyBytes.isEmpty()) {
+                            ladeAusCacheOderFehler(creds.schulnummer, datum, "Leere Antwort")
+                        } else {
                             val plan = ByteArrayInputStream(bodyBytes).use { stream ->
                                 IndiwareXmlParser.parse(stream, creds.schulnummer)
                             }
-                            if (plan == null) PlanResult.KeinPlanFuerTag else PlanResult.Success(plan)
+                            if (plan == null) {
+                                // Kein gültiger Plan (z.B. HTML-Fehlerseite): den guten Cache
+                                // auf keinen Fall damit überschreiben.
+                                PlanResult.KeinPlanFuerTag
+                            } else {
+                                cache.speichern(creds.schulnummer, datum, bodyBytes)
+                                PlanResult.Success(plan)
+                            }
                         }
                     }
                 }
-            } catch (e: IOException) {
-                ladeAusCacheOderFehler(creds.schulnummer, datum, e.message ?: "Netzwerkfehler")
             }
+        } catch (e: IOException) {
+            ladeAusCacheOderFehler(creds.schulnummer, datum, e.message ?: "Netzwerkfehler")
         }
+    }
 
     private fun ladeAusCacheOderFehler(
         schulnummer: String,
@@ -115,12 +164,23 @@ class IndiwareRepository(context: Context) {
     ): PlanResult {
         val cached = cache.laden(schulnummer, datum)
         if (cached != null) {
-            val plan = ByteArrayInputStream(cached.xml.toByteArray()).use { stream ->
+            val plan = ByteArrayInputStream(cached.xml).use { stream ->
                 IndiwareXmlParser.parse(stream, schulnummer)
             }
-            if (plan != null) return PlanResult.Success(plan, cached.lastModified)
+            if (plan != null) return PlanResult.Success(plan, cached.lastModified, Quelle.CACHE)
         }
         return PlanResult.NetzwerkFehler(fehlermeldung)
+    }
+
+    private fun frischerTreffer(key: String): PlanResult? {
+        val eintrag = frisch[key] ?: return null
+        return if (System.currentTimeMillis() - eintrag.zeit <= FRISCH_MILLIS) eintrag.ergebnis else null
+    }
+
+    private fun merken(key: String, ergebnis: PlanResult.Success) {
+        val jetzt = System.currentTimeMillis()
+        frisch.entries.removeIf { jetzt - it.value.zeit > FRISCH_MILLIS }
+        frisch[key] = Eintrag(ergebnis, jetzt)
     }
 
     /**
@@ -131,61 +191,69 @@ class IndiwareRepository(context: Context) {
     suspend fun holeTage(
         creds: IndiwareCredentials,
         ab: LocalDate = LocalDate.now(),
-        anzahl: Int = 3
+        anzahl: Int = 3,
+        erzwingen: Boolean = false
     ): List<Pair<LocalDate, PlanResult>> = coroutineScope {
         (0 until anzahl).map { offset ->
             val tag = ab.plusDays(offset.toLong())
-            async { tag to holePlan(creds, tag) }
+            async { tag to holePlan(creds, tag, erzwingen) }
         }.awaitAll()
     }
 
     /**
      * Sucht die nächste relevante Unterrichtsstunde: heute, wenn noch etwas kommt –
      * sonst die erste Stunde des nächsten Schultags.
+     *
+     * Heute wird zuerst alleine geholt (der Normalfall braucht nur diesen einen Abruf).
+     * Nur wenn heute nichts mehr kommt, werden die Folgetage PARALLEL geholt statt einer
+     * nach dem anderen – vorher konnte ein Wochenende acht Abrufe hintereinander kosten.
+     *
+     * Mit [nurCache] wird gar nicht ins Netz gegangen (schnelle Vorab-Anzeige).
      */
     suspend fun holePersoenlichenPlan(
         creds: IndiwareCredentials,
         gewaehlteKurse: Set<String>,
         ab: LocalDate = LocalDate.now(),
         jetzt: LocalTime = LocalTime.now(),
-        maxTage: Int = 8
+        maxTage: Int = 8,
+        nurCache: Boolean = false,
+        erzwingen: Boolean = false
     ): PersoenlicherResult {
         var heuteFallback: PersoenlicherPlan? = null
 
-        for (offset in 0 until maxTage) {
+        suspend fun tag(datum: LocalDate): PlanResult =
+            if (nurCache) {
+                holePlanAusCache(creds, datum) ?: PlanResult.NetzwerkFehler("Nicht gespeichert")
+            } else {
+                holePlan(creds, datum, erzwingen)
+            }
+
+        /** Liefert das Endergebnis, sobald es feststeht – sonst null (weitersuchen). */
+        fun auswerten(offset: Int, ergebnis: PlanResult): PersoenlicherResult? {
             val datum = ab.plusDays(offset.toLong())
-            when (val ergebnis = holePlan(creds, datum)) {
+            return when (ergebnis) {
                 is PlanResult.Success -> {
                     val plan = ergebnis.plan.tagesplanFuer(gewaehlteKurse)
                     if (offset == 0) {
                         val naechste = plan.naechsteStunde(jetzt)
+                        val persoenlich = PersoenlicherPlan(
+                            datum = datum,
+                            plan = plan,
+                            naechste = naechste,
+                            istHeute = true,
+                            gesamt = ergebnis.plan,
+                            geprueftUm = ergebnis.geprueftUm
+                        )
                         if (naechste != null) {
-                            return PersoenlicherResult.Erfolg(
-                                PersoenlicherPlan(
-                                    datum = datum,
-                                    plan = plan,
-                                    naechste = naechste,
-                                    istHeute = true,
-                                    gesamt = ergebnis.plan,
-                                    geprueftUm = ergebnis.geprueftUm
-                                )
-                            )
-                        }
-                        // Heute ist durch – als Rückfalloption merken und morgen weitersuchen.
-                        if (heuteFallback == null) {
-                            heuteFallback = PersoenlicherPlan(
-                                datum = datum,
-                                plan = plan,
-                                naechste = null,
-                                istHeute = true,
-                                gesamt = ergebnis.plan,
-                                geprueftUm = ergebnis.geprueftUm
-                            )
+                            PersoenlicherResult.Erfolg(persoenlich)
+                        } else {
+                            // Heute ist durch – als Rückfalloption merken und morgen weitersuchen.
+                            if (heuteFallback == null) heuteFallback = persoenlich
+                            null
                         }
                     } else {
-                        val erste = plan.ersteStunde()
-                        if (erste != null) {
-                            return PersoenlicherResult.Erfolg(
+                        plan.ersteStunde()?.let { erste ->
+                            PersoenlicherResult.Erfolg(
                                 PersoenlicherPlan(
                                     datum = datum,
                                     plan = plan,
@@ -198,9 +266,24 @@ class IndiwareRepository(context: Context) {
                         }
                     }
                 }
-                is PlanResult.KeinPlanFuerTag -> Unit // Wochenende/Ferien: weiter
-                is PlanResult.AuthFehler -> return PersoenlicherResult.AuthFehler
-                is PlanResult.NetzwerkFehler -> return PersoenlicherResult.NetzwerkFehler(ergebnis.nachricht)
+                is PlanResult.KeinPlanFuerTag -> null // Wochenende/Ferien: weiter
+                is PlanResult.AuthFehler -> PersoenlicherResult.AuthFehler
+                // Ist heute schon bekannt, ist ein Netzfehler bei einem Folgetag kein Grund,
+                // alles zu verwerfen (z.B. abends offline).
+                is PlanResult.NetzwerkFehler ->
+                    heuteFallback?.let { PersoenlicherResult.Erfolg(it) }
+                        ?: PersoenlicherResult.NetzwerkFehler(ergebnis.nachricht)
+            }
+        }
+
+        auswerten(0, tag(ab))?.let { return it }
+
+        if (maxTage > 1) {
+            val weitere = coroutineScope {
+                (1 until maxTage).map { offset -> async { tag(ab.plusDays(offset.toLong())) } }.awaitAll()
+            }
+            weitere.forEachIndexed { index, ergebnis ->
+                auswerten(index + 1, ergebnis)?.let { return it }
             }
         }
 
@@ -211,15 +294,12 @@ class IndiwareRepository(context: Context) {
     suspend fun holeNaechstenVerfuegbarenPlan(
         creds: IndiwareCredentials,
         ab: LocalDate = LocalDate.now(),
-        maxTage: Int = 10
+        maxTage: Int = 10,
+        erzwingen: Boolean = false
     ): PlanResult {
-        var datum = ab
-        repeat(maxTage) {
-            when (val ergebnis = holePlan(creds, datum)) {
-                is PlanResult.Success -> return ergebnis
-                is PlanResult.KeinPlanFuerTag -> datum = datum.plusDays(1)
-                else -> return ergebnis
-            }
+        val ergebnisse = holeTage(creds, ab, maxTage, erzwingen)
+        for ((_, ergebnis) in ergebnisse) {
+            if (ergebnis !is PlanResult.KeinPlanFuerTag) return ergebnis
         }
         return PlanResult.KeinPlanFuerTag
     }
@@ -230,12 +310,48 @@ class IndiwareRepository(context: Context) {
      */
     suspend fun holeWoche(
         creds: IndiwareCredentials,
-        referenzDatum: LocalDate = LocalDate.now()
+        referenzDatum: LocalDate = LocalDate.now(),
+        erzwingen: Boolean = false
     ): List<Pair<LocalDate, PlanResult>> = coroutineScope {
         val montag = referenzDatum.with(DayOfWeek.MONDAY)
         (0..4).map { offset ->
             val tag = montag.plusDays(offset.toLong())
-            async { tag to holePlan(creds, tag) }
+            async { tag to holePlan(creds, tag, erzwingen) }
         }.awaitAll()
+    }
+
+    /** OkHttp-Aufruf, der sich mit der Coroutine abbrechen lässt (Refresh, Tab-Wechsel …). */
+    private suspend fun Call.ausfuehren(): Response = suspendCancellableCoroutine { cont ->
+        cont.invokeOnCancellation { cancel() }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (cont.isActive) cont.resumeWithException(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (cont.isActive) cont.resume(response) else response.close()
+            }
+        })
+    }
+
+    private class Eintrag(val ergebnis: PlanResult.Success, val zeit: Long)
+
+    companion object {
+        /** So lange gilt ein frisch geholter Plan als aktuell genug für weitere Anfragen. */
+        private const val FRISCH_MILLIS = 30_000L
+
+        private val dateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
+
+        // Ein Client für alles: gemeinsamer Verbindungspool, TLS-Sitzungen werden wiederverwendet.
+        private val client: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .callTimeout(25, TimeUnit.SECONDS)
+                .build()
+        }
+
+        private val frisch = ConcurrentHashMap<String, Eintrag>()
+        private val sperren = ConcurrentHashMap<String, Mutex>()
     }
 }

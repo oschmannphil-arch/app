@@ -83,7 +83,9 @@ fun FehlerScreen(nachricht: String) {
 fun HomeScreen(persoenlich: PersoenlicherPlan) {
     val jetzt by rememberJetzt()
     val plan = persoenlich.plan
-    val naechste = persoenlich.naechste
+    // Heute wird "nächste Stunde" mit der tickenden Uhr neu bestimmt. Sonst bliebe bei
+    // geöffneter App die beim Laden ermittelte Stunde stehen, obwohl sie längst vorbei ist.
+    val naechste = if (persoenlich.istHeute) plan.naechsteStunde(jetzt) else persoenlich.naechste
     val dunkel = isSystemInDarkTheme()
 
     LazyColumn(

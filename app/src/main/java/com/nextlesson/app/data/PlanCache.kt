@@ -19,23 +19,34 @@ class PlanCache(context: Context) {
         return File(cacheDir, fileName)
     }
 
-    /** Speichert den rohen XML-Inhalt eines Plans. */
-    fun speichern(schulnummer: String, datum: LocalDate, xml: String) {
+    /**
+     * Speichert die rohen XML-Bytes eines Plans. Bewusst Bytes statt String: die XML-Datei
+     * deklariert oft ISO-8859-1, und ein Umweg über UTF-8 würde Umlaute beim Wiederlesen
+     * zerstören (dann weichen "entfällt"-Erkennung und Entfall-Vergleich ab).
+     * Geschrieben wird über eine Temp-Datei, damit nie eine halbe Datei im Cache liegt.
+     */
+    fun speichern(schulnummer: String, datum: LocalDate, xml: ByteArray) {
         try {
-            getFile(schulnummer, datum).writeText(xml)
+            val ziel = getFile(schulnummer, datum)
+            val temp = File(cacheDir, ziel.name + ".tmp")
+            temp.writeBytes(xml)
+            if (!temp.renameTo(ziel)) {
+                ziel.delete()
+                temp.renameTo(ziel)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    data class CachedPlan(val xml: String, val lastModified: Long)
+    class CachedPlan(val xml: ByteArray, val lastModified: Long)
 
     /** Lädt den lokal gespeicherten XML-Inhalt, falls vorhanden. */
     fun laden(schulnummer: String, datum: LocalDate): CachedPlan? {
         val file = getFile(schulnummer, datum)
         return if (file.exists()) {
             try {
-                CachedPlan(file.readText(), file.lastModified())
+                CachedPlan(file.readBytes(), file.lastModified())
             } catch (e: Exception) {
                 null
             }

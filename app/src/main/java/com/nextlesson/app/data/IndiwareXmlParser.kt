@@ -42,6 +42,14 @@ object IndiwareXmlParser {
 
     private val KLASSE_TAGS = setOf("Kl", "Klasse")
 
+    /** Einzelwörter, die (nur als ganzes Wort) Entfall bedeuten. */
+    private val ENTFALL_WOERTER = Regex("""(?<![\p{L}\p{N}])(selbst|eva|frei|eigenv\p{L}*)(?![\p{L}\p{N}])""")
+
+    /** Eindeutige Wendungen – hier reicht ein Teilstring. */
+    private val ENTFALL_PHRASEN = listOf(
+        "entfällt", "entfaellt", "fällt aus", "faellt aus", "ausfall", "absage", "abgesagt"
+    )
+
     fun parse(input: InputStream, schulnummerFallback: String): GesamtPlan? {
         val doc = try {
             DocumentBuilderFactory.newInstance()
@@ -139,16 +147,15 @@ object IndiwareXmlParser {
             // Priorität 1: Infotext-Keywords (ENTFALL)
             // Wir prüfen sowohl das Info-Feld als auch den gesamten Text der Stunde (gesamtText),
             // falls die Info in einem anderen Unter-Tag gelandet ist.
-            val infoKeywords = listOf("selbst", "eva", "entfällt", "fällt aus", "frei", "faellt aus", "eigenv", "ausfall", "absage", "abgesagt")
-            val hatEntfallInfo = infoKeywords.any { infoText.contains(it) || gesamtText.contains(it) } || 
-                                 (infoText.contains("fällt") && infoText.contains("aus")) ||
-                                 (infoText.contains("faellt") && infoText.contains("aus")) ||
-                                 (infoText.contains("kein") && infoText.contains("unterricht")) ||
-                                 (gesamtText.contains("fällt") && gesamtText.contains("aus")) ||
-                                 (gesamtText.contains("faellt") && gesamtText.contains("aus")) ||
+            // Kurze Wörter ("eva", "frei", "selbst") nur als GANZES Wort werten – als Teilstring
+            // träfen sie "Freitag", "Evangelisch", Lehrernamen wie "Evers" usw. und markierten
+            // normalen Unterricht fälschlich als Entfall.
+            val hatEntfallInfo = ENTFALL_WOERTER.containsMatchIn(infoText) ||
+                                 ENTFALL_WOERTER.containsMatchIn(lehrerRoh.lowercase()) ||
+                                 ENTFALL_PHRASEN.any { infoText.contains(it) || gesamtText.contains(it) } ||
                                  (gesamtText.contains("kein") && gesamtText.contains("unterricht")) ||
-                                 lehrerRoh.contains("selbst", ignoreCase = true) ||
-                                 lehrerRoh.contains("eva", ignoreCase = true)
+                                 (gesamtText.contains("fällt") && gesamtText.contains("aus")) ||
+                                 (gesamtText.contains("faellt") && gesamtText.contains("aus"))
 
             // Priorität 2: "---" in Fach oder Lehrer (ENTFALL)
             val hatStrich = fach == "---" || lehrer == "---"

@@ -153,7 +153,7 @@ data class TagesPlan(
      * Endet die laufende Stunde in [vorlaufMinuten] oder weniger, wird schon die
      * darauffolgende zurückgegeben (istVorschau = true).
      */
-    fun naechsteStunde(jetzt: LocalTime, vorlaufMinuten: Long = 5): NaechsteStundeErgebnis? {
+    fun naechsteStunde(jetzt: LocalTime, vorlaufMinuten: Long = VORLAUF_MINUTEN): NaechsteStundeErgebnis? {
         val sortiert = stunden.filter { !it.entfaellt }.sortedBy { it.stunde }
 
         val laufende = sortiert.firstOrNull { l ->
@@ -180,6 +180,11 @@ data class TagesPlan(
 
     /** Alle ausgefallenen Stunden dieses Tages. */
     fun entfaelle(): List<Lesson> = stunden.filter { it.entfaellt }
+
+    companion object {
+        /** So viele Minuten vor Stundenende wird schon die nächste Stunde gezeigt. */
+        const val VORLAUF_MINUTEN = 5L
+    }
 }
 
 /** Zugangsdaten, wie sie lokal auf dem Gerät gespeichert werden. Keine Klasse nötig. */

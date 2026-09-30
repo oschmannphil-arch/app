@@ -15,6 +15,9 @@ import com.nextlesson.app.data.PersoenlicherResult
 import com.nextlesson.app.data.PlanResult
 import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.WidgetDataStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,11 +56,17 @@ enum class WochenAuswahl(val label: String) {
 
 class PlanViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val credentialsStore = CredentialsStore(app)
+    // Lazy: EncryptedSharedPreferences legt beim ersten Zugriff einen Schlüssel an und ist
+    // langsam. Ohne lazy passierte das im Konstruktor auf dem Main-Thread (langer Start).
+    private val credentialsStore by lazy { CredentialsStore(app) }
     private val kursSelectionStore = KursSelectionStore(app)
     private val entfallTracker = EntfallTracker(app)
     private val widgetDataStore = WidgetDataStore(app)
     private val repository = IndiwareRepository(app)
+
+    /** Laufende Ladevorgänge – ein neuer ersetzt den alten, damit kein veraltetes Ergebnis überschreibt. */
+    private var ladeJob: Job? = null
+    private var wochenJob: Job? = null
 
     private val _zustand = MutableStateFlow<UiZustand>(UiZustand.Laedt)
     val zustand: StateFlow<UiZustand> = _zustand.asStateFlow()
@@ -74,22 +83,25 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     /** Zuletzt geladener Gesamtplan – Grundlage für die Kursliste. */
     private var letzterGesamtPlan: GesamtPlan? = null
 
-    init {
-        ladeGespeichertUndAktualisiere()
-    }
-
+    /** Kein init-Aufruf: MainActivity.onResume lädt ohnehin direkt nach dem Start. */
     fun ladeGespeichertUndAktualisiere() {
-        val creds = credentialsStore.laden()
-        if (creds == null) _zustand.value = UiZustand.LoginNoetig else aktualisiere(creds)
+        // Läuft schon ein Ladevorgang (z.B. Resume direkt nach dem Start), nicht doppelt starten.
+        if (ladeJob?.isActive == true) return
+        viewModelScope.launch {
+            val creds = withContext(Dispatchers.IO) { credentialsStore.laden() }
+            if (creds == null) _zustand.value = UiZustand.LoginNoetig else aktualisiere(creds)
+        }
     }
 
     fun anmelden(creds: IndiwareCredentials) {
         credentialsStore.speichern(creds)
         entfallTracker.zuruecksetzen()
-        aktualisiere(creds)
+        aktualisiere(creds, erzwingen = true)
     }
 
     fun abmelden() {
+        ladeJob?.cancel()
+        wochenJob?.cancel()
         credentialsStore.loeschen()
         kursSelectionStore.speichern(emptySet())
         entfallTracker.zuruecksetzen()
@@ -115,16 +127,17 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             _zustand.value = UiZustand.KurseWaehlen(letzterGesamtPlan?.alleKurse ?: emptyList())
             return
         }
-        credentialsStore.laden()?.let { aktualisiere(it) }
+        credentialsStore.laden()?.let { aktualisiere(it, erzwingen = true) }
     }
 
+    /** Vom Aktualisieren-Button: immer frisch vom Server, nie aus dem Kurzzeit-Zwischenspeicher. */
     fun aktualisieren() {
         val creds = credentialsStore.laden() ?: run {
             _zustand.value = UiZustand.LoginNoetig
             return
         }
         _wochenZustand.value = WochenZustand.NichtGeladen
-        aktualisiere(creds)
+        aktualisiere(creds, erzwingen = true)
     }
 
     fun grosserTextSetzen(aktiv: Boolean) {
@@ -135,6 +148,8 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     fun setWochenAuswahl(auswahl: WochenAuswahl) {
         if (_wochenAuswahl.value == auswahl) return
         _wochenAuswahl.value = auswahl
+        // Sonst stünde unter dem neuen Reiter kurz noch die alte Woche.
+        _wochenZustand.value = WochenZustand.Laedt
         wocheLaden()
     }
 
@@ -148,9 +163,10 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             _wochenZustand.value = WochenZustand.Laedt
         }
         
-        viewModelScope.launch {
+        wochenJob?.cancel()
+        wochenJob = viewModelScope.launch {
             val heute = LocalDate.now()
-            
+
             // Basis-Woche bestimmen: ab Samstag springen wir standardmäßig in die neue Woche.
             val base = if (heute.dayOfWeek == DayOfWeek.SATURDAY || heute.dayOfWeek == DayOfWeek.SUNDAY) {
                 heute.plusWeeks(1)
@@ -176,7 +192,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun aktualisiere(creds: IndiwareCredentials) {
+    private fun aktualisiere(creds: IndiwareCredentials, erzwingen: Boolean = false) {
         val auswahl = kursSelectionStore.laden()
         // Nur wenn wir noch nichts anzeigen, schalten wir auf den Lade-Screen um.
         // Bei einem Hintergrund-Update bleibt der aktuelle Plan sichtbar.
@@ -184,10 +200,11 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             _zustand.value = UiZustand.Laedt
         }
 
-        viewModelScope.launch {
+        ladeJob?.cancel()
+        ladeJob = viewModelScope.launch {
             // Ohne Kurswahl brauchen wir nur die Kursliste.
             if (auswahl.isEmpty()) {
-                when (val ergebnis = repository.holeNaechstenVerfuegbarenPlan(creds)) {
+                when (val ergebnis = repository.holeNaechstenVerfuegbarenPlan(creds, erzwingen = erzwingen)) {
                     is PlanResult.Success -> {
                         letzterGesamtPlan = ergebnis.plan
                         _zustand.value = UiZustand.KurseWaehlen(ergebnis.plan.alleKurse)
@@ -199,7 +216,19 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            when (val ergebnis = repository.holePersoenlichenPlan(creds, auswahl)) {
+            // Sofort etwas zeigen: der zuletzt gespeicherte Plan liegt lokal und ist in
+            // Millisekunden da, statt den Nutzer auf das Netz warten zu lassen.
+            if (_zustand.value !is UiZustand.Angezeigt) {
+                val vorab = repository.holePersoenlichenPlan(creds, auswahl, nurCache = true)
+                if (vorab is PersoenlicherResult.Erfolg && vorab.plan.naechste != null &&
+                    _zustand.value !is UiZustand.Angezeigt
+                ) {
+                    letzterGesamtPlan = vorab.plan.gesamt
+                    _zustand.value = UiZustand.Angezeigt(vorab.plan)
+                }
+            }
+
+            when (val ergebnis = repository.holePersoenlichenPlan(creds, auswahl, erzwingen = erzwingen)) {
                 is PersoenlicherResult.Erfolg -> {
                     letzterGesamtPlan = ergebnis.plan.gesamt
                     _zustand.value = UiZustand.Angezeigt(ergebnis.plan)
