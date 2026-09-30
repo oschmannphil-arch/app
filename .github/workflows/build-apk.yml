@@ -41,7 +41,23 @@ jobs:
 
       # Release statt Debug: Debug-Builds sind bei Compose deutlich langsamer (kein Optimieren,
       # zusätzliche Prüfungen). Für den Alltag immer die Release-APK nehmen.
+      # Fester Signaturschlüssel aus den Repo-Secrets (Einstellungen → Secrets → Actions).
+      # Nur mit ihm lässt sich eine neue APK über die alte installieren.
+      - name: Signaturschlüssel vorbereiten
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nextlesson.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/nextlesson.jks" >> "$GITHUB_ENV"
+            echo "Fester Schlüssel wird verwendet."
+          else
+            echo "::warning::Secret KEYSTORE_BASE64 fehlt - die APK wird mit einem Zufallsschlüssel signiert und lässt sich nicht über die alte installieren."
+          fi
+
       - name: Release-APK bauen
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon
 
       - name: APK umbenennen

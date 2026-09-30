@@ -16,11 +16,25 @@ android {
         versionName = "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
     }
 
+    // Fester Schlüssel für Updates ohne Deinstallieren. Er liegt NICHT im Repo, sondern kommt
+    // im CI-Lauf aus den GitHub-Secrets KEYSTORE_BASE64 / KEYSTORE_PASSWORD.
+    val keystoreDatei = System.getenv("KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    if (keystoreDatei != null) {
+        signingConfigs {
+            create("fest") {
+                storeFile = keystoreDatei
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = "nextlesson"
+                keyPassword = System.getenv("KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Kein Schlüssel im Repo: Die Release-APK wird mit dem Standard-Debug-Schlüssel des
-            // Rechners signiert, damit sie installierbar ist (Sideloading, kein Play Store).
-            signingConfig = signingConfigs.getByName("debug")
+            // Ohne Secrets (z.B. lokaler Build): Standard-Debug-Schlüssel, damit die APK
+            // installierbar bleibt – dann aber ohne Update-über-alte-Version.
+            signingConfig = signingConfigs.findByName("fest") ?: signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

@@ -4,3 +4,6 @@ local.properties
 .artifacts/
 **/build/
 *.iml
+signing-secrets/
+*.jks
+*.keystore
