@@ -9,7 +9,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CheckCircle
@@ -17,6 +19,10 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import android.content.Intent
+import com.nextlesson.app.data.Lesson
+import java.time.LocalDate
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,7 +84,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         planViewModel.ladeGespeichertUndAktualisiere()
-        RefreshScheduler.sofortAktualisieren(applicationContext)
+        // Erst nach ein paar Sekunden: Der Worker lädt sieben Tage und würde sonst Netz und
+        // CPU mit dem Laden der sichtbaren Seite teilen – die App wirkte dadurch langsam.
+        RefreshScheduler.sofortAktualisieren(applicationContext, verzoegerungSekunden = 5)
     }
 
     private fun benachrichtigungErlaubnisAnfragen() {
@@ -106,10 +115,31 @@ private fun AppInhalt(
     val pruefungen by aufgabenViewModel.pruefungen.collectAsState()
     val erinnerung by aufgabenViewModel.erinnerung.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
+    val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
+    val verfuegbareKurse by planViewModel.verfuegbareKurse.collectAsState()
+    val uebersicht = remember(hausaufgaben, pruefungen) {
+        Uebersicht.berechne(hausaufgaben, pruefungen)
+    }
 
     var tab by remember { mutableStateOf(Tab.HEUTE) }
     var zeigeEinstellungen by remember { mutableStateOf(false) }
     var zeigeKurse by remember { mutableStateOf(false) }
+
+    // Hausaufgabe direkt aus einer angetippten Stunde: Stunde + Tag, an dem sie stattfindet.
+    var aufgabeAusStunde by remember { mutableStateOf<Pair<Lesson, LocalDate>?>(null) }
+    var naechsteStunde by remember { mutableStateOf<LocalDate?>(null) }
+    LaunchedEffect(aufgabeAusStunde) {
+        naechsteStunde = null
+        val (lesson, datum) = aufgabeAusStunde ?: return@LaunchedEffect
+        naechsteStunde = runCatching { planViewModel.naechsteStundeVon(lesson, datum) }.getOrNull()
+    }
+
+    // Nach einer Kursänderung oder einem Neu-Laden steht die Woche auf "nicht geladen".
+    // Ist der Wochen-Reiter dann offen, muss sie hier nachgeladen werden – sonst dreht
+    // der Ladekreis endlos, weil nur ein Tipp auf den Reiter das Laden auslöste.
+    LaunchedEffect(tab, wochenZustand) {
+        if (tab == Tab.WOCHE && wochenZustand is WochenZustand.NichtGeladen) planViewModel.wocheLaden()
+    }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -152,6 +182,17 @@ private fun AppInhalt(
                             widgetAktualisieren()
                         }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Aktualisieren")
+                        }
+                    }
+                    val angezeigt = zustand as? UiZustand.Angezeigt
+                    if (!einrichtung && tab == Tab.HEUTE && angezeigt != null) {
+                        IconButton(onClick = {
+                            val senden = Intent(Intent.ACTION_SEND)
+                                .setType("text/plain")
+                                .putExtra(Intent.EXTRA_TEXT, planAlsText(angezeigt.plan))
+                            runCatching { context.startActivity(Intent.createChooser(senden, "Plan teilen")) }
+                        }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Plan teilen")
                         }
                     }
                     if (!brauchtZugang && !brauchtKurse) {
@@ -199,7 +240,8 @@ private fun AppInhalt(
                 // 1. Zugangsdaten und Einstellungen
                 brauchtZugang || zeigeEinstellungen -> {
                     EinstellungenScreen(
-                        credentials = planViewModel.aktuelleCredentials(),
+                        // Einmal beim Öffnen entschlüsseln, nicht bei jedem Neuzeichnen.
+                        credentials = remember { planViewModel.aktuelleCredentials() },
                         erinnerung = erinnerung,
                         grosserText = grosserText,
                         onZugangSpeichern = { creds ->
@@ -222,12 +264,28 @@ private fun AppInhalt(
                 }
 
                 // 2. Kurse wählen
+                // "Kurse ändern", aber noch kein Plan geladen: erst laden statt eine leere
+                // Liste mit der irreführenden Meldung "keine Kurse hinterlegt" zu zeigen.
+                zeigeKurse && !brauchtKurse && verfuegbareKurse.isEmpty() -> {
+                    LaunchedEffect(Unit) { planViewModel.aktualisieren() }
+                    if (aktualisiertGerade) {
+                        LadeScreen()
+                    } else {
+                        FehlerScreen(
+                            nachricht = "Die Kursliste konnte nicht geladen werden.",
+                            zugangsproblem = false,
+                            onErneutVersuchen = { planViewModel.aktualisieren() },
+                            onEinstellungen = {}
+                        )
+                    }
+                }
+
                 brauchtKurse || zeigeKurse -> {
                     KursAuswahlScreen(
                         verfuegbareKurse = if (brauchtKurse) {
                             (zustand as UiZustand.KurseWaehlen).kurse
                         } else {
-                            planViewModel.verfuegbareKurse()
+                            verfuegbareKurse
                         },
                         gewaehlteKurse = planViewModel.aktuelleKursAuswahl(),
                         onSpeichern = { kurse ->
@@ -240,20 +298,50 @@ private fun AppInhalt(
                 }
 
                 else -> when (tab) {
-                    Tab.HEUTE -> when (val z = zustand) {
-                        is UiZustand.Laedt -> LadeScreen()
-                        is UiZustand.Angezeigt -> HomeScreen(z.plan)
-                        is UiZustand.Fehler -> FehlerScreen(z.nachricht)
-                        else -> LadeScreen()
+                    Tab.HEUTE -> PullToRefreshBox(
+                        isRefreshing = aktualisiertGerade,
+                        onRefresh = {
+                            planViewModel.aktualisieren()
+                            widgetAktualisieren()
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        when (val z = zustand) {
+                            is UiZustand.Laedt -> LadeScreen()
+                            is UiZustand.Angezeigt -> HomeScreen(
+                                persoenlich = z.plan,
+                                uebersicht = uebersicht,
+                                aktualisiertGerade = aktualisiertGerade,
+                                onOeffneAufgaben = { tab = Tab.HAUSAUFGABEN },
+                                onOeffnePruefungen = { tab = Tab.PRUEFUNGEN },
+                                onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to z.plan.datum }
+                            )
+                            is UiZustand.Fehler -> FehlerScreen(
+                                nachricht = z.nachricht,
+                                zugangsproblem = z.zugangsproblem,
+                                onErneutVersuchen = { planViewModel.aktualisieren() },
+                                onEinstellungen = { zeigeEinstellungen = true }
+                            )
+                            else -> LadeScreen()
+                        }
                     }
 
                     Tab.WOCHE -> {
                         val auswahl by planViewModel.wochenAuswahl.collectAsState()
-                        WochenScreen(
-                            zustand = wochenZustand,
-                            auswahl = auswahl,
-                            onAuswahlChange = planViewModel::setWochenAuswahl
-                        )
+                        PullToRefreshBox(
+                            isRefreshing = wochenZustand is WochenZustand.Laedt,
+                            onRefresh = {
+                                planViewModel.aktualisieren()
+                                planViewModel.wocheLaden()
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            WochenScreen(
+                                zustand = wochenZustand,
+                                auswahl = auswahl,
+                                onAuswahlChange = planViewModel::setWochenAuswahl
+                            )
+                        }
                     }
 
                     Tab.HAUSAUFGABEN -> HausaufgabenScreen(
@@ -273,5 +361,17 @@ private fun AppInhalt(
                 }
             }
         }
+    }
+    aufgabeAusStunde?.let { (lesson, _) ->
+        HausaufgabeDialog(
+            vorschlagFach = lesson.fach.takeIf { f -> f.any { it.isLetterOrDigit() } }
+                ?: lesson.kursKuerzel.orEmpty(),
+            naechsteStunde = naechsteStunde,
+            onAbbrechen = { aufgabeAusStunde = null },
+            onSpeichern = { fach, text, faellig ->
+                aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig)
+                aufgabeAusStunde = null
+            }
+        )
     }
 }

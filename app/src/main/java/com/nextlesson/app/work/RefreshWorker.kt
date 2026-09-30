@@ -3,17 +3,21 @@ package com.nextlesson.app.work
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.nextlesson.app.data.AufgabenStore
 import com.nextlesson.app.data.CredentialsStore
+import com.nextlesson.app.data.PlanKlausur
 import com.nextlesson.app.data.EntfallTracker
 import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.data.KursSelectionStore
 import com.nextlesson.app.data.NaechsteStundeErgebnis
 import com.nextlesson.app.data.PlanResult
+import com.nextlesson.app.data.Quelle
 import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.WidgetDataStore
 import com.nextlesson.app.widget.NextLessonWidgetReceiver
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * Läuft regelmäßig im Hintergrund und erledigt zwei Dinge in einem Durchgang:
@@ -53,31 +57,52 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         val heute = LocalDate.now()
         val jetzt = LocalTime.now()
         entfallTracker.aufraeumen(heute)
-        IndiwareRepository(applicationContext).aufraeumen()
+        val repository = IndiwareRepository(applicationContext)
+        repository.aufraeumen()
 
         // Heute + die nächsten Tage – anzahl = 7 stellt sicher, dass man am Wochenende
         // (Freitagabend) bereits den Entfall für Montagmorgen sieht.
-        val tage = IndiwareRepository(applicationContext).holeTage(creds, heute, anzahl = 7)
+        val tage = repository.holeTage(creds, heute, anzahl = 7)
 
         if (tage.any { it.second is PlanResult.AuthFehler }) {
             hinweisSchreiben("Login fehlgeschlagen")
             return Result.failure()
         }
-        // Wenn alle Tage Netzwerkfehler haben, versuchen wir trotzdem weiterzumachen,
-        // da IndiwareRepository nun automatisch auf den Cache zurückfällt.
-        // Nur wenn WIRKLICH gar nichts da ist (weder Netz noch Cache), brechen wir ab.
+        // Weder Netz noch Cache: Das Widget behält seinen letzten Stand (statt fälschlich
+        // "Keine Stunden" zu zeigen), und WorkManager versucht es später erneut.
+        if (tage.none { it.second is PlanResult.Success } &&
+            tage.any { it.second is PlanResult.NetzwerkFehler }
+        ) {
+            return Result.retry()
+        }
 
         var anzeige: Pair<LocalDate, NaechsteStundeErgebnis>? = null
         var anzeigePlan: TagesPlan? = null
         var anzeigeGeprueftUm: Long = System.currentTimeMillis()
         var naechsteGrenzzeitMillis: Long = Long.MAX_VALUE
+        val klausurenProTag = HashMap<LocalDate, List<PlanKlausur>>()
 
         tage.forEach { (datum, ergebnis) ->
             val success = ergebnis as? PlanResult.Success ?: return@forEach
             val gesamt = success.plan
             val plan = gesamt.tagesplanFuer(kurse)
 
-            // ... (Entfall logic)
+            // 1. Neuen Entfall in den gewählten Kursen melden (der Tracker merkt sich den
+            //    Stand; beim ersten Abruf eines Tages wird nur gespeichert, nicht gemeldet).
+            //    Nur bei frischen Serverdaten – ein Cache-Stand kann nichts Neues enthalten.
+            if (success.aus == Quelle.NETZ) {
+                val neu = entfallTracker.neueEntfaelle(datum, plan.stunden)
+                if (neu.isNotEmpty()) {
+                    EntfallNotifier.melden(applicationContext, datum, plan.entfaelle(), neu)
+                } else {
+                    // Nichts Neues – aber eine schon sichtbare Meldung auf den aktuellen Stand
+                    // bringen (zurückgenommener Ausfall), ohne erneut zu klingeln.
+                    EntfallNotifier.nachziehen(applicationContext, datum, plan.entfaelle())
+                }
+
+                // Klausuren aus dem Plan (nur eigene Kurse, da der Plan schon gefiltert ist).
+                klausurenProTag[datum] = PlanKlausur.ausStunden(datum, plan.stunden)
+            }
 
             // 2. Erste passende Stunde für das Widget suchen.
             if (anzeige == null) {
@@ -98,20 +123,23 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
                 plan.stunden.filter { !it.entfaellt }.forEach { lesson ->
                     val b = lesson.beginn
                     val e = lesson.ende
-                    if (b != null) {
-                        val bMillis = heute.atTime(b).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                        if (bMillis > System.currentTimeMillis()) {
-                            naechsteGrenzzeitMillis = minOf(naechsteGrenzzeitMillis, bMillis)
-                        }
-                    }
-                    if (e != null) {
-                        val eMillis = heute.atTime(e).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                        if (eMillis > System.currentTimeMillis()) {
-                            naechsteGrenzzeitMillis = minOf(naechsteGrenzzeitMillis, eMillis)
-                        }
-                    }
+                    val jetztMillis = System.currentTimeMillis()
+                    fun millis(zeit: LocalTime): Long =
+                        heute.atTime(zeit).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+                    // Beginn, Ende UND der Moment, ab dem die nächste Stunde schon als
+                    // Vorschau erscheint (Ende minus Vorlauf) – sonst hinkt das Widget 5 Min nach.
+                    listOfNotNull(b, e, e?.minusMinutes(TagesPlan.VORLAUF_MINUTEN))
+                        .map { millis(it) }
+                        .filter { it > jetztMillis }
+                        .forEach { naechsteGrenzzeitMillis = minOf(naechsteGrenzzeitMillis, it) }
                 }
             }
+        }
+
+        AufgabenStore(applicationContext).planKlausurenSynchronisieren(klausurenProTag)
+        if (tage.any { (it.second as? PlanResult.Success)?.aus == Quelle.NETZ }) {
+            HintergrundStatus.erfolgreichGeprueft(applicationContext)
         }
 
         val treffer = anzeige

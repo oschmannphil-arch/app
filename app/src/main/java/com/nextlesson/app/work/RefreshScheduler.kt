@@ -42,10 +42,15 @@ object RefreshScheduler {
         )
     }
 
-    /** Sofortige Prüfung – beim App-Start, nach Änderungen und beim Tippen aufs Widget. */
-    fun sofortAktualisieren(context: Context) {
+    /**
+     * Sofortige Prüfung – beim App-Start, nach Änderungen und beim Tippen aufs Widget.
+     * Ohne Netz-Bedingung: Offline wartete der Auftrag sonst, und Tippen aufs Widget tat
+     * nichts. Der Worker nimmt ohne Netz den gespeicherten Plan.
+     */
+    fun sofortAktualisieren(context: Context, verzoegerungSekunden: Long = 0L) {
         val request = OneTimeWorkRequestBuilder<RefreshWorker>()
-            .setConstraints(constraints)
+            .setConstraints(constraintsWidget)
+            .apply { if (verzoegerungSekunden > 0) setInitialDelay(verzoegerungSekunden, TimeUnit.SECONDS) }
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(

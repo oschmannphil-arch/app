@@ -21,7 +21,9 @@ class EntfallTracker(context: Context) {
      *
      * @return die Stunden, die seit dem letzten Abruf NEU ausgefallen sind.
      */
-    fun neueEntfaelle(datum: LocalDate, stunden: List<Lesson>): List<Lesson> {
+    fun neueEntfaelle(datum: LocalDate, stunden: List<Lesson>): List<Lesson> = synchronized(SPERRE) {
+        // Gesperrt über alle Instanzen: Laufen zwei Hintergrund-Abrufe gleichzeitig, sähen
+        // sonst beide denselben alten Stand und meldeten denselben Entfall doppelt.
         val key = KEY_PREFIX + datum
         val aktuell = stunden.filter { it.entfaellt }
         val aktuelleIds = aktuell.map { it.kennung() }.toSet()
@@ -32,10 +34,10 @@ class EntfallTracker(context: Context) {
         prefs.edit().putStringSet(key, aktuelleIds).apply()
 
         // Erster Abruf für diesen Tag: nur merken, nicht melden.
-        if (bekannt == null) return emptyList()
+        if (bekannt == null) return@synchronized emptyList()
 
         val neueIds = aktuelleIds - bekannt
-        return aktuell.filter { it.kennung() in neueIds }
+        aktuell.filter { it.kennung() in neueIds }
     }
 
     /** Entfernt Einträge für vergangene Tage, damit die Preferences nicht zulaufen. */
@@ -61,5 +63,6 @@ class EntfallTracker(context: Context) {
 
     companion object {
         private const val KEY_PREFIX = "entfall_"
+        private val SPERRE = Any()
     }
 }

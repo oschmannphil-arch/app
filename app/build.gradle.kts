@@ -11,12 +11,30 @@ android {
         applicationId = "com.nextlesson.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // Jeder CI-Lauf zählt hoch, damit Updates immer als neuere Version gelten.
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+    }
+
+    // Fester Schlüssel für Updates ohne Deinstallieren. Er liegt NICHT im Repo, sondern kommt
+    // im CI-Lauf aus den GitHub-Secrets KEYSTORE_BASE64 / KEYSTORE_PASSWORD.
+    val keystoreDatei = System.getenv("KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    if (keystoreDatei != null) {
+        signingConfigs {
+            create("fest") {
+                storeFile = keystoreDatei
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = "nextlesson"
+                keyPassword = System.getenv("KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            // Ohne Secrets (z.B. lokaler Build): Standard-Debug-Schlüssel, damit die APK
+            // installierbar bleibt – dann aber ohne Update-über-alte-Version.
+            signingConfig = signingConfigs.findByName("fest") ?: signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -53,7 +71,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.1")
 
     // Compose
-    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -75,6 +93,8 @@ dependencies {
 
     // Kotlin coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -319,6 +319,15 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
                         maxLines = 1
                     )
                 }
+                if (lesson.info.isNotBlank()) {
+                    Text(
+                        text = lesson.info,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = neben,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 

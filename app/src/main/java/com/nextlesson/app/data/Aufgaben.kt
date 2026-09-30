@@ -33,6 +33,48 @@ data class Hausaufgabe(
     }
 }
 
+/**
+ * Eine Klausur, die im Schulplan steht (Infotext "Klausur"). Nur Stunden der eigenen
+ * Kurse landen hier, weil der Plan vorher auf die Kurswahl gefiltert wird.
+ */
+data class PlanKlausur(
+    val datum: LocalDate,
+    val fach: String,
+    val kurs: String,
+    val klasse: String,
+    val stundenText: String
+) {
+    /** Stabile Kennung: derselbe Plan-Eintrag ergibt bei jedem Abruf dieselbe ID. */
+    val id: String get() = "$PLAN_PREFIX$datum|$klasse|$kurs|$fach"
+
+    fun alsPruefung() = Pruefung(
+        id = id,
+        fach = fach.ifBlank { kurs },
+        titel = if (kurs.isNotBlank() && !kurs.equals(fach, ignoreCase = true)) kurs else "",
+        datumEpochDay = datum.toEpochDay(),
+        art = PruefungsArt.KLAUSUR,
+        notiz = "Aus dem Plan · $stundenText"
+    )
+
+    companion object {
+        const val PLAN_PREFIX = "plan|"
+
+        /** Fasst die Klausur-Stunden eines Tages zusammen (eine Klausur über mehrere Stunden = ein Eintrag). */
+        fun ausStunden(datum: LocalDate, stunden: List<Lesson>): List<PlanKlausur> =
+            stunden.filter { it.istKlausur && !it.entfaellt }
+                .groupBy { Triple(it.klasse, it.kursKuerzel.orEmpty(), it.fach) }
+                .map { (schluessel, gruppe) ->
+                    val sortiert = gruppe.sortedBy { it.stunde }
+                    val erste = sortiert.first()
+                    val letzte = sortiert.last()
+                    val std = if (erste.stunde == letzte.stunde) "${erste.stunde}. Std"
+                    else "${erste.stunde}.–${letzte.stunde}. Std"
+                    val zeit = if (erste.beginn != null && letzte.ende != null) " · ${erste.beginn}–${letzte.ende}" else ""
+                    PlanKlausur(datum, schluessel.third, schluessel.second, schluessel.first, std + zeit)
+                }
+    }
+}
+
 enum class PruefungsArt(val anzeige: String) {
     KLAUSUR("Klausur"),
     TEST("Test");

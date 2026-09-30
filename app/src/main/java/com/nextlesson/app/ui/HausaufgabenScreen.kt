@@ -33,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -243,17 +244,29 @@ private fun faelligkeitText(datum: LocalDate, heute: LocalDate): String = when {
     else -> "bis ${datum.format(datumFormat)}"
 }
 
+/**
+ * @param vorschlagFach Fach vorbelegen (Aufgabe direkt aus einer Stunde anlegen).
+ * @param naechsteStunde Datum der nächsten Stunde dieses Kurses – wird als Fälligkeit
+ *        übernommen, sobald es ermittelt ist, solange man selbst noch kein Datum gewählt hat.
+ */
 @Composable
-private fun HausaufgabeDialog(
+internal fun HausaufgabeDialog(
     bestehendeAufgabe: Hausaufgabe? = null,
+    vorschlagFach: String? = null,
+    naechsteStunde: LocalDate? = null,
     onAbbrechen: () -> Unit,
     onSpeichern: (fach: String, text: String, faellig: LocalDate?) -> Unit
 ) {
-    var fach by remember { mutableStateOf(bestehendeAufgabe?.fach ?: "") }
+    var fach by remember { mutableStateOf(bestehendeAufgabe?.fach ?: vorschlagFach ?: "") }
     var text by remember { mutableStateOf(bestehendeAufgabe?.text ?: "") }
     var faellig by remember { mutableStateOf<LocalDate?>(bestehendeAufgabe?.faellig ?: LocalDate.now().plusDays(1)) }
+    var datumSelbstGewaehlt by remember { mutableStateOf(bestehendeAufgabe != null) }
     var datumsDialog by remember { mutableStateOf(false) }
     val heute = LocalDate.now()
+
+    LaunchedEffect(naechsteStunde) {
+        if (naechsteStunde != null && !datumSelbstGewaehlt) faellig = naechsteStunde
+    }
 
     AlertDialog(
         onDismissRequest = onAbbrechen,
@@ -276,12 +289,19 @@ private fun HausaufgabeDialog(
 
                 Text("Fällig", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (naechsteStunde != null) {
+                        AssistChip(
+                            onClick = { faellig = naechsteStunde; datumSelbstGewaehlt = true },
+                            label = { Text("Nächste Stunde") }
+                        )
+                    } else {
+                        AssistChip(
+                            onClick = { faellig = heute; datumSelbstGewaehlt = true },
+                            label = { Text("Heute") }
+                        )
+                    }
                     AssistChip(
-                        onClick = { faellig = heute },
-                        label = { Text("Heute") }
-                    )
-                    AssistChip(
-                        onClick = { faellig = heute.plusDays(1) },
+                        onClick = { faellig = heute.plusDays(1); datumSelbstGewaehlt = true },
                         label = { Text("Morgen") }
                     )
                     AssistChip(
@@ -290,7 +310,10 @@ private fun HausaufgabeDialog(
                     )
                 }
                 Text(
-                    text = faellig?.let { "Gewählt: ${it.format(datumFormat)}" } ?: "Ohne Datum",
+                    text = faellig?.let {
+                        "Gewählt: ${it.format(datumFormat)}" +
+                            if (it == naechsteStunde) " (nächste Stunde)" else ""
+                    } ?: "Ohne Datum",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -313,6 +336,7 @@ private fun HausaufgabeDialog(
             onAbbrechen = { datumsDialog = false },
             onGewaehlt = {
                 faellig = it
+                datumSelbstGewaehlt = true
                 datumsDialog = false
             }
         )

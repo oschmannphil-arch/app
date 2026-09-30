@@ -46,15 +46,20 @@ fun StatusBadge(
 }
 
 /**
- * Tickende Uhrzeit: aktualisiert sich jede halbe Minute, damit der Countdown
+ * Tickende Uhrzeit: aktualisiert sich zu jeder vollen Minute, damit der Countdown
  * auf dem Bildschirm nicht einfriert, während man draufschaut.
  */
 @Composable
-fun rememberJetzt(): State<LocalTime> {
+fun rememberJetzt(neuStart: Any? = null): State<LocalTime> {
     val zustand = remember { mutableStateOf(LocalTime.now()) }
-    LaunchedEffect(Unit) {
+    // Bei jedem neuen [neuStart] (z.B. Aktualisierung nach dem Öffnen der App) sofort die
+    // echte Uhrzeit nehmen, statt bis zum nächsten Tick mit einem alten Wert zu arbeiten.
+    LaunchedEffect(neuStart) {
+        zustand.value = LocalTime.now()
         while (true) {
-            delay(30_000)
+            // Genau zur nächsten vollen Minute ticken – dann wechseln Stunden und Countdown
+            // im Gleichtakt mit der Uhr (vorher: alle 30 s ab beliebigem Zeitpunkt = bis zu 30 s Versatz).
+            delay(60_000 - System.currentTimeMillis() % 60_000 + 100)
             zustand.value = LocalTime.now()
         }
     }
@@ -71,14 +76,17 @@ fun countdownText(lesson: Lesson, jetzt: LocalTime, istHeute: Boolean): String? 
     val beginn = lesson.beginn ?: return null
     val ende = lesson.ende
 
+    // Aufgerundet auf volle Minuten: bei 8:20 Restzeit steht "9 Min" statt "8 Min", und die
+    // Anzeige springt genau zur vollen Minute – wie die Uhr.
     if (ende != null && !jetzt.isBefore(beginn) && jetzt.isBefore(ende)) {
-        val rest = Duration.between(jetzt, ende).toMinutes()
+        val rest = (Duration.between(jetzt, ende).seconds + 59) / 60
         return if (rest <= 0) "endet gleich" else "läuft noch ${dauer(rest)}"
     }
 
-    val bis = Duration.between(jetzt, beginn).toMinutes()
+    val bisSekunden = Duration.between(jetzt, beginn).seconds
+    val bis = (bisSekunden + 59) / 60
     return when {
-        bis < 0 -> null
+        bisSekunden < 0 -> null
         bis == 0L -> "jetzt"
         bis > 600 -> null // mehr als 10 Stunden: Uhrzeit sagt mehr als ein Countdown
         else -> "in ${dauer(bis)}"

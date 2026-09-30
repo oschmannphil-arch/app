@@ -35,7 +35,9 @@ object LernErinnerung {
 
     private const val WORK_NAME = "lern_erinnerung"
     private const val CHANNEL_ID = "lernen"
-    private const val NOTIFICATION_ID = 4300
+    // Nicht 4300: Der EntfallNotifier nutzt 4200 + Tag im Jahr (4201–4566) und hätte
+    // am 100. Tag des Jahres dieselbe ID.
+    private const val NOTIFICATION_ID = 4100
 
     fun kanalAnlegen(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -135,8 +137,9 @@ class LernErinnerungWorker(appContext: Context, params: WorkerParameters) :
         val einstellung = ErinnerungsStore(applicationContext).laden()
         if (!einstellung.aktiv) return Result.success()
 
+        // Kein beimStartAufraeumen() hier: Das löschte abgehakte Hausaufgaben mitten am Tag
+        // (statt beim nächsten App-Start) und an der laufenden App vorbei. Zählen reicht.
         val store = AufgabenStore(applicationContext)
-        store.beimStartAufraeumen()
 
         val offen = store.offeneHausaufgaben().size
         val naechste = store.kommendePruefungen().minByOrNull { it.datumEpochDay }

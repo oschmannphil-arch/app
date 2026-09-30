@@ -10,11 +10,15 @@ import com.nextlesson.app.data.IndiwareCredentials
 import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.data.KursInfo
 import com.nextlesson.app.data.KursSelectionStore
+import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.PersoenlicherPlan
 import com.nextlesson.app.data.PersoenlicherResult
 import com.nextlesson.app.data.PlanResult
 import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.WidgetDataStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +32,7 @@ sealed class UiZustand {
     /** Zugang steht – jetzt nur noch die eigenen Kurse ankreuzen. */
     data class KurseWaehlen(val kurse: List<KursInfo>) : UiZustand()
     data class Angezeigt(val plan: PersoenlicherPlan) : UiZustand()
-    data class Fehler(val nachricht: String) : UiZustand()
+    data class Fehler(val nachricht: String, val zugangsproblem: Boolean = false) : UiZustand()
 }
 
 /** Ein einzelner Tag der Wochenansicht. */
@@ -53,14 +57,24 @@ enum class WochenAuswahl(val label: String) {
 
 class PlanViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val credentialsStore = CredentialsStore(app)
+    // Lazy: EncryptedSharedPreferences legt beim ersten Zugriff einen Schlüssel an und ist
+    // langsam. Ohne lazy passierte das im Konstruktor auf dem Main-Thread (langer Start).
+    private val credentialsStore by lazy { CredentialsStore(app) }
     private val kursSelectionStore = KursSelectionStore(app)
     private val entfallTracker = EntfallTracker(app)
     private val widgetDataStore = WidgetDataStore(app)
     private val repository = IndiwareRepository(app)
 
+    /** Laufende Ladevorgänge – ein neuer ersetzt den alten, damit kein veraltetes Ergebnis überschreibt. */
+    private var ladeJob: Job? = null
+    private var wochenJob: Job? = null
+
     private val _zustand = MutableStateFlow<UiZustand>(UiZustand.Laedt)
     val zustand: StateFlow<UiZustand> = _zustand.asStateFlow()
+
+    /** True, solange ein Abruf läuft – steuert den Pull-to-Refresh-Kreis. */
+    private val _aktualisiertGerade = MutableStateFlow(false)
+    val aktualisiertGerade: StateFlow<Boolean> = _aktualisiertGerade.asStateFlow()
 
     private val _wochenZustand = MutableStateFlow<WochenZustand>(WochenZustand.NichtGeladen)
     val wochenZustand: StateFlow<WochenZustand> = _wochenZustand.asStateFlow()
@@ -71,38 +85,59 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     private val _grosserText = MutableStateFlow(widgetDataStore.laden().grosserText)
     val grosserText: StateFlow<Boolean> = _grosserText.asStateFlow()
 
+    private val _verfuegbareKurse = MutableStateFlow<List<KursInfo>>(emptyList())
+    /**
+     * Kursliste für "Kurse ändern". Als StateFlow statt einmaligem Abruf: Wurde der Dialog
+     * geöffnet, bevor ein Plan geladen war, blieb die Liste vorher dauerhaft leer.
+     */
+    val verfuegbareKurse: StateFlow<List<KursInfo>> = _verfuegbareKurse.asStateFlow()
+
     /** Zuletzt geladener Gesamtplan – Grundlage für die Kursliste. */
     private var letzterGesamtPlan: GesamtPlan? = null
+        set(wert) {
+            field = wert
+            _verfuegbareKurse.value = wert?.alleKurse ?: emptyList()
+        }
 
-    init {
-        ladeGespeichertUndAktualisiere()
-    }
-
+    /** Kein init-Aufruf: MainActivity.onResume lädt ohnehin direkt nach dem Start. */
     fun ladeGespeichertUndAktualisiere() {
-        val creds = credentialsStore.laden()
-        if (creds == null) _zustand.value = UiZustand.LoginNoetig else aktualisiere(creds)
+        // Läuft schon ein Ladevorgang (z.B. Resume direkt nach dem Start), nicht doppelt starten.
+        if (ladeJob?.isActive == true) return
+        // Während der Kurswahl nicht neu laden: Der Zustand fiele kurz auf "Laedt" und die
+        // bereits angekreuzten, noch nicht gespeicherten Kurse gingen verloren.
+        if (_zustand.value is UiZustand.KurseWaehlen) return
+        viewModelScope.launch {
+            val creds = withContext(Dispatchers.IO) { credentialsStore.laden() }
+            if (creds == null) _zustand.value = UiZustand.LoginNoetig else aktualisiere(creds)
+        }
     }
 
     fun anmelden(creds: IndiwareCredentials) {
         credentialsStore.speichern(creds)
         entfallTracker.zuruecksetzen()
-        aktualisiere(creds)
-    }
-
-    fun abmelden() {
-        credentialsStore.loeschen()
-        kursSelectionStore.speichern(emptySet())
-        entfallTracker.zuruecksetzen()
-        letzterGesamtPlan = null
-        _wochenZustand.value = WochenZustand.NichtGeladen
-        _zustand.value = UiZustand.LoginNoetig
+        aktualisiere(creds, erzwingen = true)
     }
 
     fun aktuelleCredentials(): IndiwareCredentials? = credentialsStore.laden()
 
-    fun verfuegbareKurse(): List<KursInfo> = letzterGesamtPlan?.alleKurse ?: emptyList()
 
     fun aktuelleKursAuswahl(): Set<String> = kursSelectionStore.laden()
+
+    /**
+     * Datum der nächsten Stunde im selben Kurs nach [nach] – für "Hausaufgabe bis zur
+     * nächsten Stunde". Sucht bis zu zwei Wochen voraus (nur, soweit Pläne veröffentlicht
+     * sind); null, wenn nichts gefunden wurde.
+     */
+    suspend fun naechsteStundeVon(lesson: Lesson, nach: LocalDate): LocalDate? {
+        val creds = withContext(Dispatchers.IO) { credentialsStore.laden() } ?: return null
+        val kurse = kursSelectionStore.laden()
+        val tage = repository.holeTage(creds, nach.plusDays(1), anzahl = 14)
+        return withContext(Dispatchers.Default) {
+            tage.firstOrNull { (_, ergebnis) ->
+                ergebnis is PlanResult.Success && ergebnis.plan.tagesplanFuer(kurse).hatStundeVon(lesson)
+            }?.first
+        }
+    }
 
     /** Speichert die Kurswahl und lädt den persönlichen Plan neu. */
     fun kursAuswahlSpeichern(kursIds: Set<String>) {
@@ -115,16 +150,17 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             _zustand.value = UiZustand.KurseWaehlen(letzterGesamtPlan?.alleKurse ?: emptyList())
             return
         }
-        credentialsStore.laden()?.let { aktualisiere(it) }
+        credentialsStore.laden()?.let { aktualisiere(it, erzwingen = true) }
     }
 
+    /** Vom Aktualisieren-Button: immer frisch vom Server, nie aus dem Kurzzeit-Zwischenspeicher. */
     fun aktualisieren() {
         val creds = credentialsStore.laden() ?: run {
             _zustand.value = UiZustand.LoginNoetig
             return
         }
         _wochenZustand.value = WochenZustand.NichtGeladen
-        aktualisiere(creds)
+        aktualisiere(creds, erzwingen = true)
     }
 
     fun grosserTextSetzen(aktiv: Boolean) {
@@ -135,6 +171,8 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     fun setWochenAuswahl(auswahl: WochenAuswahl) {
         if (_wochenAuswahl.value == auswahl) return
         _wochenAuswahl.value = auswahl
+        // Sonst stünde unter dem neuen Reiter kurz noch die alte Woche.
+        _wochenZustand.value = WochenZustand.Laedt
         wocheLaden()
     }
 
@@ -148,9 +186,10 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             _wochenZustand.value = WochenZustand.Laedt
         }
         
-        viewModelScope.launch {
+        wochenJob?.cancel()
+        wochenJob = viewModelScope.launch {
             val heute = LocalDate.now()
-            
+
             // Basis-Woche bestimmen: ab Samstag springen wir standardmäßig in die neue Woche.
             val base = if (heute.dayOfWeek == DayOfWeek.SATURDAY || heute.dayOfWeek == DayOfWeek.SUNDAY) {
                 heute.plusWeeks(1)
@@ -176,7 +215,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun aktualisiere(creds: IndiwareCredentials) {
+    private fun aktualisiere(creds: IndiwareCredentials, erzwingen: Boolean = false) {
         val auswahl = kursSelectionStore.laden()
         // Nur wenn wir noch nichts anzeigen, schalten wir auf den Lade-Screen um.
         // Bei einem Hintergrund-Update bleibt der aktuelle Plan sichtbar.
@@ -184,10 +223,23 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             _zustand.value = UiZustand.Laedt
         }
 
-        viewModelScope.launch {
+        ladeJob?.cancel()
+        _aktualisiertGerade.value = true
+        val job = viewModelScope.launch { ladeInhalt(creds, auswahl, erzwingen) }
+        ladeJob = job
+        // Nur der jeweils neueste Ladevorgang darf die Anzeige "lädt" wieder ausschalten.
+        job.invokeOnCompletion { if (ladeJob === job) _aktualisiertGerade.value = false }
+    }
+
+    private suspend fun ladeInhalt(
+        creds: IndiwareCredentials,
+        auswahl: Set<String>,
+        erzwingen: Boolean
+    ) {
+        run {
             // Ohne Kurswahl brauchen wir nur die Kursliste.
             if (auswahl.isEmpty()) {
-                when (val ergebnis = repository.holeNaechstenVerfuegbarenPlan(creds)) {
+                when (val ergebnis = repository.holeNaechstenVerfuegbarenPlan(creds, erzwingen = erzwingen)) {
                     is PlanResult.Success -> {
                         letzterGesamtPlan = ergebnis.plan
                         _zustand.value = UiZustand.KurseWaehlen(ergebnis.plan.alleKurse)
@@ -196,10 +248,22 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                     is PlanResult.KeinPlanFuerTag -> _zustand.value = fehlerKeinPlan()
                     is PlanResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
                 }
-                return@launch
+                return
             }
 
-            when (val ergebnis = repository.holePersoenlichenPlan(creds, auswahl)) {
+            // Sofort etwas zeigen: der zuletzt gespeicherte Plan liegt lokal und ist in
+            // Millisekunden da, statt den Nutzer auf das Netz warten zu lassen.
+            if (_zustand.value !is UiZustand.Angezeigt) {
+                val vorab = repository.holePersoenlichenPlan(creds, auswahl, nurCache = true)
+                if (vorab is PersoenlicherResult.Erfolg && vorab.plan.naechste != null &&
+                    _zustand.value !is UiZustand.Angezeigt
+                ) {
+                    letzterGesamtPlan = vorab.plan.gesamt
+                    _zustand.value = UiZustand.Angezeigt(vorab.plan)
+                }
+            }
+
+            when (val ergebnis = repository.holePersoenlichenPlan(creds, auswahl, erzwingen = erzwingen)) {
                 is PersoenlicherResult.Erfolg -> {
                     letzterGesamtPlan = ergebnis.plan.gesamt
                     _zustand.value = UiZustand.Angezeigt(ergebnis.plan)
@@ -212,7 +276,10 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun fehlerAuth() =
-        UiZustand.Fehler("Benutzername oder Passwort falsch. Bitte in den Einstellungen prüfen.")
+        UiZustand.Fehler(
+            "Benutzername oder Passwort falsch. Bitte in den Einstellungen prüfen.",
+            zugangsproblem = true
+        )
 
     private fun fehlerKeinPlan() =
         UiZustand.Fehler("Für die nächsten Tage wurde kein Plan gefunden (Ferien?).")

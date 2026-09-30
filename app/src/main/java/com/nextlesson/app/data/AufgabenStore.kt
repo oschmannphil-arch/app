@@ -1,6 +1,7 @@
 package com.nextlesson.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,9 +28,58 @@ class AufgabenStore(context: Context) {
     private val _pruefungen = MutableStateFlow<List<Pruefung>>(emptyList())
     val pruefungen: StateFlow<List<Pruefung>> = _pruefungen.asStateFlow()
 
+    // Der Hintergrund-Worker schreibt Klausuren aus dem Plan direkt in die Ablage (eigene
+    // Store-Instanz). Dieser Listener holt sie in die laufende Anzeige. Als Feld gehalten,
+    // weil SharedPreferences Listener nur schwach referenziert.
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == KEY_PRUEFUNGEN) {
+            val neu = pruefungenLesen()
+            if (neu != _pruefungen.value) _pruefungen.value = neu
+        }
+    }
+
     init {
         _hausaufgaben.value = hausaufgabenLesen()
         _pruefungen.value = pruefungenLesen()
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+    }
+
+    // ---------- Klausuren aus dem Plan ----------
+
+    /**
+     * Gleicht die Klausuren aus dem Plan ab. [tage] enthält jeden Tag, der frisch geladen
+     * wurde – auch Tage OHNE Klausur, damit Klausuren, die aus dem Plan verschwunden sind
+     * (verschoben/abgesagt), wieder entfernt werden. Selbst angelegte Termine bleiben
+     * unberührt; vom Nutzer gelöschte Plan-Klausuren kommen nicht wieder.
+     */
+    fun planKlausurenSynchronisieren(tage: Map<LocalDate, List<PlanKlausur>>) {
+        if (tage.isEmpty()) return
+        pruefungenAendern { aktuell ->
+            val geloescht = prefs.getStringSet(KEY_GELOESCHT, emptySet()).orEmpty()
+            val behalten = aktuell.filterNot { p ->
+                p.id.startsWith(PlanKlausur.PLAN_PREFIX) &&
+                    tage.keys.any { p.id.startsWith("${PlanKlausur.PLAN_PREFIX}$it|") } &&
+                    tage.values.flatten().none { it.id == p.id }
+            }
+            val vorhandeneIds = behalten.map { it.id }.toSet()
+            val neu = tage.values.flatten()
+                .filter { it.id !in geloescht && it.id !in vorhandeneIds }
+                .map { it.alsPruefung() }
+            behalten + neu
+        }
+    }
+
+    /**
+     * Jede Änderung an den Prüfungen geht hier durch: frisch aus der Ablage lesen, ändern,
+     * schreiben – unter einer Sperre für alle Instanzen. Der Hintergrund-Abruf hat eine eigene
+     * Instanz; ohne das konnte er einen gerade in der App eingetragenen Termin überschreiben
+     * (und umgekehrt).
+     */
+    private fun pruefungenAendern(aenderung: (List<Pruefung>) -> List<Pruefung>) = synchronized(SPERRE) {
+        val aktuell = pruefungenLesen()
+        val ergebnis = aenderung(aktuell).sortedBy { it.datumEpochDay }
+        _pruefungen.value = ergebnis
+        if (ergebnis != aktuell) pruefungenSchreiben()
     }
 
     // ---------- Hausaufgaben ----------
@@ -96,8 +146,7 @@ class AufgabenStore(context: Context) {
             art = art,
             notiz = notiz.trim()
         )
-        _pruefungen.value = (_pruefungen.value + neu).sortedBy { it.datumEpochDay }
-        pruefungenSchreiben()
+        pruefungenAendern { it + neu }
     }
 
     fun pruefungBearbeiten(
@@ -108,7 +157,7 @@ class AufgabenStore(context: Context) {
         art: PruefungsArt,
         notiz: String
     ) {
-        _pruefungen.value = _pruefungen.value.map {
+        pruefungenAendern { liste -> liste.map {
             if (it.id == id) {
                 it.copy(
                     fach = fach.trim(),
@@ -118,13 +167,28 @@ class AufgabenStore(context: Context) {
                     notiz = notiz.trim()
                 )
             } else it
-        }.sortedBy { it.datumEpochDay }
-        pruefungenSchreiben()
+        } }
     }
 
     fun pruefungLoeschen(id: String) {
-        _pruefungen.value = _pruefungen.value.filterNot { it.id == id }
-        pruefungenSchreiben()
+        pruefungenAendern { liste ->
+            if (id.startsWith(PlanKlausur.PLAN_PREFIX)) {
+                // Sonst würde die nächste Plan-Abfrage die Klausur sofort wieder anlegen.
+                // Innerhalb der Sperre, damit kein Abruf dazwischen sie neu einträgt.
+                val heute = LocalDate.now()
+                val geloescht = prefs.getStringSet(KEY_GELOESCHT, emptySet()).orEmpty()
+                    .filter { istNochRelevant(it, heute) } + id
+                prefs.edit().putStringSet(KEY_GELOESCHT, geloescht.toSet()).apply()
+            }
+            liste.filterNot { it.id == id }
+        }
+    }
+
+    /** Merk-Einträge zu längst vergangenen Tagen brauchen wir nicht mehr. */
+    private fun istNochRelevant(id: String, heute: LocalDate): Boolean {
+        val datum = id.removePrefix(PlanKlausur.PLAN_PREFIX).substringBefore('|')
+        return runCatching { !LocalDate.parse(datum).isBefore(heute.minusDays(AUFBEWAHRUNG_TAGE)) }
+            .getOrDefault(false)
     }
 
     fun kommendePruefungen(heute: LocalDate = LocalDate.now()): List<Pruefung> =
@@ -139,9 +203,7 @@ class AufgabenStore(context: Context) {
         if (_hausaufgaben.value.size != vorherH) hausaufgabenSchreiben()
 
         val grenze = heute.minusDays(AUFBEWAHRUNG_TAGE)
-        val vorherP = _pruefungen.value.size
-        _pruefungen.value = _pruefungen.value.filter { it.datum.isAfter(grenze) }
-        if (_pruefungen.value.size != vorherP) pruefungenSchreiben()
+        pruefungenAendern { liste -> liste.filter { it.datum.isAfter(grenze) } }
     }
 
     // ---------- Persistenz ----------
@@ -223,6 +285,8 @@ class AufgabenStore(context: Context) {
     companion object {
         private const val KEY_HAUSAUFGABEN = "hausaufgaben_json"
         private const val KEY_PRUEFUNGEN = "pruefungen_json"
+        private const val KEY_GELOESCHT = "plan_klausuren_geloescht"
+        private val SPERRE = Any()
 
         /** So lange bleiben vergangene Prüfungen noch sichtbar, bevor sie verschwinden. */
         private const val AUFBEWAHRUNG_TAGE = 7L

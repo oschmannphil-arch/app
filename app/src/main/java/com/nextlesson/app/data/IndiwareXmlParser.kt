@@ -42,6 +42,29 @@ object IndiwareXmlParser {
 
     private val KLASSE_TAGS = setOf("Kl", "Klasse")
 
+    /**
+     * Als "Ausfall" gilt alles, was kein Unterricht mit Lehrkraft vor Ort ist: Entfall,
+     * Selbstbeschäftigung/EVA, Aufgaben (auch über Moodle), Distanz-/Online-Unterricht.
+     *
+     * Stichwörter am Wortanfang ("selbst…", "aufgab…", "moodle" …) greifen auch bei
+     * Zusammensetzungen wie "Selbstbeschäftigung". "eva" und "frei" nur als ganzes Wort –
+     * sonst träfen sie "Freitag", "Evangelisch" oder Namen wie "Evers". "Hausaufgaben"
+     * zählt nicht, weil "aufgab" nur am Wortanfang gesucht wird.
+     */
+    private val ENTFALL_WOERTER = Regex(
+        """(?<![\p{L}\p{N}])(selbst|eigenv|aufgab|moodle|online|distanz|zuhause|homeoffice|""" +
+            """stillarbeit|freiarbeit|lernzeit)|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
+    )
+
+    /** Hinweise auf eine Klausur im Infotext der Stunde. */
+    private val KLAUSUR_WOERTER = Regex("klausur|klassenarbeit")
+
+    /** Eindeutige Wendungen – hier reicht ein Teilstring. */
+    private val ENTFALL_PHRASEN = listOf(
+        "entfällt", "entfaellt", "fällt aus", "faellt aus", "ausfall", "absage", "abgesagt",
+        "zu hause"
+    )
+
     fun parse(input: InputStream, schulnummerFallback: String): GesamtPlan? {
         val doc = try {
             DocumentBuilderFactory.newInstance()
@@ -58,7 +81,12 @@ object IndiwareXmlParser {
         val kopf = PlanKopf(
             datumPlan = kopfEl.kind("DatumPlan").textOrEmpty(),
             zeitstempel = kopfEl.kind("zeitstempel").textOrEmpty(),
-            schulnummer = kopfEl.kind("schulnummer").textOrEmpty().ifBlank { schulnummerFallback }
+            schulnummer = kopfEl.kind("schulnummer").textOrEmpty().ifBlank { schulnummerFallback },
+            // <ZusatzInfo><ZiZeile>…</ZiZeile></ZusatzInfo>: Tageshinweise der Schule
+            zusatzInfo = root.nachfahren("ZiZeile")
+                .ifEmpty { root.kind("ZusatzInfo").kinder() }
+                .map { it.textOrEmpty() }
+                .filter { it.isNotBlank() }
         )
 
         val klassenEl = root.kind("Klassen")
@@ -139,16 +167,15 @@ object IndiwareXmlParser {
             // Priorität 1: Infotext-Keywords (ENTFALL)
             // Wir prüfen sowohl das Info-Feld als auch den gesamten Text der Stunde (gesamtText),
             // falls die Info in einem anderen Unter-Tag gelandet ist.
-            val infoKeywords = listOf("selbst", "eva", "entfällt", "fällt aus", "frei", "faellt aus", "eigenv", "ausfall", "absage", "abgesagt")
-            val hatEntfallInfo = infoKeywords.any { infoText.contains(it) || gesamtText.contains(it) } || 
-                                 (infoText.contains("fällt") && infoText.contains("aus")) ||
-                                 (infoText.contains("faellt") && infoText.contains("aus")) ||
-                                 (infoText.contains("kein") && infoText.contains("unterricht")) ||
-                                 (gesamtText.contains("fällt") && gesamtText.contains("aus")) ||
-                                 (gesamtText.contains("faellt") && gesamtText.contains("aus")) ||
+            // Kurze Wörter ("eva", "frei", "selbst") nur als GANZES Wort werten – als Teilstring
+            // träfen sie "Freitag", "Evangelisch", Lehrernamen wie "Evers" usw. und markierten
+            // normalen Unterricht fälschlich als Entfall.
+            val hatEntfallInfo = ENTFALL_WOERTER.containsMatchIn(infoText) ||
+                                 ENTFALL_WOERTER.containsMatchIn(lehrerRoh.lowercase()) ||
+                                 ENTFALL_PHRASEN.any { infoText.contains(it) || gesamtText.contains(it) } ||
                                  (gesamtText.contains("kein") && gesamtText.contains("unterricht")) ||
-                                 lehrerRoh.contains("selbst", ignoreCase = true) ||
-                                 lehrerRoh.contains("eva", ignoreCase = true)
+                                 (gesamtText.contains("fällt") && gesamtText.contains("aus")) ||
+                                 (gesamtText.contains("faellt") && gesamtText.contains("aus"))
 
             // Priorität 2: "---" in Fach oder Lehrer (ENTFALL)
             val hatStrich = fach == "---" || lehrer == "---"
@@ -158,7 +185,13 @@ object IndiwareXmlParser {
                                  (std.getAttribute("Ae") == "1" && (fach.isBlank() || nurStriche)) ||
                                  fach.isBlank()
 
-            val entfaelltFinal = hatEntfallInfo || hatStrich || istAusfallFlag
+            // Klausuren stehen im Plan als Hinweistext ("Klausur"). Sie sind Präsenz-Termine und
+            // dürfen nicht wegen Wörtern wie "Aufgaben" als Ausfall gelten – nur bei
+            // ausdrücklichem Entfall ("Klausur entfällt").
+            val istKlausur = KLAUSUR_WOERTER.containsMatchIn(gesamtText)
+            val explizitEntfall = ENTFALL_PHRASEN.any { infoText.contains(it) } || hatStrich
+            val entfaelltFinal = if (istKlausur) explizitEntfall
+            else hatEntfallInfo || hatStrich || istAusfallFlag
 
             var fachGeaendert = fachEl.hatAttribut("FaAe")
             val raumGeaendertAttribut = raumEl.hatAttribut("RaAe")
@@ -174,8 +207,14 @@ object IndiwareXmlParser {
                 fachGeaendert = false
             }
 
-            val originalRoom = if (raumGeaendertAttribut) raumEl?.getAttribute("RaAe")?.trim()?.ifBlank { null } else null
-            val originalTeacher = if (lehrerGeaendert) lehrerEl?.getAttribute("LeAe")?.trim()?.ifBlank { null } else null
+            // Manche Pläne tragen statt des alten Raums/Lehrers nur einen Platzhalter
+            // ("RaGeaendert", "LeGeaendert") in RaAe/LeAe – der darf nicht angezeigt werden.
+            fun echterWert(text: String?): String? = text?.trim()?.takeIf {
+                it.isNotBlank() && !it.contains("geaendert", ignoreCase = true) &&
+                    !it.contains("geändert", ignoreCase = true)
+            }
+            val originalRoom = if (raumGeaendertAttribut) echterWert(raumEl?.getAttribute("RaAe")) else null
+            val originalTeacher = if (lehrerGeaendert) echterWert(lehrerEl?.getAttribute("LeAe")) else null
 
             // Priorität 3, 4 & 5: Status-Zuordnung und leeres Raumfeld-Schutz
             val raumGeaendert = raumGeaendertAttribut && raum.isNotBlank()
@@ -205,7 +244,8 @@ object IndiwareXmlParser {
                 status = status,
                 unterrichtsNr = nr.ifBlank { null },
                 kursKuerzel = nrZuKurs[nr],
-                klasse = name
+                klasse = name,
+                istKlausur = istKlausur
             )
         }.sortedBy { it.stunde }
 
@@ -268,11 +308,14 @@ object IndiwareXmlParser {
     private fun Element?.hatAttribut(attribut: String): Boolean =
         this != null && getAttribute(attribut).orEmpty().isNotBlank()
 
+    /** Einmal angelegt statt pro Stunde neu – bei einem ganzen Schulplan sind das tausende. */
+    private val UHRZEIT_FORMATE = listOf(DateTimeFormatter.ofPattern("H:mm"), DateTimeFormatter.ofPattern("HH:mm"))
+
     private fun parseUhrzeit(text: String): LocalTime? {
         if (text.isBlank()) return null
-        for (pattern in listOf("H:mm", "HH:mm")) {
+        for (format in UHRZEIT_FORMATE) {
             try {
-                return LocalTime.parse(text, DateTimeFormatter.ofPattern(pattern))
+                return LocalTime.parse(text, format)
             } catch (_: DateTimeParseException) {
                 // nächstes Format
             }

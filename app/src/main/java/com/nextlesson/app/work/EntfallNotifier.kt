@@ -26,6 +26,7 @@ object EntfallNotifier {
 
     private const val CHANNEL_ID = "entfall"
     private const val NOTIFICATION_ID_BASIS = 4200
+    private const val TEST_ID = 4199
     private val tagFormat = DateTimeFormatter.ofPattern("EEEE, dd.MM.", Locale.GERMAN)
 
     fun kanalAnlegen(context: Context) {
@@ -49,66 +50,115 @@ object EntfallNotifier {
     }
 
     /**
-     * @param datum Tag, auf den sich die Entfälle beziehen.
-     * @param neueEntfaelle nur die Stunden, die seit dem letzten Abruf neu ausgefallen sind.
+     * Meldet NEUEN Entfall eines Tages. Der Text listet aber ALLE aktuellen Ausfälle des Tages:
+     * Die Meldung eines Tages hat eine feste ID – vorher ersetzte ein zweiter Ausfall am selben
+     * Tag die erste Meldung, und der erste Ausfall war aus der Leiste verschwunden.
+     *
+     * @param alle alle aktuell ausfallenden Stunden des Tages (eigene Kurse).
+     * @param neu nur die seit dem letzten Abruf neu ausgefallenen – bestimmen Titel und Alarm.
      */
-    fun melden(context: Context, datum: LocalDate, neueEntfaelle: List<Lesson>) {
-        if (neueEntfaelle.isEmpty() || !darfBenachrichtigen(context)) return
+    fun melden(context: Context, datum: LocalDate, alle: List<Lesson>, neu: List<Lesson>) {
+        if (neu.isEmpty() || !darfBenachrichtigen(context)) return
+        zeigen(context, datum, alle, titel(datum, neu), leise = false)
+    }
 
+    /**
+     * Stand einer bereits sichtbaren Meldung nachziehen, ohne erneut zu klingeln: Wurde ein
+     * Ausfall zurückgenommen, verschwindet er aus dem Text – fällt nichts mehr aus, verschwindet
+     * die Meldung ganz. Sonst stünde dort weiter ein Ausfall, der gar nicht mehr gilt.
+     */
+    fun nachziehen(context: Context, datum: LocalDate, alle: List<Lesson>) {
+        val id = notificationId(datum)
+        val sichtbar = runCatching {
+            context.getSystemService(NotificationManager::class.java)
+                ?.activeNotifications?.any { it.id == id } == true
+        }.getOrDefault(false)
+        if (!sichtbar) return
+        if (alle.isEmpty()) {
+            NotificationManagerCompat.from(context).cancel(id)
+            return
+        }
+        if (!darfBenachrichtigen(context)) return
+        zeigen(context, datum, alle, titel(datum, alle), leise = true)
+    }
+
+    /** Probe-Meldung aus den Einstellungen – zeigt, ob Benachrichtigungen ankommen. */
+    fun testen(context: Context): Boolean {
+        if (!darfBenachrichtigen(context)) return false
         kanalAnlegen(context)
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_entfall)
+            .setContentTitle("Test: Benachrichtigungen funktionieren")
+            .setContentText("So sieht eine Meldung aus, wenn eine deiner Stunden ausfällt.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(oeffnenIntent(context))
+            .build()
+        return runCatching {
+            NotificationManagerCompat.from(context).notify(TEST_ID, notification)
+        }.isSuccess
+    }
 
+    private fun wann(datum: LocalDate): String {
         val heute = LocalDate.now()
-        val wann = when (datum) {
+        return when (datum) {
             heute -> "heute"
             heute.plusDays(1) -> "morgen"
             else -> datum.format(tagFormat)
         }
+    }
 
-        val titel = if (neueEntfaelle.size == 1) {
-            val l = neueEntfaelle.first()
-            // Beim Ausfall steht im Fach nur "---". Der Info-Text nennt den echten Kurs
-            // ("ENG2 Herr Niemietz fällt aus") und taugt deshalb weit besser als Titel.
-            when {
-                l.info.isNotBlank() -> "${wann.replaceFirstChar { it.uppercase() }}: ${l.info}"
-                l.fach.any { it.isLetterOrDigit() } -> "${l.fach} fällt $wann aus"
-                else -> "Unterricht fällt $wann aus"
-            }
-        } else {
-            "${neueEntfaelle.size} Stunden fallen $wann aus"
+    private fun titel(datum: LocalDate, stunden: List<Lesson>): String {
+        val wann = wann(datum)
+        if (stunden.size != 1) return "${stunden.size} Stunden fallen $wann aus"
+        val l = stunden.first()
+        // Beim Ausfall steht im Fach oft nur "---". Ein kurzer Info-Text nennt dann den echten
+        // Kurs ("ENG2 Herr Niemietz fällt aus"); lange Sammel-Hinweise taugen nicht als Titel.
+        return when {
+            l.fach.any { it.isLetterOrDigit() } -> "${l.fach} fällt $wann aus"
+            l.info.isNotBlank() && l.info.length <= 60 && ';' !in l.info ->
+                "${wann.replaceFirstChar { it.uppercase() }}: ${l.info}"
+            else -> "Unterricht fällt $wann aus"
         }
+    }
 
-        val text = neueEntfaelle.sortedBy { it.stunde }.joinToString(", ") { l ->
+    private fun zeigen(context: Context, datum: LocalDate, alle: List<Lesson>, titel: String, leise: Boolean) {
+        kanalAnlegen(context)
+        val text = alle.sortedBy { it.stunde }.joinToString("\n") { l ->
             buildString {
                 append("${l.stunde}. Std")
-                if (l.fach.isNotBlank()) append(" ${l.fach}")
-                if (l.info.isNotBlank()) append(" (${l.info})")
+                if (l.fach.any { it.isLetterOrDigit() }) append(" ${l.fach}")
+                if (l.info.isNotBlank()) append(" – ${l.info}")
             }
         }
-
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_entfall)
             .setContentTitle(titel)
-            .setContentText(text)
+            .setContentText(text.substringBefore('\n'))
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setOnlyAlertOnce(leise)
+            .setSilent(leise)
             .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(oeffnenIntent(context))
             .build()
 
         runCatching {
-            NotificationManagerCompat.from(context)
-                .notify(NOTIFICATION_ID_BASIS + datum.dayOfYear, notification)
+            NotificationManagerCompat.from(context).notify(notificationId(datum), notification)
         }
     }
+
+    private fun oeffnenIntent(context: Context): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        return PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+
+    private fun notificationId(datum: LocalDate) = NOTIFICATION_ID_BASIS + datum.dayOfYear
 }
