@@ -1,6 +1,7 @@
 package com.nextlesson.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,9 +28,51 @@ class AufgabenStore(context: Context) {
     private val _pruefungen = MutableStateFlow<List<Pruefung>>(emptyList())
     val pruefungen: StateFlow<List<Pruefung>> = _pruefungen.asStateFlow()
 
+    // Der Hintergrund-Worker schreibt Klausuren aus dem Plan direkt in die Ablage (eigene
+    // Store-Instanz). Dieser Listener holt sie in die laufende Anzeige. Als Feld gehalten,
+    // weil SharedPreferences Listener nur schwach referenziert.
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == KEY_PRUEFUNGEN) {
+            val neu = pruefungenLesen()
+            if (neu != _pruefungen.value) _pruefungen.value = neu
+        }
+    }
+
     init {
         _hausaufgaben.value = hausaufgabenLesen()
         _pruefungen.value = pruefungenLesen()
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+    }
+
+    // ---------- Klausuren aus dem Plan ----------
+
+    /**
+     * Gleicht die Klausuren aus dem Plan ab. [tage] enthält jeden Tag, der frisch geladen
+     * wurde – auch Tage OHNE Klausur, damit Klausuren, die aus dem Plan verschwunden sind
+     * (verschoben/abgesagt), wieder entfernt werden. Selbst angelegte Termine bleiben
+     * unberührt; vom Nutzer gelöschte Plan-Klausuren kommen nicht wieder.
+     */
+    @Synchronized
+    fun planKlausurenSynchronisieren(tage: Map<LocalDate, List<PlanKlausur>>) {
+        if (tage.isEmpty()) return
+        val geloescht = prefs.getStringSet(KEY_GELOESCHT, emptySet()).orEmpty()
+        val aktuell = pruefungenLesen()
+
+        val behalten = aktuell.filterNot { p ->
+            p.id.startsWith(PlanKlausur.PLAN_PREFIX) &&
+                tage.keys.any { p.id.startsWith("${PlanKlausur.PLAN_PREFIX}$it|") } &&
+                tage.values.flatten().none { it.id == p.id }
+        }
+        val vorhandeneIds = behalten.map { it.id }.toSet()
+        val neu = tage.values.flatten()
+            .filter { it.id !in geloescht && it.id !in vorhandeneIds }
+            .map { it.alsPruefung() }
+
+        val ergebnis = (behalten + neu).sortedBy { it.datumEpochDay }
+        if (ergebnis != aktuell) {
+            _pruefungen.value = ergebnis
+            pruefungenSchreiben()
+        }
     }
 
     // ---------- Hausaufgaben ----------
@@ -125,6 +168,20 @@ class AufgabenStore(context: Context) {
     fun pruefungLoeschen(id: String) {
         _pruefungen.value = _pruefungen.value.filterNot { it.id == id }
         pruefungenSchreiben()
+        if (id.startsWith(PlanKlausur.PLAN_PREFIX)) {
+            // Sonst würde die nächste Plan-Abfrage die Klausur sofort wieder anlegen.
+            val heute = LocalDate.now()
+            val geloescht = prefs.getStringSet(KEY_GELOESCHT, emptySet()).orEmpty()
+                .filter { istNochRelevant(it, heute) } + id
+            prefs.edit().putStringSet(KEY_GELOESCHT, geloescht.toSet()).apply()
+        }
+    }
+
+    /** Merk-Einträge zu längst vergangenen Tagen brauchen wir nicht mehr. */
+    private fun istNochRelevant(id: String, heute: LocalDate): Boolean {
+        val datum = id.removePrefix(PlanKlausur.PLAN_PREFIX).substringBefore('|')
+        return runCatching { !LocalDate.parse(datum).isBefore(heute.minusDays(AUFBEWAHRUNG_TAGE)) }
+            .getOrDefault(false)
     }
 
     fun kommendePruefungen(heute: LocalDate = LocalDate.now()): List<Pruefung> =
@@ -223,6 +280,7 @@ class AufgabenStore(context: Context) {
     companion object {
         private const val KEY_HAUSAUFGABEN = "hausaufgaben_json"
         private const val KEY_PRUEFUNGEN = "pruefungen_json"
+        private const val KEY_GELOESCHT = "plan_klausuren_geloescht"
 
         /** So lange bleiben vergangene Prüfungen noch sichtbar, bevor sie verschwinden. */
         private const val AUFBEWAHRUNG_TAGE = 7L

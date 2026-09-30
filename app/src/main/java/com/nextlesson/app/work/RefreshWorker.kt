@@ -3,7 +3,9 @@ package com.nextlesson.app.work
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.nextlesson.app.data.AufgabenStore
 import com.nextlesson.app.data.CredentialsStore
+import com.nextlesson.app.data.PlanKlausur
 import com.nextlesson.app.data.EntfallTracker
 import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.data.KursSelectionStore
@@ -78,6 +80,7 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         var anzeigePlan: TagesPlan? = null
         var anzeigeGeprueftUm: Long = System.currentTimeMillis()
         var naechsteGrenzzeitMillis: Long = Long.MAX_VALUE
+        val klausurenProTag = HashMap<LocalDate, List<PlanKlausur>>()
 
         tage.forEach { (datum, ergebnis) ->
             val success = ergebnis as? PlanResult.Success ?: return@forEach
@@ -90,6 +93,9 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
             if (success.aus == Quelle.NETZ) {
                 val neu = entfallTracker.neueEntfaelle(datum, plan.stunden)
                 if (neu.isNotEmpty()) EntfallNotifier.melden(applicationContext, datum, neu)
+
+                // Klausuren aus dem Plan (nur eigene Kurse, da der Plan schon gefiltert ist).
+                klausurenProTag[datum] = PlanKlausur.ausStunden(datum, plan.stunden)
             }
 
             // 2. Erste passende Stunde für das Widget suchen.
@@ -124,6 +130,8 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
                 }
             }
         }
+
+        AufgabenStore(applicationContext).planKlausurenSynchronisieren(klausurenProTag)
 
         val treffer = anzeige
         if (treffer == null) {

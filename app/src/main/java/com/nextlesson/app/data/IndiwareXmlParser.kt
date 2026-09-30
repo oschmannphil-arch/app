@@ -56,6 +56,9 @@ object IndiwareXmlParser {
             """stillarbeit|freiarbeit|lernzeit)|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
     )
 
+    /** Hinweise auf eine Klausur im Infotext der Stunde. */
+    private val KLAUSUR_WOERTER = Regex("klausur|klassenarbeit")
+
     /** Eindeutige Wendungen – hier reicht ein Teilstring. */
     private val ENTFALL_PHRASEN = listOf(
         "entfällt", "entfaellt", "fällt aus", "faellt aus", "ausfall", "absage", "abgesagt",
@@ -177,7 +180,13 @@ object IndiwareXmlParser {
                                  (std.getAttribute("Ae") == "1" && (fach.isBlank() || nurStriche)) ||
                                  fach.isBlank()
 
-            val entfaelltFinal = hatEntfallInfo || hatStrich || istAusfallFlag
+            // Klausuren stehen im Plan als Hinweistext ("Klausur"). Sie sind Präsenz-Termine und
+            // dürfen nicht wegen Wörtern wie "Aufgaben" als Ausfall gelten – nur bei
+            // ausdrücklichem Entfall ("Klausur entfällt").
+            val istKlausur = KLAUSUR_WOERTER.containsMatchIn(gesamtText)
+            val explizitEntfall = ENTFALL_PHRASEN.any { infoText.contains(it) } || hatStrich
+            val entfaelltFinal = if (istKlausur) explizitEntfall
+            else hatEntfallInfo || hatStrich || istAusfallFlag
 
             var fachGeaendert = fachEl.hatAttribut("FaAe")
             val raumGeaendertAttribut = raumEl.hatAttribut("RaAe")
@@ -224,7 +233,8 @@ object IndiwareXmlParser {
                 status = status,
                 unterrichtsNr = nr.ifBlank { null },
                 kursKuerzel = nrZuKurs[nr],
-                klasse = name
+                klasse = name,
+                istKlausur = istKlausur
             )
         }.sortedBy { it.stunde }
 

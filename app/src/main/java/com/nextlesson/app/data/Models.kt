@@ -34,7 +34,9 @@ data class Lesson(
     /** Kurskürzel, aufgelöst über <Nr> → <UeNr UeGr="…">. Null = gemeinsamer Klassenunterricht. */
     val kursKuerzel: String? = null,
     /** Klasse/Jahrgang, aus dessen Block diese Stunde stammt. */
-    val klasse: String = ""
+    val klasse: String = "",
+    /** Der Plan weist diese Stunde als Klausur/Klassenarbeit aus. */
+    val istKlausur: Boolean = false
 ) {
     val hatAenderung: Boolean
         get() = status != LessonStatus.NORMAL || fachGeaendert || info.isNotBlank()

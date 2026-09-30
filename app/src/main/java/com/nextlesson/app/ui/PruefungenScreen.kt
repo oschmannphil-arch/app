@@ -104,7 +104,7 @@ fun PruefungenScreen(
             }
 
             if (pruefungen.isEmpty()) {
-                item { LeerHinweis("Noch keine Tests oder Klausuren eingetragen. Unten rechts hinzufügen.") }
+                item { LeerHinweis("Noch keine Klausuren. Klausuren deiner Kurse erscheinen hier automatisch, sobald sie im Plan stehen. Eigene Tests kannst du unten rechts hinzufügen.") }
             }
 
             items(kommend, key = { it.id }) { pruefung ->

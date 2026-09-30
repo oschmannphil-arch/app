@@ -659,6 +659,14 @@ private fun StundenZeile(
 
         // Raum bzw. Statusetikett
         Column(horizontalAlignment = Alignment.End) {
+            if (lesson.istKlausur && !istEntfall) {
+                StatusBadge(
+                    text = "Klausur",
+                    hintergrund = MaterialTheme.colorScheme.error,
+                    vordergrund = MaterialTheme.colorScheme.onError
+                )
+                Spacer(Modifier.height(2.dp))
+            }
             if (lesson.hatAufgaben) {
                 StatusBadge(
                     text = "Aufgaben erteilt",
