@@ -136,7 +136,7 @@ data class GesamtPlan(
                 }
         }
 
-        val stunden = betroffene.flatMap { kp ->
+        val rohStunden = betroffene.flatMap { kp ->
             val alles = ganzeKlasseGewaehlt(kp.klasse)
             kp.stunden.mapNotNull { l ->
                 val kurs = kursVon(kp, l)
@@ -158,6 +158,33 @@ data class GesamtPlan(
         }
         val hinweise = kopf.zusatzInfo.filter { zeile ->
             alleGewaehlt || nennt(zeile, eigeneKuerzel) || !nennt(zeile, alleKuerzel)
+        }
+
+        // Klausurtage: Die Schule schreibt "Klausur!" und listet die ausfallenden Kurse
+        // einzeln auf ("BIO3 Herr X fällt aus"). Die Kurse, die im Plan als ausgefallen
+        // erscheinen, aber NICHT als Ausfall genannt werden, schreiben die Klausur.
+        // Das gilt nur für Kurse desselben Fachs wie die genannten (DEU1 neben DEU3/DEU4),
+        // damit ein anderes, wirklich ausgefallenes Fach nicht zur Klausur wird.
+        val segmente = kopf.zusatzInfo.flatMap { it.split(';') }.map { it.trim() }.filter { it.isNotBlank() }
+        fun istAusfallText(s: String) = listOf("fällt aus", "faellt aus", "entfällt", "entfaellt")
+            .any { s.contains(it, ignoreCase = true) }
+        val klausurSegmente = segmente.filter {
+            it.contains("klausur", ignoreCase = true) || it.contains("klassenarbeit", ignoreCase = true)
+        }
+        val ausfallSegmente = segmente.filter { it !in klausurSegmente && istAusfallText(it) }
+        fun praefix(kuerzel: String) = kuerzel.takeWhile { it.isLetter() }.lowercase()
+        val genannteFaecher = alleKuerzel
+            .filter { k -> (ausfallSegmente + klausurSegmente).any { nennt(it, listOf(k)) } }
+            .map { praefix(it) }.toSet()
+
+        val stunden = if (klausurSegmente.isEmpty()) rohStunden else rohStunden.map { l ->
+            val kurs = l.kursKuerzel
+            if (!l.entfaellt || kurs == null || istAusfallText(l.info)) return@map l
+            val ausdruecklich = klausurSegmente.any { nennt(it, listOf(kurs)) }
+            val alsAusfallGenannt = ausfallSegmente.any { nennt(it, listOf(kurs)) }
+            if (ausdruecklich || (!alsAusfallGenannt && praefix(kurs) in genannteFaecher)) {
+                l.copy(entfaellt = false, status = LessonStatus.NORMAL, istKlausur = true)
+            } else l
         }
 
         return TagesPlan(
