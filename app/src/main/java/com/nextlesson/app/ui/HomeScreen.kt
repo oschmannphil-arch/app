@@ -141,7 +141,7 @@ fun HomeScreen(
     onOeffneAufgaben: () -> Unit,
     onOeffnePruefungen: () -> Unit
 ) {
-    val jetzt by rememberJetzt()
+    val jetzt by rememberJetzt(aktualisiertGerade)
     val plan = persoenlich.plan
     // Heute wird "nächste Stunde" mit der tickenden Uhr neu bestimmt. Sonst bliebe bei
     // geöffneter App die beim Laden ermittelte Stunde stehen, obwohl sie längst vorbei ist.

@@ -13,6 +13,8 @@ class NextLessonWidgetReceiver : GlanceAppWidgetReceiver() {
          * gespeicherten Daten aus [com.nextlesson.app.data.WidgetDataStore]. */
         suspend fun alleWidgetsAktualisieren(context: Context) {
             NextLessonWidget().updateAll(context)
+            // Countdown weiter am Laufen halten (nächste volle Minute).
+            WidgetTicker.planen(context)
         }
     }
 }

@@ -11,12 +11,16 @@ android {
         applicationId = "com.nextlesson.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // Jeder CI-Lauf zählt hoch, damit Updates immer als neuere Version gelten.
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
     }
 
     buildTypes {
         release {
+            // Kein Schlüssel im Repo: Die Release-APK wird mit dem Standard-Debug-Schlüssel des
+            // Rechners signiert, damit sie installierbar ist (Sideloading, kein Play Store).
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

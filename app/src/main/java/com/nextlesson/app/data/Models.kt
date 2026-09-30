@@ -90,6 +90,12 @@ data class KlassenPlan(
     val kurse: List<KursInfo>
 )
 
+/** Ganze Wörter (Buchstaben/Ziffern) – dient dem Erkennen von Kurskürzeln in Hinweistexten. */
+private val WORT = Regex("[\\p{L}\\p{N}]+")
+
+/** Sieht aus wie ein Kurskürzel ("DEU3", "MAT2"), auch wenn es in keiner Kursliste steht. */
+private val KURS_MUSTER = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
+
 /** Alles, was in einer PlanKl-Datei steht – alle Klassen der Schule für diesen Tag. */
 data class GesamtPlan(
     val kopf: PlanKopf,
@@ -118,11 +124,14 @@ data class GesamtPlan(
          * Ohne diesen Rückgriff gälte die Stunde als "Klassenunterricht" und würde für
          * ALLE Kurse angezeigt (DEU1 bis DEU4 gleichzeitig).
          */
+        val kuerzelProKlasse = HashMap<String, List<String>>()
         fun kursVon(kp: KlassenPlan, l: Lesson): String? {
             l.kursKuerzel?.takeIf { it.isNotBlank() }?.let { return it }
             val fach = l.fach.trim()
             if (fach.isBlank()) return null
-            val kuerzel = kp.kurse.filterNot { it.istGanzeKlasse }.map { it.kuerzel }
+            val kuerzel = kuerzelProKlasse.getOrPut(kp.klasse) {
+                kp.kurse.filterNot { it.istGanzeKlasse }.map { it.kuerzel }
+            }
             kuerzel.firstOrNull { it == fach }?.let { return it }
             return kuerzel.filter { it.equals(fach, ignoreCase = true) }.singleOrNull()
         }
@@ -153,9 +162,10 @@ data class GesamtPlan(
         val eigeneKuerzel = gewaehlteKursIds.map { it.substringAfter("::") }
             .filter { it != KursInfo.GANZE_KLASSE }.toSet()
         val alleGewaehlt = betroffene.any { ganzeKlasseGewaehlt(it.klasse) }
-        fun nennt(zeile: String, kuerzel: Collection<String>) = kuerzel.any {
-            Regex("(?<![\\p{L}\\p{N}])${Regex.escape(it)}(?![\\p{L}\\p{N}])").containsMatchIn(zeile)
-        }
+        // Ganze Wörter einer Zeile als Menge: ein Regex-Durchlauf je Zeile statt eines neu
+        // kompilierten Musters je Kürzel (bei einem Schulplan sonst tausende pro Tag).
+        fun nennt(zeile: String, kuerzel: Set<String>): Boolean =
+            WORT.findAll(zeile).any { it.value in kuerzel }
         val hinweise = kopf.zusatzInfo.filter { zeile ->
             alleGewaehlt || nennt(zeile, eigeneKuerzel) || !nennt(zeile, alleKuerzel)
         }
@@ -176,21 +186,20 @@ data class GesamtPlan(
         }
         val ausfallSegmente = segmente.filter { it !in klausurSegmente && istAusfallText(it) }
         fun praefix(kuerzel: String) = kuerzel.takeWhile { it.isLetter() }.lowercase()
-        val genannteFaecher = alleKuerzel
-            .filter { k -> (ausfallSegmente + klausurSegmente).any { nennt(it, listOf(k)) } }
-            .map { praefix(it) }.toSet()
-
+        val klausurWoerter = klausurSegmente.flatMapTo(HashSet()) { s -> WORT.findAll(s).map { it.value }.toList() }
+        val ausfallWoerter = ausfallSegmente.flatMapTo(HashSet()) { s -> WORT.findAll(s).map { it.value }.toList() }
+        val genannteFaecher = if (klausurSegmente.isEmpty()) emptySet() else
+            alleKuerzel.filter { it in klausurWoerter || it in ausfallWoerter }.map { praefix(it) }.toSet()
         val stunden = if (klausurSegmente.isEmpty()) rohStunden else rohStunden.map { l ->
             val kurs = l.kursKuerzel
             if (kurs == null || !(l.entfaellt || l.istKlausur)) return@map l
             // Sagt die Stunde selbst "… fällt aus", ohne einen anderen Kurs zu nennen, bleibt es Ausfall.
-            val kursMuster = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
             val eigenerAusfall = l.info.split(';').map { it.trim() }.any {
-                istAusfallText(it) && !nennt(it, alleKuerzel) && !kursMuster.containsMatchIn(it)
+                istAusfallText(it) && !nennt(it, alleKuerzel) && !KURS_MUSTER.containsMatchIn(it)
             }
             if (eigenerAusfall) return@map l
-            val ausdruecklich = klausurSegmente.any { nennt(it, listOf(kurs)) }
-            val alsAusfallGenannt = ausfallSegmente.any { nennt(it, listOf(kurs)) }
+            val ausdruecklich = kurs in klausurWoerter
+            val alsAusfallGenannt = kurs in ausfallWoerter
             if (ausdruecklich || (!alsAusfallGenannt && praefix(kurs) in genannteFaecher)) {
                 l.copy(entfaellt = false, status = LessonStatus.NORMAL, istKlausur = true)
             } else if (l.istKlausur && l.entfaellt) {

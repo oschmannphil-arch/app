@@ -108,12 +108,13 @@ class WidgetDataStore(context: Context) {
         fun countdown(jetztMillis: Long = System.currentTimeMillis()): String? {
             if (beginnMillis <= 0L) return null
             if (endeMillis > 0L && jetztMillis in beginnMillis until endeMillis) {
-                val restMin = (endeMillis - jetztMillis) / 60_000
+                // Aufgerundet, damit Widget und App dieselbe Minute zeigen.
+                val restMin = (endeMillis - jetztMillis + 59_999) / 60_000
                 return if (restMin <= 0) "endet gleich" else "noch ${dauer(restMin)}"
             }
-            val bisMin = (beginnMillis - jetztMillis) / 60_000
+            if (beginnMillis < jetztMillis) return null
+            val bisMin = (beginnMillis - jetztMillis + 59_999) / 60_000
             return when {
-                bisMin < 0 -> null
                 bisMin == 0L -> "jetzt"
                 bisMin > 600 -> null
                 else -> "in ${dauer(bisMin)}"

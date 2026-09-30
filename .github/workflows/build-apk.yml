@@ -39,11 +39,13 @@ jobs:
           name: testbericht
           path: app/build/reports/tests/testDebugUnitTest
 
-      - name: Debug-APK bauen
-        run: gradle :app:assembleDebug --no-daemon
+      # Release statt Debug: Debug-Builds sind bei Compose deutlich langsamer (kein Optimieren,
+      # zusätzliche Prüfungen). Für den Alltag immer die Release-APK nehmen.
+      - name: Release-APK bauen
+        run: gradle :app:assembleRelease --no-daemon
 
       - name: APK umbenennen
-        run: cp app/build/outputs/apk/debug/app-debug.apk NaechsteStunde.apk
+        run: cp app/build/outputs/apk/release/app-release.apk NaechsteStunde.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -58,5 +60,5 @@ jobs:
           prerelease: true
           files: NaechsteStunde.apk
           body: |
-            Debug-APK zum direkten Installieren am Handy.
+            Release-APK zum direkten Installieren am Handy.
             Commit: ${{ github.sha }}

@@ -79,7 +79,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         planViewModel.ladeGespeichertUndAktualisiere()
-        RefreshScheduler.sofortAktualisieren(applicationContext)
+        // Erst nach ein paar Sekunden: Der Worker lädt sieben Tage und würde sonst Netz und
+        // CPU mit dem Laden der sichtbaren Seite teilen – die App wirkte dadurch langsam.
+        RefreshScheduler.sofortAktualisieren(applicationContext, verzoegerungSekunden = 5)
     }
 
     private fun benachrichtigungErlaubnisAnfragen() {

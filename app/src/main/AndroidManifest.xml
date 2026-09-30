@@ -35,6 +35,10 @@
                 android:resource="@xml/next_lesson_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.WidgetTickReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>
