@@ -43,17 +43,23 @@ object IndiwareXmlParser {
     private val KLASSE_TAGS = setOf("Kl", "Klasse")
 
     /**
-     * Stichwörter für Entfall. "selbst…" (Selbstbeschäftigung, Selbstlernzeit …) und
-     * "eigenv…" (eigenverantwortlich) zählen am Wortanfang, "eva" und "frei" nur als
-     * ganzes Wort – sonst träfen sie "Freitag", "Evangelisch" oder Namen wie "Evers".
+     * Als "Ausfall" gilt alles, was kein Unterricht mit Lehrkraft vor Ort ist: Entfall,
+     * Selbstbeschäftigung/EVA, Aufgaben (auch über Moodle), Distanz-/Online-Unterricht.
+     *
+     * Stichwörter am Wortanfang ("selbst…", "aufgab…", "moodle" …) greifen auch bei
+     * Zusammensetzungen wie "Selbstbeschäftigung". "eva" und "frei" nur als ganzes Wort –
+     * sonst träfen sie "Freitag", "Evangelisch" oder Namen wie "Evers". "Hausaufgaben"
+     * zählt nicht, weil "aufgab" nur am Wortanfang gesucht wird.
      */
     private val ENTFALL_WOERTER = Regex(
-        """(?<![\p{L}\p{N}])(selbst|eigenv)|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
+        """(?<![\p{L}\p{N}])(selbst|eigenv|aufgab|moodle|online|distanz|zuhause|homeoffice|""" +
+            """stillarbeit|freiarbeit|lernzeit)|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
     )
 
     /** Eindeutige Wendungen – hier reicht ein Teilstring. */
     private val ENTFALL_PHRASEN = listOf(
-        "entfällt", "entfaellt", "fällt aus", "faellt aus", "ausfall", "absage", "abgesagt"
+        "entfällt", "entfaellt", "fällt aus", "faellt aus", "ausfall", "absage", "abgesagt",
+        "zu hause"
     )
 
     fun parse(input: InputStream, schulnummerFallback: String): GesamtPlan? {
