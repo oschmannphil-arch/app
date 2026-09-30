@@ -49,6 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.ui.theme.NaechsteStundeTheme
@@ -59,6 +61,7 @@ import com.nextlesson.app.work.RefreshScheduler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
 
@@ -143,7 +146,8 @@ private fun AppInhalt(
     var zeigeEinstellungen by rememberSaveable { mutableStateOf(false) }
     var zeigeKurse by rememberSaveable { mutableStateOf(false) }
     var freundAnsicht by rememberSaveable { mutableStateOf<String?>(null) }
-    var freundEntwurf by remember { mutableStateOf<FreundEntwurf?>(null) }
+    // ID des Freundes, der gerade angelegt/bearbeitet wird – als ID, damit sie saveable ist.
+    var entwurfId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Hausaufgabe direkt aus einer angetippten Stunde: Stunde + Tag, an dem sie stattfindet.
     var aufgabeAusStunde by remember { mutableStateOf<Pair<Lesson, LocalDate>?>(null) }
@@ -169,6 +173,10 @@ private fun AppInhalt(
     LaunchedEffect(tab) {
         if (tab == Tab.SUCHE) sucheViewModel.oeffnen()
     }
+    // Auch bei der Rückkehr in die App (z.B. am nächsten Morgen) nicht den alten Stand zeigen.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (tab == Tab.SUCHE) sucheViewModel.oeffnen()
+    }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -181,7 +189,11 @@ private fun AppInhalt(
     // Einrichtung geht immer vor: erst Zugang, dann Kurse.
     val brauchtZugang = zustand is UiZustand.LoginNoetig
     val brauchtKurse = zustand is UiZustand.KurseWaehlen
-    val entwurf = freundEntwurf
+    // Unbekannte ID = neuer Freund, der noch nicht gespeichert ist.
+    val entwurf = entwurfId?.let { id ->
+        freunde.firstOrNull { it.id == id }?.let { FreundEntwurf(it, neu = false) }
+            ?: FreundEntwurf(Freund(id = id, name = "", kurse = emptySet()), neu = true)
+    }
     // Gelöschter Freund → Ansicht schließt sich von selbst.
     val angezeigterFreund = freundAnsicht?.let { id -> freunde.firstOrNull { it.id == id } }
     // Überlagernde Ansichten verdecken die Reiter und lassen sich mit "Zurück" schließen.
@@ -191,7 +203,7 @@ private fun AppInhalt(
     // Die Zurück-Taste schloss vorher die ganze App, auch aus den Einstellungen heraus.
     fun zurueck() {
         when {
-            freundEntwurf != null -> freundEntwurf = null
+            entwurfId != null -> entwurfId = null
             zeigeKurse -> zeigeKurse = false
             zeigeEinstellungen -> zeigeEinstellungen = false
             freundAnsicht != null -> freundAnsicht = null
@@ -308,13 +320,13 @@ private fun AppInhalt(
                             verfuegbareKurse = verfuegbareKurse,
                             onSpeichern = { f ->
                                 freundeViewModel.speichern(f)
-                                freundEntwurf = null
+                                entwurfId = null
                             },
                             onLoeschen = {
                                 freundeViewModel.loeschen(entwurf.freund.id)
-                                freundEntwurf = null
+                                entwurfId = null
                             },
-                            onAbbrechen = { freundEntwurf = null }
+                            onAbbrechen = { entwurfId = null }
                         )
                     }
                 }
@@ -343,13 +355,7 @@ private fun AppInhalt(
                             zeigeKurse = true
                         },
                         freunde = freunde,
-                        onFreundBearbeiten = { f ->
-                            freundEntwurf = if (f == null) {
-                                FreundEntwurf(Freund(name = "", kurse = emptySet()), neu = true)
-                            } else {
-                                FreundEntwurf(f, neu = false)
-                            }
-                        }
+                        onFreundBearbeiten = { f -> entwurfId = f?.id ?: UUID.randomUUID().toString() }
                     )
                 }
 
@@ -384,7 +390,7 @@ private fun AppInhalt(
                         FreundTagScreen(
                             freund = angezeigterFreund,
                             persoenlich = angezeigt.plan,
-                            onBearbeiten = { freundEntwurf = FreundEntwurf(angezeigterFreund, neu = false) }
+                            onBearbeiten = { entwurfId = angezeigterFreund.id }
                         )
                     } else {
                         LadeScreen()

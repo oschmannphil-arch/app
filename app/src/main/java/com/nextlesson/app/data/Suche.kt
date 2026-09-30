@@ -7,8 +7,11 @@ import java.time.LocalTime
 /** Eine Unterrichtsstunde im Zeitraster der Schule. */
 data class Zeitfenster(val stunde: Int, val beginn: LocalTime?, val ende: LocalTime?)
 
-/** Suchergebnis: ein Lehrer (Kürzel wie im Plan) oder ein Raum. */
-sealed class Treffer {
+/**
+ * Suchergebnis: ein Lehrer (Kürzel wie im Plan) oder ein Raum. Serializable, damit die
+ * gewählte Detailansicht das Drehen des Handys übersteht.
+ */
+sealed class Treffer : java.io.Serializable {
     abstract val name: String
 
     data class Lehrer(override val name: String) : Treffer()

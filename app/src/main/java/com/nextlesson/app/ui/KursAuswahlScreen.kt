@@ -19,12 +19,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.KursInfo
+
+/** Angekreuzte Kurse für rememberSaveable – so übersteht die Auswahl das Drehen des Handys. */
+internal val KursAuswahlSaver = Saver<Set<String>, ArrayList<String>>(
+    save = { ArrayList(it) },
+    restore = { it.toSet() }
+)
 
 /**
  * Der einzige Einrichtungsschritt nach dem Login: der Schüler kreuzt seine Kurse an.
@@ -37,7 +45,7 @@ fun KursAuswahlScreen(
     onSpeichern: (Set<String>) -> Unit,
     onAbbrechen: (() -> Unit)? = null
 ) {
-    var auswahl by remember { mutableStateOf(gewaehlteKurse) }
+    var auswahl by rememberSaveable(stateSaver = KursAuswahlSaver) { mutableStateOf(gewaehlteKurse) }
 
     Column(
         modifier = Modifier
@@ -92,7 +100,7 @@ fun KursListe(
     onAuswahl: (Set<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var suche by remember { mutableStateOf("") }
+    var suche by rememberSaveable { mutableStateOf("") }
 
     val gefiltert = remember(suche, verfuegbareKurse) {
         val q = suche.trim().lowercase()

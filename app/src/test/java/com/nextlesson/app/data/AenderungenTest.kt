@@ -54,6 +54,17 @@ class AenderungenTest {
     }
 
     @Test
+    fun platzhalterSindKeineAenderung() {
+        val a = Aenderung.von(
+            listOf(
+                stunde(1, lehrer = "---", lehrerGeaendert = true),
+                stunde(2, raum = "---", raumGeaendert = true)
+            )
+        )
+        assertTrue(a.isEmpty())
+    }
+
+    @Test
     fun ersterAbrufMeldetNichts() {
         val aktuell = Aenderung.von(listOf(stunde(1, entfaellt = true)))
         assertTrue(Aenderung.neue(null, aktuell).isEmpty())

@@ -174,8 +174,10 @@ fun FreundBearbeitenScreen(
     onLoeschen: () -> Unit,
     onAbbrechen: () -> Unit
 ) {
+    // Saveable: Beim Drehen des Handys (oder Wechsel zu WhatsApp, um nach den Kursen zu
+    // fragen) gehen Name und angekreuzte Kurse nicht verloren.
     var name by rememberSaveable(freund.id) { mutableStateOf(freund.name) }
-    var auswahl by remember(freund.id) { mutableStateOf(freund.kurse) }
+    var auswahl by rememberSaveable(freund.id, stateSaver = KursAuswahlSaver) { mutableStateOf(freund.kurse) }
 
     Column(
         modifier = Modifier

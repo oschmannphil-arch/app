@@ -76,7 +76,7 @@ fun SucheScreen(
     onNeuLaden: () -> Unit
 ) {
     var anfrage by rememberSaveable { mutableStateOf("") }
-    var auswahl by remember { mutableStateOf<Treffer?>(null) }
+    var auswahl by rememberSaveable { mutableStateOf<Treffer?>(null) }
     val jetzt by rememberJetzt()
     val istHeute = datum == LocalDate.now()
     val fokus = LocalFocusManager.current
@@ -180,7 +180,7 @@ private fun Startansicht(
     ausCache: Boolean,
     onWahl: (Treffer) -> Unit
 ) {
-    val frei = if (istHeute) tag.freieRaeume(jetzt) else null
+    val frei = remember(tag, istHeute, jetzt) { if (istHeute) tag.freieRaeume(jetzt) else null }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()

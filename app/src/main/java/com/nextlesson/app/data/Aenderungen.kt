@@ -44,6 +44,7 @@ data class Aenderung(val lesson: Lesson, val art: AenderungsArt) {
         /**
          * Alle aktuellen Änderungen eines Tages. Bei einer Klausur ist ein anderer Lehrer nur
          * die Aufsicht und keine Vertretung – ein anderer Raum zählt aber sehr wohl.
+         * Platzhalter wie "---" sind kein neuer Lehrer bzw. Raum ("Vertretung bei ---").
          */
         fun von(stunden: List<Lesson>): List<Aenderung> = stunden.flatMap { l ->
             if (l.entfaellt) {
@@ -51,12 +52,14 @@ data class Aenderung(val lesson: Lesson, val art: AenderungsArt) {
             } else {
                 listOfNotNull(
                     Aenderung(l, AenderungsArt.VERTRETUNG)
-                        .takeIf { l.lehrerGeaendert && !l.istKlausur && l.lehrer.isNotBlank() },
+                        .takeIf { l.lehrerGeaendert && !l.istKlausur && hatInhalt(l.lehrer) },
                     Aenderung(l, AenderungsArt.RAUM)
-                        .takeIf { l.raumGeaendert && l.raum.isNotBlank() }
+                        .takeIf { l.raumGeaendert && hatInhalt(l.raum) }
                 )
             }
         }
+
+        private fun hatInhalt(s: String) = s.any { it.isLetterOrDigit() }
 
         /**
          * Die Änderungen aus [aktuell], die im gespeicherten Stand [bekannt] noch fehlen.
