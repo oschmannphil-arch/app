@@ -112,6 +112,7 @@ private fun AppInhalt(
     val erinnerung by aufgabenViewModel.erinnerung.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
     val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
+    val verfuegbareKurse by planViewModel.verfuegbareKurse.collectAsState()
     val uebersicht = remember(hausaufgaben, pruefungen) {
         Uebersicht.berechne(hausaufgaben, pruefungen)
     }
@@ -215,7 +216,8 @@ private fun AppInhalt(
                 // 1. Zugangsdaten und Einstellungen
                 brauchtZugang || zeigeEinstellungen -> {
                     EinstellungenScreen(
-                        credentials = planViewModel.aktuelleCredentials(),
+                        // Einmal beim Öffnen entschlüsseln, nicht bei jedem Neuzeichnen.
+                        credentials = remember { planViewModel.aktuelleCredentials() },
                         erinnerung = erinnerung,
                         grosserText = grosserText,
                         onZugangSpeichern = { creds ->
@@ -238,12 +240,28 @@ private fun AppInhalt(
                 }
 
                 // 2. Kurse wählen
+                // "Kurse ändern", aber noch kein Plan geladen: erst laden statt eine leere
+                // Liste mit der irreführenden Meldung "keine Kurse hinterlegt" zu zeigen.
+                zeigeKurse && !brauchtKurse && verfuegbareKurse.isEmpty() -> {
+                    LaunchedEffect(Unit) { planViewModel.aktualisieren() }
+                    if (aktualisiertGerade) {
+                        LadeScreen()
+                    } else {
+                        FehlerScreen(
+                            nachricht = "Die Kursliste konnte nicht geladen werden.",
+                            zugangsproblem = false,
+                            onErneutVersuchen = { planViewModel.aktualisieren() },
+                            onEinstellungen = {}
+                        )
+                    }
+                }
+
                 brauchtKurse || zeigeKurse -> {
                     KursAuswahlScreen(
                         verfuegbareKurse = if (brauchtKurse) {
                             (zustand as UiZustand.KurseWaehlen).kurse
                         } else {
-                            planViewModel.verfuegbareKurse()
+                            verfuegbareKurse
                         },
                         gewaehlteKurse = planViewModel.aktuelleKursAuswahl(),
                         onSpeichern = { kurse ->

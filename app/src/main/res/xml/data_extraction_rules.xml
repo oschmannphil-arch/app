@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ überträgt App-Daten beim Geräteumzug auch bei allowBackup="false".
+  Die verschlüsselten Zugangsdaten sind ohne den (nicht übertragbaren) Keystore-Schlüssel
+  wertlos und lösten auf dem neuen Gerät Fehler aus – daher ausgeschlossen.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="indiware_credentials.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="indiware_credentials.xml" />
+    </device-transfer>
+</data-extraction-rules>

@@ -110,7 +110,7 @@ class NextLessonWidget : GlanceAppWidget() {
                     )
                 }
 
-                else -> Stunde(inhalt, kompakt, niedrig, alarm, ::scaled)
+                else -> Stunde(inhalt, kompakt, niedrig, ::scaled)
             }
 
             // Die Prüfzeit ist Beiwerk – auf kleinen Widgets fehlt dafür schlicht der Platz.
@@ -190,7 +190,6 @@ class NextLessonWidget : GlanceAppWidget() {
         inhalt: WidgetDataStore.WidgetInhalt,
         kompakt: Boolean,
         niedrig: Boolean,
-        alarm: Boolean,
         scaled: (Int) -> TextUnit
     ) {
         Spacer(GlanceModifier.height(if (kompakt) 3.dp else 6.dp))

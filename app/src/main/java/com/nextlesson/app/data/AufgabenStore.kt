@@ -52,27 +52,34 @@ class AufgabenStore(context: Context) {
      * (verschoben/abgesagt), wieder entfernt werden. Selbst angelegte Termine bleiben
      * unberührt; vom Nutzer gelöschte Plan-Klausuren kommen nicht wieder.
      */
-    @Synchronized
     fun planKlausurenSynchronisieren(tage: Map<LocalDate, List<PlanKlausur>>) {
         if (tage.isEmpty()) return
-        val geloescht = prefs.getStringSet(KEY_GELOESCHT, emptySet()).orEmpty()
+        pruefungenAendern { aktuell ->
+            val geloescht = prefs.getStringSet(KEY_GELOESCHT, emptySet()).orEmpty()
+            val behalten = aktuell.filterNot { p ->
+                p.id.startsWith(PlanKlausur.PLAN_PREFIX) &&
+                    tage.keys.any { p.id.startsWith("${PlanKlausur.PLAN_PREFIX}$it|") } &&
+                    tage.values.flatten().none { it.id == p.id }
+            }
+            val vorhandeneIds = behalten.map { it.id }.toSet()
+            val neu = tage.values.flatten()
+                .filter { it.id !in geloescht && it.id !in vorhandeneIds }
+                .map { it.alsPruefung() }
+            behalten + neu
+        }
+    }
+
+    /**
+     * Jede Änderung an den Prüfungen geht hier durch: frisch aus der Ablage lesen, ändern,
+     * schreiben – unter einer Sperre für alle Instanzen. Der Hintergrund-Abruf hat eine eigene
+     * Instanz; ohne das konnte er einen gerade in der App eingetragenen Termin überschreiben
+     * (und umgekehrt).
+     */
+    private fun pruefungenAendern(aenderung: (List<Pruefung>) -> List<Pruefung>) = synchronized(SPERRE) {
         val aktuell = pruefungenLesen()
-
-        val behalten = aktuell.filterNot { p ->
-            p.id.startsWith(PlanKlausur.PLAN_PREFIX) &&
-                tage.keys.any { p.id.startsWith("${PlanKlausur.PLAN_PREFIX}$it|") } &&
-                tage.values.flatten().none { it.id == p.id }
-        }
-        val vorhandeneIds = behalten.map { it.id }.toSet()
-        val neu = tage.values.flatten()
-            .filter { it.id !in geloescht && it.id !in vorhandeneIds }
-            .map { it.alsPruefung() }
-
-        val ergebnis = (behalten + neu).sortedBy { it.datumEpochDay }
-        if (ergebnis != aktuell) {
-            _pruefungen.value = ergebnis
-            pruefungenSchreiben()
-        }
+        val ergebnis = aenderung(aktuell).sortedBy { it.datumEpochDay }
+        _pruefungen.value = ergebnis
+        if (ergebnis != aktuell) pruefungenSchreiben()
     }
 
     // ---------- Hausaufgaben ----------
@@ -139,8 +146,7 @@ class AufgabenStore(context: Context) {
             art = art,
             notiz = notiz.trim()
         )
-        _pruefungen.value = (_pruefungen.value + neu).sortedBy { it.datumEpochDay }
-        pruefungenSchreiben()
+        pruefungenAendern { it + neu }
     }
 
     fun pruefungBearbeiten(
@@ -151,7 +157,7 @@ class AufgabenStore(context: Context) {
         art: PruefungsArt,
         notiz: String
     ) {
-        _pruefungen.value = _pruefungen.value.map {
+        pruefungenAendern { liste -> liste.map {
             if (it.id == id) {
                 it.copy(
                     fach = fach.trim(),
@@ -161,19 +167,20 @@ class AufgabenStore(context: Context) {
                     notiz = notiz.trim()
                 )
             } else it
-        }.sortedBy { it.datumEpochDay }
-        pruefungenSchreiben()
+        } }
     }
 
     fun pruefungLoeschen(id: String) {
-        _pruefungen.value = _pruefungen.value.filterNot { it.id == id }
-        pruefungenSchreiben()
-        if (id.startsWith(PlanKlausur.PLAN_PREFIX)) {
-            // Sonst würde die nächste Plan-Abfrage die Klausur sofort wieder anlegen.
-            val heute = LocalDate.now()
-            val geloescht = prefs.getStringSet(KEY_GELOESCHT, emptySet()).orEmpty()
-                .filter { istNochRelevant(it, heute) } + id
-            prefs.edit().putStringSet(KEY_GELOESCHT, geloescht.toSet()).apply()
+        pruefungenAendern { liste ->
+            if (id.startsWith(PlanKlausur.PLAN_PREFIX)) {
+                // Sonst würde die nächste Plan-Abfrage die Klausur sofort wieder anlegen.
+                // Innerhalb der Sperre, damit kein Abruf dazwischen sie neu einträgt.
+                val heute = LocalDate.now()
+                val geloescht = prefs.getStringSet(KEY_GELOESCHT, emptySet()).orEmpty()
+                    .filter { istNochRelevant(it, heute) } + id
+                prefs.edit().putStringSet(KEY_GELOESCHT, geloescht.toSet()).apply()
+            }
+            liste.filterNot { it.id == id }
         }
     }
 
@@ -196,9 +203,7 @@ class AufgabenStore(context: Context) {
         if (_hausaufgaben.value.size != vorherH) hausaufgabenSchreiben()
 
         val grenze = heute.minusDays(AUFBEWAHRUNG_TAGE)
-        val vorherP = _pruefungen.value.size
-        _pruefungen.value = _pruefungen.value.filter { it.datum.isAfter(grenze) }
-        if (_pruefungen.value.size != vorherP) pruefungenSchreiben()
+        pruefungenAendern { liste -> liste.filter { it.datum.isAfter(grenze) } }
     }
 
     // ---------- Persistenz ----------
@@ -281,6 +286,7 @@ class AufgabenStore(context: Context) {
         private const val KEY_HAUSAUFGABEN = "hausaufgaben_json"
         private const val KEY_PRUEFUNGEN = "pruefungen_json"
         private const val KEY_GELOESCHT = "plan_klausuren_geloescht"
+        private val SPERRE = Any()
 
         /** So lange bleiben vergangene Prüfungen noch sichtbar, bevor sie verschwinden. */
         private const val AUFBEWAHRUNG_TAGE = 7L

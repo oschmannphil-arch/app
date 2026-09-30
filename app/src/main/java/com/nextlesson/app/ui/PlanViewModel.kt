@@ -84,8 +84,19 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     private val _grosserText = MutableStateFlow(widgetDataStore.laden().grosserText)
     val grosserText: StateFlow<Boolean> = _grosserText.asStateFlow()
 
+    private val _verfuegbareKurse = MutableStateFlow<List<KursInfo>>(emptyList())
+    /**
+     * Kursliste für "Kurse ändern". Als StateFlow statt einmaligem Abruf: Wurde der Dialog
+     * geöffnet, bevor ein Plan geladen war, blieb die Liste vorher dauerhaft leer.
+     */
+    val verfuegbareKurse: StateFlow<List<KursInfo>> = _verfuegbareKurse.asStateFlow()
+
     /** Zuletzt geladener Gesamtplan – Grundlage für die Kursliste. */
     private var letzterGesamtPlan: GesamtPlan? = null
+        set(wert) {
+            field = wert
+            _verfuegbareKurse.value = wert?.alleKurse ?: emptyList()
+        }
 
     /** Kein init-Aufruf: MainActivity.onResume lädt ohnehin direkt nach dem Start. */
     fun ladeGespeichertUndAktualisiere() {
@@ -106,20 +117,8 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         aktualisiere(creds, erzwingen = true)
     }
 
-    fun abmelden() {
-        ladeJob?.cancel()
-        wochenJob?.cancel()
-        credentialsStore.loeschen()
-        kursSelectionStore.speichern(emptySet())
-        entfallTracker.zuruecksetzen()
-        letzterGesamtPlan = null
-        _wochenZustand.value = WochenZustand.NichtGeladen
-        _zustand.value = UiZustand.LoginNoetig
-    }
-
     fun aktuelleCredentials(): IndiwareCredentials? = credentialsStore.laden()
 
-    fun verfuegbareKurse(): List<KursInfo> = letzterGesamtPlan?.alleKurse ?: emptyList()
 
     fun aktuelleKursAuswahl(): Set<String> = kursSelectionStore.laden()
 
