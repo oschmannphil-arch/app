@@ -201,16 +201,19 @@ data class GesamtPlan(
             .flatMap { it.split(';') }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
         fun istAusfallText(s: String) = listOf("fällt aus", "faellt aus", "entfällt", "entfaellt")
             .any { s.contains(it, ignoreCase = true) }
+        // Ein Satz mit "fällt aus" meldet einen Ausfall – auch wenn er die Klausur als Grund
+        // nennt ("SPO1 fällt aus wegen Klausur"). Sonst würde der genannte Kurs zur Klausur.
         val klausurSegmente = segmente.filter {
-            it.contains("klausur", ignoreCase = true) || it.contains("klassenarbeit", ignoreCase = true)
+            (it.contains("klausur", ignoreCase = true) || it.contains("klassenarbeit", ignoreCase = true)) &&
+                !istAusfallText(it)
         }
-        val ausfallSegmente = segmente.filter { it !in klausurSegmente && istAusfallText(it) }
+        val ausfallSegmente = segmente.filter { istAusfallText(it) }
         fun praefix(kuerzel: String) = kuerzel.takeWhile { it.isLetter() }.lowercase()
         val klausurWoerter = klausurSegmente.flatMapTo(HashSet()) { s -> WORT.findAll(s).map { it.value }.toList() }
         val ausfallWoerter = ausfallSegmente.flatMapTo(HashSet()) { s -> WORT.findAll(s).map { it.value }.toList() }
         val genannteFaecher = if (klausurSegmente.isEmpty()) emptySet() else
             alleKuerzel.filter { it in klausurWoerter || it in ausfallWoerter }.map { praefix(it) }.toSet()
-        val stunden = if (klausurSegmente.isEmpty()) rohStunden else rohStunden.map { l ->
+        val bewertet = if (klausurSegmente.isEmpty()) rohStunden else rohStunden.map { l ->
             val kurs = l.kursKuerzel
             if (kurs == null || !(l.entfaellt || l.istKlausur)) return@map l
             // Sagt die Stunde selbst "… fällt aus", ohne einen anderen Kurs zu nennen, bleibt es Ausfall.
@@ -234,6 +237,8 @@ data class GesamtPlan(
                 else -> l
             }
         }
+        // Was ausfällt, ist keine Klausur – egal, ob "Klausur" irgendwo im Hinweis stand.
+        val stunden = bewertet.map { if (it.entfaellt && it.istKlausur) it.copy(istKlausur = false) else it }
 
         return TagesPlan(
             kopf = kopf,

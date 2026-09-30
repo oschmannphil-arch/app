@@ -120,4 +120,41 @@ $zusatz
         assertEquals(null, l.originalRoom)
         assertEquals(LessonStatus.RAUMAENDERUNG, l.status)
     }
+
+    /** Ein Sport-Kurs neben den Deutsch-Kursen – [fach], [info] und Ausfall-Flag frei wählbar. */
+    private fun sportPlan(fach: String, info: String, zusatz: String = "", ausfall: Boolean = false): Lesson {
+        val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf>$zusatz<Klassen><Kl><Kurz>12/5</Kurz>
+<Kurse><Ku><KKz>SPO1</KKz></Ku><Ku><KKz>DEU1</KKz></Ku><Ku><KKz>DEU3</KKz></Ku><Ku><KKz>BIO3</KKz></Ku></Kurse>
+<Pl><Std${if (ausfall) " Ausfall=\"1\"" else ""}><St>1</St><Beginn>07:15</Beginn><Ende>08:00</Ende><Fa>$fach</Fa><Le>X</Le><Ra></Ra><Nr></Nr><If>$info</If></Std></Pl>
+</Kl></Klassen></WplanVp>"""
+        return IndiwareXmlParser.parse(xml.byteInputStream(), "1")!!
+            .tagesplanFuer(setOf("12/5::SPO1")).stunden.single()
+    }
+
+    @Test
+    fun sportFaelltAusWegenKlausur_istAusfall() {
+        for (info in listOf(
+            "SPO1 fällt aus wegen Klausur",
+            "SPO1 Herr X fällt aus (Klausuraufsicht)",
+            "Klausur DEU1; SPO1 fällt aus"
+        )) {
+            val l = sportPlan("SPO1", info)
+            assertTrue("'$info': Sport muss ausfallen", l.entfaellt)
+            assertFalse("'$info': Sport ist keine Klausur", l.istKlausur)
+        }
+    }
+
+    @Test
+    fun sportMitStrichenUndKlausurListe_istAusfall() {
+        val l = sportPlan("---", liste)
+        assertTrue(l.entfaellt)
+        assertFalse(l.istKlausur)
+    }
+
+    @Test
+    fun sportAlsAusfallGenanntAmKlausurTag_istAusfall() {
+        val l = sportPlan("SPO1", "", zusatz(liste + "; SPO1 Frau Y fällt aus"), ausfall = true)
+        assertTrue(l.entfaellt)
+        assertFalse(l.istKlausur)
+    }
 }
