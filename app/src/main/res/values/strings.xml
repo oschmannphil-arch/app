@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Nächste Stunde</string>
+    <string name="widget_beschreibung">Zeigt deine nächste Stunde mit Raum, Zeit und Lehrer.</string>
+</resources>

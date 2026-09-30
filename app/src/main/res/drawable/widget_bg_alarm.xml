@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hintergrund bei Entfall oder Vertretung – heller Rotton, damit dunkler Text lesbar bleibt. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="26dp" />
+    <solid android:color="#FFDAD6" />
+</shape>

@@ -1,0 +1,5 @@
+<resources>
+    <!-- Startfenster im Mocha-Ton, damit beim App-Start nichts aufblitzt. -->
+    <color name="hintergrund">#FFF8F3</color>
+    <color name="icon_grund">#3B2E26</color>
+</resources>

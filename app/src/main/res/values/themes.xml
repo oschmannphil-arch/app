@@ -1,0 +1,11 @@
+<resources>
+    <!--
+      Nur das Startfenster: die eigentliche Gestaltung macht Compose (NaechsteStundeTheme).
+      Transparente Systemleisten, damit die App unter Statusleiste und Gestenleiste zeichnen kann.
+    -->
+    <style name="Theme.NaechsteStunde" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/hintergrund</item>
+    </style>
+</resources>
