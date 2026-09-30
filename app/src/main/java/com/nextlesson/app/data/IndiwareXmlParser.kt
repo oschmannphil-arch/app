@@ -81,7 +81,11 @@ object IndiwareXmlParser {
         val kopf = PlanKopf(
             datumPlan = kopfEl.kind("DatumPlan").textOrEmpty(),
             zeitstempel = kopfEl.kind("zeitstempel").textOrEmpty(),
-            schulnummer = kopfEl.kind("schulnummer").textOrEmpty().ifBlank { schulnummerFallback }
+            schulnummer = kopfEl.kind("schulnummer").textOrEmpty().ifBlank { schulnummerFallback },
+            // <ZusatzInfo><ZiZeile>…</ZiZeile></ZusatzInfo>: Tageshinweise der Schule
+            zusatzInfo = root.kind("ZusatzInfo").kinder()
+                .map { it.textOrEmpty() }
+                .filter { it.isNotBlank() }
         )
 
         val klassenEl = root.kind("Klassen")

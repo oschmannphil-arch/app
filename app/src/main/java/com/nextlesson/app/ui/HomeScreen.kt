@@ -170,6 +170,17 @@ fun HomeScreen(
             }
         }
 
+        if (plan.hinweise.isNotEmpty()) {
+            item {
+                UebersichtKarte(
+                    titel = "Hinweise für ${if (persoenlich.istHeute) "heute" else "diesen Tag"}",
+                    text = plan.hinweise.joinToString("\n"),
+                    hervorgehoben = plan.hinweise.any { it.contains("klausur", ignoreCase = true) },
+                    onClick = {}
+                )
+            }
+        }
+
         if (uebersicht.offeneAufgaben > 0) {
             item {
                 UebersichtKarte(

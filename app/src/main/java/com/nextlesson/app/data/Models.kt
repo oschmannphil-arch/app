@@ -78,7 +78,9 @@ data class KursInfo(
 data class PlanKopf(
     val datumPlan: String,
     val zeitstempel: String,
-    val schulnummer: String
+    val schulnummer: String,
+    /** Tageshinweise der Schule (<ZusatzInfo>/<ZiZeile>), z.B. "Klausur!". */
+    val zusatzInfo: List<String> = emptyList()
 )
 
 /** Der Block einer einzelnen Klasse/eines Jahrgangs aus der XML. */
@@ -110,26 +112,59 @@ data class GesamtPlan(
         fun ganzeKlasseGewaehlt(klasse: String) =
             "$klasse::${KursInfo.GANZE_KLASSE}" in gewaehlteKursIds
 
+        /**
+         * Kurs einer Stunde. Fehlt die Zuordnung über <Nr> (z.B. bei ausfallenden oder
+         * geänderten Stunden), steht der Kurs oft im Fach ("DEU1") – dann darüber zuordnen.
+         * Ohne diesen Rückgriff gälte die Stunde als "Klassenunterricht" und würde für
+         * ALLE Kurse angezeigt (DEU1 bis DEU4 gleichzeitig).
+         */
+        fun kursVon(kp: KlassenPlan, l: Lesson): String? {
+            l.kursKuerzel?.takeIf { it.isNotBlank() }?.let { return it }
+            val fach = l.fach.trim()
+            if (fach.isBlank()) return null
+            val kuerzel = kp.kurse.filterNot { it.istGanzeKlasse }.map { it.kuerzel }
+            kuerzel.firstOrNull { it == fach }?.let { return it }
+            return kuerzel.filter { it.equals(fach, ignoreCase = true) }.singleOrNull()
+        }
+
         val betroffene = klassen.filter { kp ->
             ganzeKlasseGewaehlt(kp.klasse) ||
                 kp.kurse.any { it.id in gewaehlteKursIds } ||
                 kp.stunden.any { l ->
-                    l.kursKuerzel != null && "${kp.klasse}::${l.kursKuerzel}" in gewaehlteKursIds
+                    val kurs = kursVon(kp, l)
+                    kurs != null && "${kp.klasse}::$kurs" in gewaehlteKursIds
                 }
         }
 
         val stunden = betroffene.flatMap { kp ->
             val alles = ganzeKlasseGewaehlt(kp.klasse)
-            kp.stunden.filter { l ->
-                val kurs = l.kursKuerzel
-                alles || kurs.isNullOrBlank() || "${kp.klasse}::$kurs" in gewaehlteKursIds
+            kp.stunden.mapNotNull { l ->
+                val kurs = kursVon(kp, l)
+                if (alles || kurs.isNullOrBlank() || "${kp.klasse}::$kurs" in gewaehlteKursIds) {
+                    if (kurs != l.kursKuerzel) l.copy(kursKuerzel = kurs) else l
+                } else null
             }
         }.sortedBy { it.stunde }
+
+        // Tageshinweise der Schule ("Klausur!; BIO3 Herr X fällt aus; …"): Zeilen, die einen
+        // fremden Kurs nennen, fliegen raus – allgemeine Zeilen und die eigenen bleiben.
+        val alleKuerzel = klassen.flatMap { it.kurse }.filterNot { it.istGanzeKlasse }
+            .map { it.kuerzel }.filter { it.isNotBlank() }.toSet()
+        val eigeneKuerzel = gewaehlteKursIds.map { it.substringAfter("::") }
+            .filter { it != KursInfo.GANZE_KLASSE }.toSet()
+        val alleGewaehlt = betroffene.any { ganzeKlasseGewaehlt(it.klasse) }
+        fun nennt(zeile: String, kuerzel: Collection<String>) = kuerzel.any {
+            Regex("(?<![\\p{L}\\p{N}])${Regex.escape(it)}(?![\\p{L}\\p{N}])").containsMatchIn(zeile)
+        }
+        val hinweise = kopf.zusatzInfo.filter { zeile ->
+            alleGewaehlt || nennt(zeile, eigeneKuerzel) || !nennt(zeile, alleKuerzel)
+        }
 
         return TagesPlan(
             kopf = kopf,
             klasse = betroffene.joinToString(" / ") { it.klasse },
-            stunden = stunden
+            stunden = stunden,
+            hinweise = hinweise
         )
     }
 }
@@ -147,7 +182,9 @@ data class NaechsteStundeErgebnis(
 data class TagesPlan(
     val kopf: PlanKopf,
     val klasse: String,
-    val stunden: List<Lesson>
+    val stunden: List<Lesson>,
+    /** Tageshinweise der Schule, bereits auf die eigenen Kurse gefiltert. */
+    val hinweise: List<String> = emptyList()
 ) {
     /**
      * Liefert die laufende oder als nächstes anstehende Stunde relativ zu [jetzt].
