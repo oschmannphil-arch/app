@@ -9,7 +9,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CheckCircle
@@ -106,6 +108,10 @@ private fun AppInhalt(
     val pruefungen by aufgabenViewModel.pruefungen.collectAsState()
     val erinnerung by aufgabenViewModel.erinnerung.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
+    val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
+    val uebersicht = remember(hausaufgaben, pruefungen) {
+        Uebersicht.berechne(hausaufgaben, pruefungen)
+    }
 
     var tab by remember { mutableStateOf(Tab.HEUTE) }
     var zeigeEinstellungen by remember { mutableStateOf(false) }
@@ -240,20 +246,49 @@ private fun AppInhalt(
                 }
 
                 else -> when (tab) {
-                    Tab.HEUTE -> when (val z = zustand) {
-                        is UiZustand.Laedt -> LadeScreen()
-                        is UiZustand.Angezeigt -> HomeScreen(z.plan)
-                        is UiZustand.Fehler -> FehlerScreen(z.nachricht)
-                        else -> LadeScreen()
+                    Tab.HEUTE -> PullToRefreshBox(
+                        isRefreshing = aktualisiertGerade,
+                        onRefresh = {
+                            planViewModel.aktualisieren()
+                            widgetAktualisieren()
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        when (val z = zustand) {
+                            is UiZustand.Laedt -> LadeScreen()
+                            is UiZustand.Angezeigt -> HomeScreen(
+                                persoenlich = z.plan,
+                                uebersicht = uebersicht,
+                                aktualisiertGerade = aktualisiertGerade,
+                                onOeffneAufgaben = { tab = Tab.HAUSAUFGABEN },
+                                onOeffnePruefungen = { tab = Tab.PRUEFUNGEN }
+                            )
+                            is UiZustand.Fehler -> FehlerScreen(
+                                nachricht = z.nachricht,
+                                zugangsproblem = z.zugangsproblem,
+                                onErneutVersuchen = { planViewModel.aktualisieren() },
+                                onEinstellungen = { zeigeEinstellungen = true }
+                            )
+                            else -> LadeScreen()
+                        }
                     }
 
                     Tab.WOCHE -> {
                         val auswahl by planViewModel.wochenAuswahl.collectAsState()
-                        WochenScreen(
-                            zustand = wochenZustand,
-                            auswahl = auswahl,
-                            onAuswahlChange = planViewModel::setWochenAuswahl
-                        )
+                        PullToRefreshBox(
+                            isRefreshing = wochenZustand is WochenZustand.Laedt,
+                            onRefresh = {
+                                planViewModel.aktualisieren()
+                                planViewModel.wocheLaden()
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            WochenScreen(
+                                zustand = wochenZustand,
+                                auswahl = auswahl,
+                                onAuswahlChange = planViewModel::setWochenAuswahl
+                            )
+                        }
                     }
 
                     Tab.HAUSAUFGABEN -> HausaufgabenScreen(

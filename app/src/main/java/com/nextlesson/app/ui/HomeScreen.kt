@@ -2,6 +2,13 @@ package com.nextlesson.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import com.nextlesson.app.data.Hausaufgabe
+import com.nextlesson.app.data.Pruefung
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,26 +68,79 @@ fun LadeScreen() {
     }
 }
 
+/**
+ * Fehleranzeige mit Ausweg: "Erneut versuchen" und – bei falschen Zugangsdaten –
+ * ein direkter Weg in die Einstellungen. Scrollbar, damit Pull-to-Refresh auch hier geht.
+ */
 @Composable
-fun FehlerScreen(nachricht: String) {
-    Box(
+fun FehlerScreen(
+    nachricht: String,
+    zugangsproblem: Boolean,
+    onErneutVersuchen: () -> Unit,
+    onEinstellungen: () -> Unit
+) {
+    Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = nachricht,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        Text(
+            text = nachricht,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(16.dp))
+        if (zugangsproblem) {
+            Button(onClick = onEinstellungen) { Text("Zugangsdaten prüfen") }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onErneutVersuchen) { Text("Erneut versuchen") }
+        } else {
+            Button(onClick = onErneutVersuchen) { Text("Erneut versuchen") }
+        }
+    }
+}
+
+/** Zusammenfassung von Hausaufgaben und nächster Klausur für die Startseite. */
+data class Uebersicht(
+    val offeneAufgaben: Int,
+    val ueberfaellig: Int,
+    val bisMorgen: Int,
+    val naechstePruefung: Pruefung?
+) {
+    companion object {
+        fun berechne(
+            hausaufgaben: List<Hausaufgabe>,
+            pruefungen: List<Pruefung>,
+            heute: LocalDate = LocalDate.now()
+        ): Uebersicht {
+            val offen = hausaufgaben.filter { !it.erledigt }
+            return Uebersicht(
+                offeneAufgaben = offen.size,
+                ueberfaellig = offen.count { it.istUeberfaellig(heute) },
+                bisMorgen = offen.count {
+                    val f = it.faellig
+                    f != null && !f.isBefore(heute) && !f.isAfter(heute.plusDays(1))
+                },
+                // Nur was in den nächsten zwei Wochen ansteht – alles Weitere wäre Rauschen.
+                naechstePruefung = pruefungen
+                    .filter { !it.istVorbei(heute) && it.tageBis(heute) <= 14 }
+                    .minByOrNull { it.datumEpochDay }
             )
         }
     }
 }
 
 @Composable
-fun HomeScreen(persoenlich: PersoenlicherPlan) {
+fun HomeScreen(
+    persoenlich: PersoenlicherPlan,
+    uebersicht: Uebersicht,
+    aktualisiertGerade: Boolean,
+    onOeffneAufgaben: () -> Unit,
+    onOeffnePruefungen: () -> Unit
+) {
     val jetzt by rememberJetzt()
     val plan = persoenlich.plan
     // Heute wird "nächste Stunde" mit der tickenden Uhr neu bestimmt. Sonst bliebe bei
@@ -94,12 +154,40 @@ fun HomeScreen(persoenlich: PersoenlicherPlan) {
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        if (persoenlich.ausCache) {
+            item {
+                Spacer(Modifier.height(4.dp))
+                OfflineHinweis(persoenlich.geprueftUm, aktualisiertGerade)
+            }
+        }
+
         item {
             Spacer(Modifier.height(4.dp))
             if (naechste != null) {
                 HeroKarte(naechste, persoenlich.istHeute, persoenlich.datum, jetzt, dunkel)
             } else {
                 LeerKarte()
+            }
+        }
+
+        if (uebersicht.offeneAufgaben > 0) {
+            item {
+                UebersichtKarte(
+                    titel = "Hausaufgaben",
+                    text = aufgabenText(uebersicht),
+                    hervorgehoben = uebersicht.ueberfaellig > 0,
+                    onClick = onOeffneAufgaben
+                )
+            }
+        }
+        uebersicht.naechstePruefung?.let { pruefung ->
+            item {
+                UebersichtKarte(
+                    titel = pruefung.art.anzeige,
+                    text = pruefungText(pruefung),
+                    hervorgehoben = pruefung.tageBis() <= 1,
+                    onClick = onOeffnePruefungen
+                )
             }
         }
 
@@ -141,6 +229,81 @@ fun HomeScreen(persoenlich: PersoenlicherPlan) {
             Spacer(Modifier.height(12.dp))
         }
     }
+}
+
+@Composable
+private fun OfflineHinweis(geprueftUm: Long, aktualisiertGerade: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Text(
+            text = buildString {
+                append("Gespeicherter Stand von ${uhrzeit(geprueftUm)}")
+                append(if (aktualisiertGerade) " · wird aktualisiert …" else " · keine Verbindung, Plan kann veraltet sein")
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+        )
+    }
+}
+
+@Composable
+private fun UebersichtKarte(
+    titel: String,
+    text: String,
+    hervorgehoben: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (hervorgehoben) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(
+                text = titel,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (hervorgehoben) MaterialTheme.colorScheme.onErrorContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (hervorgehoben) MaterialTheme.colorScheme.onErrorContainer
+                else MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+private fun aufgabenText(u: Uebersicht): String = buildString {
+    append(if (u.offeneAufgaben == 1) "1 offene Aufgabe" else "${u.offeneAufgaben} offene Aufgaben")
+    val teile = buildList {
+        if (u.ueberfaellig > 0) add("${u.ueberfaellig} überfällig")
+        if (u.bisMorgen > 0) add("${u.bisMorgen} bis morgen fällig")
+    }
+    if (teile.isNotEmpty()) append(" · ").append(teile.joinToString(", "))
+}
+
+private fun pruefungText(p: Pruefung): String {
+    val name = listOf(p.fach, p.titel).filter { it.isNotBlank() }.joinToString(" – ")
+    val wann = when (val tage = p.tageBis()) {
+        0L -> "heute"
+        1L -> "morgen"
+        else -> "in $tage Tagen"
+    }
+    return if (name.isBlank()) wann.replaceFirstChar { it.uppercase() } else "$name · $wann"
 }
 
 private fun laeuft(lesson: Lesson, jetzt: LocalTime): Boolean {

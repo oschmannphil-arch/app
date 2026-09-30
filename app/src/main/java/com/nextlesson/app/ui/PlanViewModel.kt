@@ -31,7 +31,7 @@ sealed class UiZustand {
     /** Zugang steht – jetzt nur noch die eigenen Kurse ankreuzen. */
     data class KurseWaehlen(val kurse: List<KursInfo>) : UiZustand()
     data class Angezeigt(val plan: PersoenlicherPlan) : UiZustand()
-    data class Fehler(val nachricht: String) : UiZustand()
+    data class Fehler(val nachricht: String, val zugangsproblem: Boolean = false) : UiZustand()
 }
 
 /** Ein einzelner Tag der Wochenansicht. */
@@ -70,6 +70,10 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _zustand = MutableStateFlow<UiZustand>(UiZustand.Laedt)
     val zustand: StateFlow<UiZustand> = _zustand.asStateFlow()
+
+    /** True, solange ein Abruf läuft – steuert den Pull-to-Refresh-Kreis. */
+    private val _aktualisiertGerade = MutableStateFlow(false)
+    val aktualisiertGerade: StateFlow<Boolean> = _aktualisiertGerade.asStateFlow()
 
     private val _wochenZustand = MutableStateFlow<WochenZustand>(WochenZustand.NichtGeladen)
     val wochenZustand: StateFlow<WochenZustand> = _wochenZustand.asStateFlow()
@@ -201,7 +205,19 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         ladeJob?.cancel()
-        ladeJob = viewModelScope.launch {
+        _aktualisiertGerade.value = true
+        val job = viewModelScope.launch { ladeInhalt(creds, auswahl, erzwingen) }
+        ladeJob = job
+        // Nur der jeweils neueste Ladevorgang darf die Anzeige "lädt" wieder ausschalten.
+        job.invokeOnCompletion { if (ladeJob === job) _aktualisiertGerade.value = false }
+    }
+
+    private suspend fun ladeInhalt(
+        creds: IndiwareCredentials,
+        auswahl: Set<String>,
+        erzwingen: Boolean
+    ) {
+        run {
             // Ohne Kurswahl brauchen wir nur die Kursliste.
             if (auswahl.isEmpty()) {
                 when (val ergebnis = repository.holeNaechstenVerfuegbarenPlan(creds, erzwingen = erzwingen)) {
@@ -213,7 +229,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                     is PlanResult.KeinPlanFuerTag -> _zustand.value = fehlerKeinPlan()
                     is PlanResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
                 }
-                return@launch
+                return
             }
 
             // Sofort etwas zeigen: der zuletzt gespeicherte Plan liegt lokal und ist in
@@ -241,7 +257,10 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun fehlerAuth() =
-        UiZustand.Fehler("Benutzername oder Passwort falsch. Bitte in den Einstellungen prüfen.")
+        UiZustand.Fehler(
+            "Benutzername oder Passwort falsch. Bitte in den Einstellungen prüfen.",
+            zugangsproblem = true
+        )
 
     private fun fehlerKeinPlan() =
         UiZustand.Fehler("Für die nächsten Tage wurde kein Plan gefunden (Ferien?).")

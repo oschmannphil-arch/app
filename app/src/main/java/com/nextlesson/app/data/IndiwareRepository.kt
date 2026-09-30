@@ -52,7 +52,9 @@ data class PersoenlicherPlan(
     val naechste: NaechsteStundeErgebnis?,
     val istHeute: Boolean,
     val gesamt: GesamtPlan,
-    val geprueftUm: Long = System.currentTimeMillis()
+    val geprueftUm: Long = System.currentTimeMillis(),
+    /** True, wenn der Plan nicht frisch vom Server kommt, sondern aus dem lokalen Speicher. */
+    val ausCache: Boolean = false
 )
 
 sealed class PersoenlicherResult {
@@ -242,7 +244,8 @@ class IndiwareRepository(context: Context) {
                             naechste = naechste,
                             istHeute = true,
                             gesamt = ergebnis.plan,
-                            geprueftUm = ergebnis.geprueftUm
+                            geprueftUm = ergebnis.geprueftUm,
+                            ausCache = ergebnis.aus == Quelle.CACHE
                         )
                         if (naechste != null) {
                             PersoenlicherResult.Erfolg(persoenlich)
@@ -260,7 +263,8 @@ class IndiwareRepository(context: Context) {
                                     naechste = NaechsteStundeErgebnis(erste, istVorschau = false),
                                     istHeute = false,
                                     gesamt = ergebnis.plan,
-                                    geprueftUm = ergebnis.geprueftUm
+                                    geprueftUm = ergebnis.geprueftUm,
+                                    ausCache = ergebnis.aus == Quelle.CACHE
                                 )
                             )
                         }
