@@ -24,7 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -139,7 +139,8 @@ fun HomeScreen(
     uebersicht: Uebersicht,
     aktualisiertGerade: Boolean,
     onOeffneAufgaben: () -> Unit,
-    onOeffnePruefungen: () -> Unit
+    onOeffnePruefungen: () -> Unit,
+    onStundeAntippen: (Lesson) -> Unit = {}
 ) {
     val jetzt by rememberJetzt(aktualisiertGerade)
     val plan = persoenlich.plan
@@ -211,8 +212,12 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (persoenlich.istHeute) "Heute" else {
-                        persoenlich.datum.format(kurzTagFormat).replaceFirstChar { it.uppercase() }
+                    text = buildString {
+                        append(
+                            if (persoenlich.istHeute) "Heute" else
+                                persoenlich.datum.format(kurzTagFormat).replaceFirstChar { it.uppercase() }
+                        )
+                        plan.schluss()?.let { append(" · Schluss ${it.format(zeitFormat)}") }
                     },
                     style = MaterialTheme.typography.titleMedium
                 )
@@ -226,13 +231,18 @@ fun HomeScreen(
 
         // Bewusst ohne key: bei mehreren gewählten Kursblöcken können zwei Stunden
         // dieselbe Nummer und dasselbe Fach haben, und doppelte Keys lassen LazyColumn abstürzen.
-        items(plan.stunden) { lesson ->
-            StundenZeile(
-                lesson = lesson,
-                istNaechste = lesson.stunde == naechste?.lesson?.stunde,
-                laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
-                dunkel = dunkel
-            )
+        val freiVor = plan.freistunden().associate { (index, von, bis) -> index to (von to bis) }
+        itemsIndexed(plan.stunden) { index, lesson ->
+            Column {
+                freiVor[index]?.let { (von, bis) -> FreistundenZeile(von, bis) }
+                StundenZeile(
+                    lesson = lesson,
+                    istNaechste = lesson.stunde == naechste?.lesson?.stunde,
+                    laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                    dunkel = dunkel,
+                    onClick = { onStundeAntippen(lesson) }
+                )
+            }
         }
 
         item {
@@ -315,6 +325,37 @@ private fun pruefungText(p: Pruefung): String {
         else -> "in $tage Tagen"
     }
     return if (name.isBlank()) wann.replaceFirstChar { it.uppercase() } else "$name · $wann"
+}
+
+/** Dezente Zeile für eine Lücke im Tag, damit man Freistunden auf einen Blick sieht. */
+@Composable
+private fun FreistundenZeile(von: LocalTime, bis: LocalTime) {
+    Text(
+        text = "Frei · ${von.format(zeitFormat)}–${bis.format(zeitFormat)}",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 14.dp, bottom = 10.dp)
+    )
+}
+
+/** Tagesplan als Text zum Teilen (z.B. per Messenger an Mitschüler). */
+fun planAlsText(persoenlich: PersoenlicherPlan): String = buildString {
+    append(persoenlich.datum.format(tagFormat))
+    persoenlich.plan.stunden.forEach { l ->
+        append("\n")
+        append(l.beginn?.format(zeitFormat) ?: "${l.stunde}.")
+        append("  ")
+        append(l.fach.ifBlank { l.kursKuerzel ?: "—" })
+        when {
+            l.entfaellt -> append(" – fällt aus")
+            l.istKlausur -> append(" – Klausur")
+            l.raum.isNotBlank() -> append(" (${l.raum})")
+        }
+        if (!l.entfaellt && l.status == LessonStatus.VERTRETUNG && l.lehrer.isNotBlank()) {
+            append(", Vertretung: ${l.lehrer}")
+        }
+    }
+    persoenlich.plan.schluss()?.let { append("\nSchluss: ${it.format(zeitFormat)}") }
 }
 
 private fun laeuft(lesson: Lesson, jetzt: LocalTime): Boolean {
@@ -539,7 +580,8 @@ private fun StundenZeile(
     lesson: Lesson,
     istNaechste: Boolean,
     laeuftGerade: Boolean,
-    dunkel: Boolean
+    dunkel: Boolean,
+    onClick: () -> Unit
 ) {
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
@@ -582,6 +624,7 @@ private fun StundenZeile(
             .clip(RoundedCornerShape(14.dp))
             .background(hintergrund)
             .alpha(alpha)
+            .clickable(onClickLabel = "Hausaufgabe eintragen", onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = desc }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -750,6 +793,11 @@ private fun Fusszeile(persoenlich: PersoenlicherPlan) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        Text(
+            text = "Tipp: Stunde antippen, um eine Hausaufgabe bis zur nächsten Stunde einzutragen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Text(
             text = "App zuletzt geprüft: ${uhrzeit(persoenlich.geprueftUm)}",
             style = MaterialTheme.typography.bodySmall,

@@ -19,6 +19,10 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import android.content.Intent
+import com.nextlesson.app.data.Lesson
+import java.time.LocalDate
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -121,6 +125,15 @@ private fun AppInhalt(
     var zeigeEinstellungen by remember { mutableStateOf(false) }
     var zeigeKurse by remember { mutableStateOf(false) }
 
+    // Hausaufgabe direkt aus einer angetippten Stunde: Stunde + Tag, an dem sie stattfindet.
+    var aufgabeAusStunde by remember { mutableStateOf<Pair<Lesson, LocalDate>?>(null) }
+    var naechsteStunde by remember { mutableStateOf<LocalDate?>(null) }
+    LaunchedEffect(aufgabeAusStunde) {
+        naechsteStunde = null
+        val (lesson, datum) = aufgabeAusStunde ?: return@LaunchedEffect
+        naechsteStunde = runCatching { planViewModel.naechsteStundeVon(lesson, datum) }.getOrNull()
+    }
+
     // Nach einer Kursänderung oder einem Neu-Laden steht die Woche auf "nicht geladen".
     // Ist der Wochen-Reiter dann offen, muss sie hier nachgeladen werden – sonst dreht
     // der Ladekreis endlos, weil nur ein Tipp auf den Reiter das Laden auslöste.
@@ -169,6 +182,17 @@ private fun AppInhalt(
                             widgetAktualisieren()
                         }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Aktualisieren")
+                        }
+                    }
+                    val angezeigt = zustand as? UiZustand.Angezeigt
+                    if (!einrichtung && tab == Tab.HEUTE && angezeigt != null) {
+                        IconButton(onClick = {
+                            val senden = Intent(Intent.ACTION_SEND)
+                                .setType("text/plain")
+                                .putExtra(Intent.EXTRA_TEXT, planAlsText(angezeigt.plan))
+                            runCatching { context.startActivity(Intent.createChooser(senden, "Plan teilen")) }
+                        }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Plan teilen")
                         }
                     }
                     if (!brauchtZugang && !brauchtKurse) {
@@ -289,7 +313,8 @@ private fun AppInhalt(
                                 uebersicht = uebersicht,
                                 aktualisiertGerade = aktualisiertGerade,
                                 onOeffneAufgaben = { tab = Tab.HAUSAUFGABEN },
-                                onOeffnePruefungen = { tab = Tab.PRUEFUNGEN }
+                                onOeffnePruefungen = { tab = Tab.PRUEFUNGEN },
+                                onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to z.plan.datum }
                             )
                             is UiZustand.Fehler -> FehlerScreen(
                                 nachricht = z.nachricht,
@@ -336,5 +361,17 @@ private fun AppInhalt(
                 }
             }
         }
+    }
+    aufgabeAusStunde?.let { (lesson, _) ->
+        HausaufgabeDialog(
+            vorschlagFach = lesson.fach.takeIf { f -> f.any { it.isLetterOrDigit() } }
+                ?: lesson.kursKuerzel.orEmpty(),
+            naechsteStunde = naechsteStunde,
+            onAbbrechen = { aufgabeAusStunde = null },
+            onSpeichern = { fach, text, faellig ->
+                aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig)
+                aufgabeAusStunde = null
+            }
+        )
     }
 }

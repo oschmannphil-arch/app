@@ -92,7 +92,13 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
             //    Nur bei frischen Serverdaten – ein Cache-Stand kann nichts Neues enthalten.
             if (success.aus == Quelle.NETZ) {
                 val neu = entfallTracker.neueEntfaelle(datum, plan.stunden)
-                if (neu.isNotEmpty()) EntfallNotifier.melden(applicationContext, datum, neu)
+                if (neu.isNotEmpty()) {
+                    EntfallNotifier.melden(applicationContext, datum, plan.entfaelle(), neu)
+                } else {
+                    // Nichts Neues – aber eine schon sichtbare Meldung auf den aktuellen Stand
+                    // bringen (zurückgenommener Ausfall), ohne erneut zu klingeln.
+                    EntfallNotifier.nachziehen(applicationContext, datum, plan.entfaelle())
+                }
 
                 // Klausuren aus dem Plan (nur eigene Kurse, da der Plan schon gefiltert ist).
                 klausurenProTag[datum] = PlanKlausur.ausStunden(datum, plan.stunden)
@@ -132,6 +138,9 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         }
 
         AufgabenStore(applicationContext).planKlausurenSynchronisieren(klausurenProTag)
+        if (tage.any { (it.second as? PlanResult.Success)?.aus == Quelle.NETZ }) {
+            HintergrundStatus.erfolgreichGeprueft(applicationContext)
+        }
 
         val treffer = anzeige
         if (treffer == null) {

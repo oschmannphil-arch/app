@@ -295,6 +295,38 @@ data class TagesPlan(
     /** Alle ausgefallenen Stunden dieses Tages. */
     fun entfaelle(): List<Lesson> = stunden.filter { it.entfaellt }
 
+    /** Findet an diesem Tag Unterricht im selben Kurs wie [vorbild] statt? */
+    fun hatStundeVon(vorbild: Lesson): Boolean = stunden.any { l ->
+        !l.entfaellt && when {
+            vorbild.kursKuerzel != null ->
+                l.kursKuerzel == vorbild.kursKuerzel && l.klasse == vorbild.klasse
+            else -> vorbild.fach.any { it.isLetterOrDigit() } && l.fach == vorbild.fach
+        }
+    }
+
+    /** Ende der letzten stattfindenden Stunde – "Schulschluss". */
+    fun schluss(): LocalTime? = stunden.filter { !it.entfaellt }.mapNotNull { it.ende }.maxOrNull()
+
+    /**
+     * Freistunden: Lücken von mindestens [minMinuten] zwischen zwei Stunden (normale Pausen
+     * sind kürzer). Ausgefallene Stunden zählen als belegt – sie stehen ja in der Liste.
+     * Ergebnis: Index der Stunde, VOR der die Lücke liegt, mit Beginn und Ende der Lücke.
+     */
+    fun freistunden(minMinuten: Long = 30): List<Triple<Int, LocalTime, LocalTime>> {
+        val out = ArrayList<Triple<Int, LocalTime, LocalTime>>()
+        var bisherEnde: LocalTime? = null
+        stunden.forEachIndexed { i, l ->
+            val b = l.beginn
+            val vorher = bisherEnde
+            if (b != null && vorher != null && Duration.between(vorher, b).toMinutes() >= minMinuten) {
+                out += Triple(i, vorher, b)
+            }
+            val e = l.ende
+            if (e != null && (vorher == null || e.isAfter(vorher))) bisherEnde = e
+        }
+        return out
+    }
+
     companion object {
         /** So viele Minuten vor Stundenende wird schon die nächste Stunde gezeigt. */
         const val VORLAUF_MINUTEN = 5L

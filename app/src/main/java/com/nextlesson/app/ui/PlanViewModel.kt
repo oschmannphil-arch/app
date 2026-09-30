@@ -10,6 +10,7 @@ import com.nextlesson.app.data.IndiwareCredentials
 import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.data.KursInfo
 import com.nextlesson.app.data.KursSelectionStore
+import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.PersoenlicherPlan
 import com.nextlesson.app.data.PersoenlicherResult
 import com.nextlesson.app.data.PlanResult
@@ -121,6 +122,22 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
 
 
     fun aktuelleKursAuswahl(): Set<String> = kursSelectionStore.laden()
+
+    /**
+     * Datum der nächsten Stunde im selben Kurs nach [nach] – für "Hausaufgabe bis zur
+     * nächsten Stunde". Sucht bis zu zwei Wochen voraus (nur, soweit Pläne veröffentlicht
+     * sind); null, wenn nichts gefunden wurde.
+     */
+    suspend fun naechsteStundeVon(lesson: Lesson, nach: LocalDate): LocalDate? {
+        val creds = withContext(Dispatchers.IO) { credentialsStore.laden() } ?: return null
+        val kurse = kursSelectionStore.laden()
+        val tage = repository.holeTage(creds, nach.plusDays(1), anzahl = 14)
+        return withContext(Dispatchers.Default) {
+            tage.firstOrNull { (_, ergebnis) ->
+                ergebnis is PlanResult.Success && ergebnis.plan.tagesplanFuer(kurse).hatStundeVon(lesson)
+            }?.first
+        }
+    }
 
     /** Speichert die Kurswahl und lädt den persönlichen Plan neu. */
     fun kursAuswahlSpeichern(kursIds: Set<String>) {

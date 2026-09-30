@@ -25,7 +25,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
+import android.content.Intent
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.nextlesson.app.work.EntfallNotifier
+import com.nextlesson.app.work.HintergrundStatus
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,6 +79,8 @@ fun EinstellungenScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Spacer(Modifier.height(4.dp))
+
+        BenachrichtigungenKarte()
 
         // --- Erinnerung ---
         Card(
@@ -233,6 +250,116 @@ fun EinstellungenScreen(
             }
         )
     }
+}
+
+/**
+ * Zeigt, ob Ausfall-Meldungen überhaupt ankommen können – und bietet einen Test.
+ * Der Stand wird bei jeder Rückkehr in die App neu geprüft (z.B. nach dem Ändern in den
+ * Android-Einstellungen).
+ */
+@Composable
+private fun BenachrichtigungenKarte() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var pruefung by remember { mutableIntStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val beobachter = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) pruefung++
+        }
+        lifecycleOwner.lifecycle.addObserver(beobachter)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(beobachter) }
+    }
+
+    val erlaubt = remember(pruefung) {
+        EntfallNotifier.darfBenachrichtigen(context) &&
+            NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+    val akkuFrei = remember(pruefung) {
+        context.getSystemService(PowerManager::class.java)
+            ?.isIgnoringBatteryOptimizations(context.packageName) == true
+    }
+    val zuletzt = remember(pruefung) { HintergrundStatus.zuletztGeprueft(context) }
+    var testErgebnis by remember { mutableStateOf<String?>(null) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Ausfall-Benachrichtigungen", style = MaterialTheme.typography.titleMedium)
+
+            StatusZeile(
+                ok = erlaubt,
+                text = if (erlaubt) "Benachrichtigungen erlaubt" else "Benachrichtigungen sind aus",
+                knopf = if (erlaubt) null else "Einschalten",
+                onKnopf = {
+                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    runCatching { context.startActivity(intent) }
+                }
+            )
+            StatusZeile(
+                ok = akkuFrei,
+                text = if (akkuFrei) "Keine Akku-Einschränkung" else
+                    "Akku-Optimierung aktiv – Android kann Prüfungen im Hintergrund verzögern",
+                knopf = if (akkuFrei) null else "Ändern",
+                onKnopf = {
+                    runCatching {
+                        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }
+                }
+            )
+            Text(
+                text = if (zuletzt <= 0L) "Noch keine Prüfung im Hintergrund"
+                else "Zuletzt im Hintergrund geprüft: ${zeitpunkt(zuletzt)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            OutlinedButton(
+                onClick = {
+                    testErgebnis = if (EntfallNotifier.testen(context)) {
+                        "Test gesendet – schau in die Benachrichtigungsleiste."
+                    } else {
+                        "Konnte nicht gesendet werden: Benachrichtigungen sind nicht erlaubt."
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Test-Benachrichtigung senden") }
+            testErgebnis?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusZeile(ok: Boolean, text: String, knopf: String?, onKnopf: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = if (ok) "✓" else "!",
+            style = MaterialTheme.typography.titleMedium,
+            color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(end = 10.dp)
+        )
+        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        if (knopf != null) {
+            TextButton(onClick = onKnopf) { Text(knopf) }
+        }
+    }
+}
+
+private fun zeitpunkt(millis: Long): String {
+    val zeit = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
+    val heute = LocalDate.now()
+    val tag = when (zeit.toLocalDate()) {
+        heute -> "heute"
+        heute.minusDays(1) -> "gestern"
+        else -> "%02d.%02d.".format(zeit.dayOfMonth, zeit.monthValue)
+    }
+    return "$tag, %02d:%02d".format(zeit.hour, zeit.minute)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
