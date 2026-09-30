@@ -292,9 +292,6 @@ data class TagesPlan(
     fun ersteStunde(): Lesson? =
         stunden.filter { !it.entfaellt }.minByOrNull { it.stunde }
 
-    /** Alle ausgefallenen Stunden dieses Tages. */
-    fun entfaelle(): List<Lesson> = stunden.filter { it.entfaellt }
-
     /** Findet an diesem Tag Unterricht im selben Kurs wie [vorbild] statt? */
     fun hatStundeVon(vorbild: Lesson): Boolean = stunden.any { l ->
         !l.entfaellt && when {

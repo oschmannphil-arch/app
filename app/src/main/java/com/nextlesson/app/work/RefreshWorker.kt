@@ -6,7 +6,9 @@ import androidx.work.WorkerParameters
 import com.nextlesson.app.data.AufgabenStore
 import com.nextlesson.app.data.CredentialsStore
 import com.nextlesson.app.data.PlanKlausur
-import com.nextlesson.app.data.EntfallTracker
+import com.nextlesson.app.data.Aenderung
+import com.nextlesson.app.data.AenderungsTracker
+import com.nextlesson.app.data.BenachrichtigungsEinstellungen
 import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.data.KursSelectionStore
 import com.nextlesson.app.data.NaechsteStundeErgebnis
@@ -22,8 +24,8 @@ import java.time.ZoneId
 /**
  * Läuft regelmäßig im Hintergrund und erledigt zwei Dinge in einem Durchgang:
  *
- *  1. Entfall-Überwachung: vergleicht heute + die nächsten Tage mit dem zuletzt bekannten
- *     Stand und benachrichtigt NUR bei neuem Entfall in den gewählten Kursen.
+ *  1. Änderungs-Überwachung: vergleicht heute + die nächsten Tage mit dem zuletzt bekannten
+ *     Stand und benachrichtigt NUR bei neuen Änderungen in den gewählten Kursen.
  *  2. Widget-Daten: schreibt die nächste anstehende Stunde – nach Schulschluss die erste
  *     Stunde des nächsten Schultags.
  *
@@ -36,7 +38,8 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         val credentialsStore = CredentialsStore(applicationContext)
         val kursSelectionStore = KursSelectionStore(applicationContext)
         val widgetDataStore = WidgetDataStore(applicationContext)
-        val entfallTracker = EntfallTracker(applicationContext)
+        val aenderungsTracker = AenderungsTracker(applicationContext)
+        val gemeldeteArten = BenachrichtigungsEinstellungen(applicationContext).aktiveArten()
 
         suspend fun hinweisSchreiben(nachricht: String) {
             widgetDataStore.speichern(null, "", null, nachricht)
@@ -56,7 +59,7 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
 
         val heute = LocalDate.now()
         val jetzt = LocalTime.now()
-        entfallTracker.aufraeumen(heute)
+        aenderungsTracker.aufraeumen(heute)
         val repository = IndiwareRepository(applicationContext)
         repository.aufraeumen()
 
@@ -87,17 +90,23 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
             val gesamt = success.plan
             val plan = gesamt.tagesplanFuer(kurse)
 
-            // 1. Neuen Entfall in den gewählten Kursen melden (der Tracker merkt sich den
-            //    Stand; beim ersten Abruf eines Tages wird nur gespeichert, nicht gemeldet).
-            //    Nur bei frischen Serverdaten – ein Cache-Stand kann nichts Neues enthalten.
+            // 1. Neue Änderungen (Ausfall, Vertretung, Raum) in den gewählten Kursen melden.
+            //    Der Tracker merkt sich immer den vollen Stand; beim ersten Abruf eines Tages
+            //    wird nur gespeichert. Nur bei frischen Serverdaten – ein Cache-Stand kann
+            //    nichts Neues enthalten.
             if (success.aus == Quelle.NETZ) {
-                val neu = entfallTracker.neueEntfaelle(datum, plan.stunden)
-                if (neu.isNotEmpty()) {
-                    EntfallNotifier.melden(applicationContext, datum, plan.entfaelle(), neu)
+                val aktuell = Aenderung.von(plan.stunden)
+                val neu = aenderungsTracker.neueAenderungen(datum, aktuell)
+                // Gemeldet wird nur, was eingeschaltet ist und noch bevorsteht.
+                fun zeigen(a: Aenderung) = a.art in gemeldeteArten && a.nochRelevant(datum, heute, jetzt)
+                val anzeigen = aktuell.filter(::zeigen)
+                val neuAnzeigen = neu.filter(::zeigen)
+                if (neuAnzeigen.isNotEmpty()) {
+                    EntfallNotifier.melden(applicationContext, datum, anzeigen, neuAnzeigen)
                 } else {
                     // Nichts Neues – aber eine schon sichtbare Meldung auf den aktuellen Stand
-                    // bringen (zurückgenommener Ausfall), ohne erneut zu klingeln.
-                    EntfallNotifier.nachziehen(applicationContext, datum, plan.entfaelle())
+                    // bringen (zurückgenommen, vorbei), ohne erneut zu klingeln.
+                    EntfallNotifier.nachziehen(applicationContext, datum, anzeigen)
                 }
 
                 // Klausuren aus dem Plan (nur eigene Kurse, da der Plan schon gefiltert ist).

@@ -1,9 +1,11 @@
 package com.nextlesson.app.ui
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,18 +13,16 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
-import android.content.Intent
-import com.nextlesson.app.data.Lesson
-import java.time.LocalDate
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -43,21 +44,28 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import com.nextlesson.app.data.Freund
+import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.ui.theme.NaechsteStundeTheme
 import com.nextlesson.app.widget.NextLessonWidgetReceiver
 import com.nextlesson.app.work.EntfallNotifier
 import com.nextlesson.app.work.LernErinnerung
 import com.nextlesson.app.work.RefreshScheduler
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
 
     private val planViewModel: PlanViewModel by viewModels()
     private val aufgabenViewModel: AufgabenViewModel by viewModels()
+    private val sucheViewModel: SucheViewModel by viewModels()
+    private val freundeViewModel: FreundeViewModel by viewModels()
 
     private val benachrichtigungAnfrage =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* Ergebnis egal */ }
@@ -74,7 +82,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             NaechsteStundeTheme {
                 Surface {
-                    AppInhalt(planViewModel, aufgabenViewModel)
+                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel)
                 }
             }
         }
@@ -99,15 +107,21 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val titel: String, val symbol: ImageVector) {
     HEUTE("Heute", Icons.Filled.CheckCircle),
     WOCHE("Woche", Icons.Filled.DateRange),
+    SUCHE("Suche", Icons.Filled.Search),
     HAUSAUFGABEN("Aufgaben", Icons.Filled.Edit),
     PRUEFUNGEN("Klausuren", Icons.AutoMirrored.Filled.List)
 }
+
+/** Freund, der gerade angelegt oder bearbeitet wird. */
+private data class FreundEntwurf(val freund: Freund, val neu: Boolean)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppInhalt(
     planViewModel: PlanViewModel,
-    aufgabenViewModel: AufgabenViewModel
+    aufgabenViewModel: AufgabenViewModel,
+    sucheViewModel: SucheViewModel,
+    freundeViewModel: FreundeViewModel
 ) {
     val zustand by planViewModel.zustand.collectAsState()
     val wochenZustand by planViewModel.wochenZustand.collectAsState()
@@ -117,13 +131,19 @@ private fun AppInhalt(
     val grosserText by planViewModel.grosserText.collectAsState()
     val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
     val verfuegbareKurse by planViewModel.verfuegbareKurse.collectAsState()
+    val freunde by freundeViewModel.freunde.collectAsState()
+    val sucheZustand by sucheViewModel.zustand.collectAsState()
+    val sucheDatum by sucheViewModel.datum.collectAsState()
     val uebersicht = remember(hausaufgaben, pruefungen) {
         Uebersicht.berechne(hausaufgaben, pruefungen)
     }
 
-    var tab by remember { mutableStateOf(Tab.HEUTE) }
-    var zeigeEinstellungen by remember { mutableStateOf(false) }
-    var zeigeKurse by remember { mutableStateOf(false) }
+    // Saveable: Beim Drehen des Handys bleibt man im gewählten Reiter bzw. Dialog.
+    var tab by rememberSaveable { mutableStateOf(Tab.HEUTE) }
+    var zeigeEinstellungen by rememberSaveable { mutableStateOf(false) }
+    var zeigeKurse by rememberSaveable { mutableStateOf(false) }
+    var freundAnsicht by rememberSaveable { mutableStateOf<String?>(null) }
+    var freundEntwurf by remember { mutableStateOf<FreundEntwurf?>(null) }
 
     // Hausaufgabe direkt aus einer angetippten Stunde: Stunde + Tag, an dem sie stattfindet.
     var aufgabeAusStunde by remember { mutableStateOf<Pair<Lesson, LocalDate>?>(null) }
@@ -131,7 +151,13 @@ private fun AppInhalt(
     LaunchedEffect(aufgabeAusStunde) {
         naechsteStunde = null
         val (lesson, datum) = aufgabeAusStunde ?: return@LaunchedEffect
-        naechsteStunde = runCatching { planViewModel.naechsteStundeVon(lesson, datum) }.getOrNull()
+        naechsteStunde = try {
+            planViewModel.naechsteStundeVon(lesson, datum)
+        } catch (e: CancellationException) {
+            throw e // Dialog geschlossen – Abbruch nicht verschlucken
+        } catch (e: Exception) {
+            null
+        }
     }
 
     // Nach einer Kursänderung oder einem Neu-Laden steht die Woche auf "nicht geladen".
@@ -139,6 +165,9 @@ private fun AppInhalt(
     // der Ladekreis endlos, weil nur ein Tipp auf den Reiter das Laden auslöste.
     LaunchedEffect(tab, wochenZustand) {
         if (tab == Tab.WOCHE && wochenZustand is WochenZustand.NichtGeladen) planViewModel.wocheLaden()
+    }
+    LaunchedEffect(tab) {
+        if (tab == Tab.SUCHE) sucheViewModel.oeffnen()
     }
 
     val context = LocalContext.current
@@ -152,9 +181,36 @@ private fun AppInhalt(
     // Einrichtung geht immer vor: erst Zugang, dann Kurse.
     val brauchtZugang = zustand is UiZustand.LoginNoetig
     val brauchtKurse = zustand is UiZustand.KurseWaehlen
-    val einrichtung = brauchtZugang || brauchtKurse || zeigeEinstellungen || zeigeKurse
+    val entwurf = freundEntwurf
+    // Gelöschter Freund → Ansicht schließt sich von selbst.
+    val angezeigterFreund = freundAnsicht?.let { id -> freunde.firstOrNull { it.id == id } }
+    // Überlagernde Ansichten verdecken die Reiter und lassen sich mit "Zurück" schließen.
+    val overlay = zeigeEinstellungen || zeigeKurse || entwurf != null || angezeigterFreund != null
+    val einrichtung = brauchtZugang || brauchtKurse || overlay
+
+    // Die Zurück-Taste schloss vorher die ganze App, auch aus den Einstellungen heraus.
+    fun zurueck() {
+        when {
+            freundEntwurf != null -> freundEntwurf = null
+            zeigeKurse -> zeigeKurse = false
+            zeigeEinstellungen -> zeigeEinstellungen = false
+            freundAnsicht != null -> freundAnsicht = null
+            tab != Tab.HEUTE -> tab = Tab.HEUTE
+        }
+    }
+    val zurueckMoeglich = !brauchtZugang && (overlay || (!brauchtKurse && tab != Tab.HEUTE))
+    BackHandler(enabled = zurueckMoeglich) { zurueck() }
 
     val offeneAufgaben = hausaufgaben.count { !it.erledigt }
+
+    val titel = when {
+        brauchtZugang -> "Einstellungen"
+        entwurf != null -> if (entwurf.neu) "Freund hinzufügen" else entwurf.freund.name
+        zeigeEinstellungen -> "Einstellungen"
+        brauchtKurse || zeigeKurse -> "Deine Kurse"
+        angezeigterFreund != null -> angezeigterFreund.name
+        else -> tab.titel
+    }
 
     Scaffold(
         topBar = {
@@ -163,23 +219,27 @@ private fun AppInhalt(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer,
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                 ),
-                title = {
-                    Text(
-                        when {
-                            brauchtZugang || zeigeEinstellungen -> "Einstellungen"
-                            brauchtKurse || zeigeKurse -> "Deine Kurse"
-                            else -> tab.titel
+                title = { Text(titel) },
+                navigationIcon = {
+                    if (overlay && !brauchtZugang) {
+                        IconButton(onClick = { zurueck() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
                         }
-                    )
+                    }
                 },
                 actions = {
-                    if (!einrichtung && (tab == Tab.HEUTE || tab == Tab.WOCHE)) {
+                    if (!einrichtung && (tab == Tab.HEUTE || tab == Tab.WOCHE || tab == Tab.SUCHE)) {
                         IconButton(onClick = {
-                            planViewModel.aktualisieren()
-                            if (tab == Tab.WOCHE) planViewModel.wocheLaden()
-                            widgetAktualisieren()
+                            if (tab == Tab.SUCHE) {
+                                sucheViewModel.aktualisieren()
+                            } else {
+                                planViewModel.aktualisieren()
+                                if (tab == Tab.WOCHE) planViewModel.wocheLaden(erzwingen = true)
+                                widgetAktualisieren()
+                            }
                         }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Aktualisieren")
                         }
@@ -195,7 +255,7 @@ private fun AppInhalt(
                             Icon(Icons.Filled.Share, contentDescription = "Plan teilen")
                         }
                     }
-                    if (!brauchtZugang && !brauchtKurse) {
+                    if (!brauchtZugang && !brauchtKurse && entwurf == null) {
                         IconButton(onClick = {
                             zeigeKurse = false
                             zeigeEinstellungen = !zeigeEinstellungen
@@ -237,6 +297,28 @@ private fun AppInhalt(
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             when {
+                // Freund anlegen/bearbeiten (aus den Einstellungen oder der Freund-Ansicht)
+                entwurf != null && !brauchtZugang -> {
+                    if (verfuegbareKurse.isEmpty()) {
+                        KurslisteLaden(aktualisiertGerade) { planViewModel.aktualisieren() }
+                    } else {
+                        FreundBearbeitenScreen(
+                            freund = entwurf.freund,
+                            istNeu = entwurf.neu,
+                            verfuegbareKurse = verfuegbareKurse,
+                            onSpeichern = { f ->
+                                freundeViewModel.speichern(f)
+                                freundEntwurf = null
+                            },
+                            onLoeschen = {
+                                freundeViewModel.loeschen(entwurf.freund.id)
+                                freundEntwurf = null
+                            },
+                            onAbbrechen = { freundEntwurf = null }
+                        )
+                    }
+                }
+
                 // 1. Zugangsdaten und Einstellungen
                 brauchtZugang || zeigeEinstellungen -> {
                     EinstellungenScreen(
@@ -259,6 +341,14 @@ private fun AppInhalt(
                         onKurseAendern = {
                             zeigeEinstellungen = false
                             zeigeKurse = true
+                        },
+                        freunde = freunde,
+                        onFreundBearbeiten = { f ->
+                            freundEntwurf = if (f == null) {
+                                FreundEntwurf(Freund(name = "", kurse = emptySet()), neu = true)
+                            } else {
+                                FreundEntwurf(f, neu = false)
+                            }
                         }
                     )
                 }
@@ -267,17 +357,7 @@ private fun AppInhalt(
                 // "Kurse ändern", aber noch kein Plan geladen: erst laden statt eine leere
                 // Liste mit der irreführenden Meldung "keine Kurse hinterlegt" zu zeigen.
                 zeigeKurse && !brauchtKurse && verfuegbareKurse.isEmpty() -> {
-                    LaunchedEffect(Unit) { planViewModel.aktualisieren() }
-                    if (aktualisiertGerade) {
-                        LadeScreen()
-                    } else {
-                        FehlerScreen(
-                            nachricht = "Die Kursliste konnte nicht geladen werden.",
-                            zugangsproblem = false,
-                            onErneutVersuchen = { planViewModel.aktualisieren() },
-                            onEinstellungen = {}
-                        )
-                    }
+                    KurslisteLaden(aktualisiertGerade) { planViewModel.aktualisieren() }
                 }
 
                 brauchtKurse || zeigeKurse -> {
@@ -297,6 +377,20 @@ private fun AppInhalt(
                     )
                 }
 
+                // 3. Tag eines Freundes
+                angezeigterFreund != null -> {
+                    val angezeigt = zustand as? UiZustand.Angezeigt
+                    if (angezeigt != null) {
+                        FreundTagScreen(
+                            freund = angezeigterFreund,
+                            persoenlich = angezeigt.plan,
+                            onBearbeiten = { freundEntwurf = FreundEntwurf(angezeigterFreund, neu = false) }
+                        )
+                    } else {
+                        LadeScreen()
+                    }
+                }
+
                 else -> when (tab) {
                     Tab.HEUTE -> PullToRefreshBox(
                         isRefreshing = aktualisiertGerade,
@@ -314,7 +408,10 @@ private fun AppInhalt(
                                 aktualisiertGerade = aktualisiertGerade,
                                 onOeffneAufgaben = { tab = Tab.HAUSAUFGABEN },
                                 onOeffnePruefungen = { tab = Tab.PRUEFUNGEN },
-                                onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to z.plan.datum }
+                                onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to z.plan.datum },
+                                freunde = freunde,
+                                onFreund = { freundAnsicht = it.id },
+                                onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
                             )
                             is UiZustand.Fehler -> FehlerScreen(
                                 nachricht = z.nachricht,
@@ -332,7 +429,7 @@ private fun AppInhalt(
                             isRefreshing = wochenZustand is WochenZustand.Laedt,
                             onRefresh = {
                                 planViewModel.aktualisieren()
-                                planViewModel.wocheLaden()
+                                planViewModel.wocheLaden(erzwingen = true)
                             },
                             modifier = Modifier.fillMaxSize()
                         ) {
@@ -342,6 +439,21 @@ private fun AppInhalt(
                                 onAuswahlChange = planViewModel::setWochenAuswahl
                             )
                         }
+                    }
+
+                    // Beim Laden zeigt die Suche selbst einen Ladekreis – kein zweiter oben.
+                    Tab.SUCHE -> PullToRefreshBox(
+                        isRefreshing = false,
+                        onRefresh = { sucheViewModel.aktualisieren() },
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        SucheScreen(
+                            zustand = sucheZustand,
+                            datum = sucheDatum,
+                            onBlaettern = sucheViewModel::blaettern,
+                            onHeute = sucheViewModel::zuHeute,
+                            onNeuLaden = sucheViewModel::aktualisieren
+                        )
                     }
 
                     Tab.HAUSAUFGABEN -> HausaufgabenScreen(
@@ -372,6 +484,29 @@ private fun AppInhalt(
                 aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig)
                 aufgabeAusStunde = null
             }
+        )
+    }
+}
+
+/**
+ * Die Kursliste wird gebraucht, ist aber noch nicht geladen: laden statt eine leere Liste mit
+ * der irreführenden Meldung "keine Kurse hinterlegt" zu zeigen.
+ */
+@Composable
+private fun KurslisteLaden(aktualisiertGerade: Boolean, onLaden: () -> Unit) {
+    var versucht by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        onLaden()
+        versucht = true
+    }
+    if (!versucht || aktualisiertGerade) {
+        LadeScreen()
+    } else {
+        FehlerScreen(
+            nachricht = "Die Kursliste konnte nicht geladen werden.",
+            zugangsproblem = false,
+            onErneutVersuchen = onLaden,
+            onEinstellungen = {}
         )
     }
 }

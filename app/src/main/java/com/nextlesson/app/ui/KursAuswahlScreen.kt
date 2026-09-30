@@ -38,14 +38,6 @@ fun KursAuswahlScreen(
     onAbbrechen: (() -> Unit)? = null
 ) {
     var auswahl by remember { mutableStateOf(gewaehlteKurse) }
-    var suche by remember { mutableStateOf("") }
-
-    val gefiltert = remember(suche, verfuegbareKurse) {
-        val q = suche.trim().lowercase()
-        if (q.isEmpty()) verfuegbareKurse
-        else verfuegbareKurse.filter { it.suchtext.contains(q) }
-    }
-    val gruppiert = remember(gefiltert) { gefiltert.groupBy { it.klasse } }
 
     Column(
         modifier = Modifier
@@ -70,6 +62,46 @@ fun KursAuswahlScreen(
             style = MaterialTheme.typography.bodySmall
         )
 
+        KursListe(
+            verfuegbareKurse = verfuegbareKurse,
+            auswahl = auswahl,
+            onAuswahl = { auswahl = it },
+            modifier = Modifier.weight(1f)
+        )
+
+        Button(
+            onClick = { onSpeichern(auswahl) },
+            enabled = auswahl.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (auswahl.isEmpty()) "Mindestens einen Kurs wählen" else "Stundenplan anzeigen")
+        }
+        if (onAbbrechen != null) {
+            OutlinedButton(onClick = onAbbrechen, modifier = Modifier.fillMaxWidth()) {
+                Text("Abbrechen")
+            }
+        }
+    }
+}
+
+/** Durchsuchbare Kursliste zum Ankreuzen – für die eigenen Kurse und die von Freunden. */
+@Composable
+fun KursListe(
+    verfuegbareKurse: List<KursInfo>,
+    auswahl: Set<String>,
+    onAuswahl: (Set<String>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var suche by remember { mutableStateOf("") }
+
+    val gefiltert = remember(suche, verfuegbareKurse) {
+        val q = suche.trim().lowercase()
+        if (q.isEmpty()) verfuegbareKurse
+        else verfuegbareKurse.filter { it.suchtext.contains(q) }
+    }
+    val gruppiert = remember(gefiltert) { gefiltert.groupBy { it.klasse } }
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
             value = suche,
             onValueChange = { suche = it },
@@ -84,7 +116,7 @@ fun KursAuswahlScreen(
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.align(Alignment.CenterVertically)
             )
-            OutlinedButton(onClick = { auswahl = emptySet() }) { Text("Zurücksetzen") }
+            OutlinedButton(onClick = { onAuswahl(emptySet()) }) { Text("Zurücksetzen") }
         }
 
         LazyColumn(
@@ -106,7 +138,7 @@ fun KursAuswahlScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                auswahl = if (checked) auswahl - kurs.id else auswahl + kurs.id
+                                onAuswahl(if (checked) auswahl - kurs.id else auswahl + kurs.id)
                             }
                             .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -119,19 +151,6 @@ fun KursAuswahlScreen(
                         )
                     }
                 }
-            }
-        }
-
-        Button(
-            onClick = { onSpeichern(auswahl) },
-            enabled = auswahl.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (auswahl.isEmpty()) "Mindestens einen Kurs wählen" else "Stundenplan anzeigen")
-        }
-        if (onAbbrechen != null) {
-            OutlinedButton(onClick = onAbbrechen, modifier = Modifier.fillMaxWidth()) {
-                Text("Abbrechen")
             }
         }
     }

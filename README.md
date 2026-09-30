@@ -61,14 +61,33 @@ bleiben, in `ui/theme/Theme.kt` den Vorgabewert auf `dunkel: Boolean = true` set
 
 Nur zwei Dateien tragen das ganze Design: `ui/theme/Color.kt` und `ui/theme/Theme.kt`.
 
-## Die vier Tabs
+## Die fünf Tabs
 
-Unten in der App gibt es vier Bereiche:
+Unten in der App gibt es fünf Bereiche:
 
-* **Heute** – die nächste Stunde groß, darunter der Tagesverlauf.
+* **Heute** – die nächste Stunde groß, darunter der Tagesverlauf (mit Freistunden und
+  Schulschluss). Eine Stunde antippen legt eine Hausaufgabe bis zur nächsten Stunde an.
 * **Woche** – Montag bis Freitag am Stück.
+* **Suche** – wo eine Lehrkraft gerade Unterricht hat und welche Räume frei sind.
 * **Aufgaben** – Hausaufgaben eintragen und abhaken.
-* **Klausuren** – Tests und Klausuren mit Datum.
+* **Klausuren** – Tests und Klausuren mit Datum; Klausuren aus dem Plan kommen von selbst.
+
+## Lehrer- und Raumsuche
+
+Die App lädt ohnehin den Plan der ganzen Schule. Die Suche nimmt ein Lehrerkürzel oder
+eine Raumnummer und zeigt für heute (oder einen anderen Schultag) den Tagesablauf: wann
+die Lehrkraft wo ist bzw. wann der Raum belegt ist. Ohne Suchbegriff listet sie die
+Räume, die gerade frei sind – die am längsten freien zuerst.
+
+Grenze: Grundlage ist der Schülerplan. Aufsichten, Sprechstunden oder Räume ohne
+Unterricht stehen darin nicht; "frei" heißt also nur "laut Plan kein Unterricht".
+
+## Freunde
+
+In den Einstellungen lassen sich Freunde mit ihren Kursen anlegen. Die Startseite zeigt
+dann je Freund die Unterrichtszeit und die gemeinsamen Freistunden (ab 30 Minuten, nur
+wenn beide in der Schule sind); antippen zeigt den ganzen Tag des Freundes und welche
+Stunden ihr zusammen habt. Alles wird nur auf dem Gerät gespeichert.
 
 ## Hausaufgaben
 
@@ -106,21 +125,24 @@ Technisch plant sich diese Erinnerung nach jedem Auslösen selbst für den näch
 neu ein. Ein einfacher 24-Stunden-Job würde über die Wochen von der Wunschzeit
 wegdriften; so wird die eingestellte Uhrzeit jeden Tag neu getroffen.
 
-## Benachrichtigungen bei Entfall
+## Benachrichtigungen bei Änderungen
 
-Es gibt genau dann eine Push-Meldung, wenn eine Stunde **in deinen gewählten Kursen
-neu ausfällt**. Nicht bei Raumwechsel, nicht bei Vertretung, und nicht noch einmal
-für einen Entfall, den du schon kennst.
+Es gibt eine Push-Meldung, wenn sich eine Stunde **in deinen gewählten Kursen neu
+ändert**: Ausfall, Vertretung oder Raumänderung – welche davon, stellst du in den
+Einstellungen ein. Nicht noch einmal für eine Änderung, die du schon kennst. Je Tag gibt
+es eine Meldung, die alle aktuellen Änderungen des Tages auflistet.
 
-Dahinter steckt ein Abgleich (`EntfallTracker`): Die App merkt sich pro Tag, welche
-deiner Stunden zuletzt als ausgefallen gemeldet waren, und meldet nur die Differenz.
+Dahinter steckt ein Abgleich (`AenderungsTracker`): Die App merkt sich pro Tag, welche
+Änderungen zuletzt bekannt waren, und meldet nur die Differenz. Wechselt der Raum ein
+zweites Mal, ist das wieder neu.
 
 Drei Regeln, damit es nicht nervt:
 
 * **Erster Abruf für einen Tag meldet nie.** Sonst käme direkt nach dem Einrichten
   eine Flut von Meldungen für längst bekannte Entfälle.
 * **Vergangene Stunden werden nicht gemeldet.** Um 18 Uhr noch zu erfahren, dass die
-  3. Stunde ausgefallen ist, hilft niemandem.
+  3. Stunde ausgefallen ist, hilft niemandem. Eine schon sichtbare Meldung wird still
+  aktualisiert, wenn eine Änderung zurückgenommen wird oder die Stunde vorbei ist.
 * **Nach einer Kursänderung wird der Stand zurückgesetzt**, weil er sich auf andere
   Kurse bezog.
 
