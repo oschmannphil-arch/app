@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nextlesson.app.data.CredentialsStore
-import com.nextlesson.app.data.EntfallTracker
+import com.nextlesson.app.data.AenderungsTracker
 import com.nextlesson.app.data.GesamtPlan
 import com.nextlesson.app.data.IndiwareCredentials
 import com.nextlesson.app.data.IndiwareRepository
@@ -61,7 +61,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     // langsam. Ohne lazy passierte das im Konstruktor auf dem Main-Thread (langer Start).
     private val credentialsStore by lazy { CredentialsStore(app) }
     private val kursSelectionStore = KursSelectionStore(app)
-    private val entfallTracker = EntfallTracker(app)
+    private val aenderungsTracker = AenderungsTracker(app)
     private val widgetDataStore = WidgetDataStore(app)
     private val repository = IndiwareRepository(app)
 
@@ -114,7 +114,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
 
     fun anmelden(creds: IndiwareCredentials) {
         credentialsStore.speichern(creds)
-        entfallTracker.zuruecksetzen()
+        aenderungsTracker.zuruecksetzen()
         aktualisiere(creds, erzwingen = true)
     }
 
@@ -142,8 +142,8 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     /** Speichert die Kurswahl und lädt den persönlichen Plan neu. */
     fun kursAuswahlSpeichern(kursIds: Set<String>) {
         kursSelectionStore.speichern(kursIds)
-        // Der alte Entfall-Stand bezog sich auf andere Kurse und würde sonst Fehlalarme geben.
-        entfallTracker.zuruecksetzen()
+        // Der alte Änderungs-Stand bezog sich auf andere Kurse und würde sonst Fehlalarme geben.
+        aenderungsTracker.zuruecksetzen()
         _wochenZustand.value = WochenZustand.NichtGeladen
 
         if (kursIds.isEmpty()) {
@@ -176,8 +176,11 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         wocheLaden()
     }
 
-    /** Lädt Montag–Freitag für die Wochenansicht. */
-    fun wocheLaden() {
+    /**
+     * Lädt Montag–Freitag für die Wochenansicht. [erzwingen] (Aktualisieren-Knopf, Ziehen zum
+     * Aktualisieren) umgeht den 30-Sekunden-Zwischenspeicher.
+     */
+    fun wocheLaden(erzwingen: Boolean = false) {
         val creds = credentialsStore.laden() ?: return
         val kurse = kursSelectionStore.laden()
         if (kurse.isEmpty()) return
@@ -203,7 +206,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                 WochenAuswahl.NAECHSTE -> base.plusWeeks(1)
             }
             
-            val tage = repository.holeWoche(creds, referenz).map { (datum, ergebnis) ->
+            val tage = repository.holeWoche(creds, referenz, erzwingen).map { (datum, ergebnis) ->
                 when (ergebnis) {
                     is PlanResult.Success -> WochenTag(datum, ergebnis.plan.tagesplanFuer(kurse))
                     is PlanResult.AuthFehler -> WochenTag(datum, null, "Login fehlgeschlagen")
@@ -236,42 +239,40 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         auswahl: Set<String>,
         erzwingen: Boolean
     ) {
-        run {
-            // Ohne Kurswahl brauchen wir nur die Kursliste.
-            if (auswahl.isEmpty()) {
-                when (val ergebnis = repository.holeNaechstenVerfuegbarenPlan(creds, erzwingen = erzwingen)) {
-                    is PlanResult.Success -> {
-                        letzterGesamtPlan = ergebnis.plan
-                        _zustand.value = UiZustand.KurseWaehlen(ergebnis.plan.alleKurse)
-                    }
-                    is PlanResult.AuthFehler -> _zustand.value = fehlerAuth()
-                    is PlanResult.KeinPlanFuerTag -> _zustand.value = fehlerKeinPlan()
-                    is PlanResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
+        // Ohne Kurswahl brauchen wir nur die Kursliste.
+        if (auswahl.isEmpty()) {
+            when (val ergebnis = repository.holeNaechstenVerfuegbarenPlan(creds, erzwingen = erzwingen)) {
+                is PlanResult.Success -> {
+                    letzterGesamtPlan = ergebnis.plan
+                    _zustand.value = UiZustand.KurseWaehlen(ergebnis.plan.alleKurse)
                 }
-                return
+                is PlanResult.AuthFehler -> _zustand.value = fehlerAuth()
+                is PlanResult.KeinPlanFuerTag -> _zustand.value = fehlerKeinPlan()
+                is PlanResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
             }
+            return
+        }
 
-            // Sofort etwas zeigen: der zuletzt gespeicherte Plan liegt lokal und ist in
-            // Millisekunden da, statt den Nutzer auf das Netz warten zu lassen.
-            if (_zustand.value !is UiZustand.Angezeigt) {
-                val vorab = repository.holePersoenlichenPlan(creds, auswahl, nurCache = true)
-                if (vorab is PersoenlicherResult.Erfolg && vorab.plan.naechste != null &&
-                    _zustand.value !is UiZustand.Angezeigt
-                ) {
-                    letzterGesamtPlan = vorab.plan.gesamt
-                    _zustand.value = UiZustand.Angezeigt(vorab.plan)
-                }
+        // Sofort etwas zeigen: der zuletzt gespeicherte Plan liegt lokal und ist in
+        // Millisekunden da, statt den Nutzer auf das Netz warten zu lassen.
+        if (_zustand.value !is UiZustand.Angezeigt) {
+            val vorab = repository.holePersoenlichenPlan(creds, auswahl, nurCache = true)
+            if (vorab is PersoenlicherResult.Erfolg && vorab.plan.naechste != null &&
+                _zustand.value !is UiZustand.Angezeigt
+            ) {
+                letzterGesamtPlan = vorab.plan.gesamt
+                _zustand.value = UiZustand.Angezeigt(vorab.plan)
             }
+        }
 
-            when (val ergebnis = repository.holePersoenlichenPlan(creds, auswahl, erzwingen = erzwingen)) {
-                is PersoenlicherResult.Erfolg -> {
-                    letzterGesamtPlan = ergebnis.plan.gesamt
-                    _zustand.value = UiZustand.Angezeigt(ergebnis.plan)
-                }
-                is PersoenlicherResult.AuthFehler -> _zustand.value = fehlerAuth()
-                is PersoenlicherResult.KeinPlan -> _zustand.value = fehlerKeinPlan()
-                is PersoenlicherResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
+        when (val ergebnis = repository.holePersoenlichenPlan(creds, auswahl, erzwingen = erzwingen)) {
+            is PersoenlicherResult.Erfolg -> {
+                letzterGesamtPlan = ergebnis.plan.gesamt
+                _zustand.value = UiZustand.Angezeigt(ergebnis.plan)
             }
+            is PersoenlicherResult.AuthFehler -> _zustand.value = fehlerAuth()
+            is PersoenlicherResult.KeinPlan -> _zustand.value = fehlerKeinPlan()
+            is PersoenlicherResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
         }
     }
 

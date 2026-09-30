@@ -126,6 +126,7 @@ private fun TagKarte(tag: WochenTag, dunkel: Boolean) {
         it.status != LessonStatus.NORMAL && 
         it.status != LessonStatus.ENTFALL
     }
+    val klausur = stunden.any { it.istKlausur && !it.entfaellt }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -175,6 +176,13 @@ private fun TagKarte(tag: WochenTag, dunkel: Boolean) {
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    if (klausur) {
+                        StatusBadge(
+                            text = "Klausur",
+                            hintergrund = MaterialTheme.colorScheme.error,
+                            vordergrund = MaterialTheme.colorScheme.onError
+                        )
+                    }
                     if (entfaelle > 0) {
                         StatusBadge(
                             text = if (entfaelle == 1) "1 Entfall" else "$entfaelle Entfälle",
@@ -224,7 +232,6 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
     val istVertretung = status == LessonStatus.VERTRETUNG
-    val istRaum = status == LessonStatus.RAUMAENDERUNG
 
     val akzent = when (status) {
         LessonStatus.ENTFALL -> MaterialTheme.colorScheme.outline
@@ -245,6 +252,7 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
             LessonStatus.RAUMAENDERUNG -> append(", Raumänderung nach ${lesson.raum}")
             else -> append(", bei ${lesson.lehrer}")
         }
+        if (lesson.istKlausur && !istEntfall) append(", Klausur")
         if (lesson.hatAufgaben) append(", Aufgaben erteilt")
         if (lesson.raum.isNotBlank() && !istEntfall) append(" in Raum ${lesson.raum}")
     }
@@ -341,7 +349,8 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (istRaum && lesson.originalRoom != null) {
+                // Raumänderung auch markieren, wenn zugleich vertreten wird.
+                if (lesson.raumGeaendert && lesson.originalRoom != null) {
                     Text(
                         text = lesson.originalRoom,
                         style = MaterialTheme.typography.bodySmall,
@@ -354,12 +363,21 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
                     Text(
                         text = lesson.raum,
                         style = MaterialTheme.typography.titleSmall,
-                        color = if (istRaum) Color(0xFFE65100) else if (lesson.raumGeaendert) MaterialTheme.colorScheme.error else haupt
+                        color = if (lesson.raumGeaendert) Color(0xFFE65100) else haupt
                     )
                 }
             }
         }
 
+        // An Klausurtagen soll man die Klausur auch in der Woche sehen (fehlte vorher).
+        if (lesson.istKlausur && !istEntfall) {
+            Spacer(Modifier.width(8.dp))
+            StatusBadge(
+                text = "Klausur",
+                hintergrund = MaterialTheme.colorScheme.error,
+                vordergrund = MaterialTheme.colorScheme.onError
+            )
+        }
         if (lesson.hatAufgaben) {
             Spacer(Modifier.width(8.dp))
             StatusBadge(

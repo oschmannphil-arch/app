@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
+import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.Hausaufgabe
 import com.nextlesson.app.data.Pruefung
 import androidx.compose.foundation.layout.Arrangement
@@ -32,7 +33,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -140,7 +145,10 @@ fun HomeScreen(
     aktualisiertGerade: Boolean,
     onOeffneAufgaben: () -> Unit,
     onOeffnePruefungen: () -> Unit,
-    onStundeAntippen: (Lesson) -> Unit = {}
+    onStundeAntippen: (Lesson) -> Unit = {},
+    freunde: List<Freund> = emptyList(),
+    onFreund: (Freund) -> Unit = {},
+    onTagVorbei: () -> Unit = {}
 ) {
     val jetzt by rememberJetzt(aktualisiertGerade)
     val plan = persoenlich.plan
@@ -148,6 +156,18 @@ fun HomeScreen(
     // geöffneter App die beim Laden ermittelte Stunde stehen, obwohl sie längst vorbei ist.
     val naechste = if (persoenlich.istHeute) plan.naechsteStunde(jetzt) else persoenlich.naechste
     val dunkel = isSystemInDarkTheme()
+
+    // Endet die letzte Stunde, während die App offen ist, einmal neu laden: Dann springt die
+    // Ansicht auf den nächsten Schultag, statt "kein Unterricht in den nächsten Tagen" zu zeigen.
+    // Höchstens einmal je Tag, damit es keine Endlosschleife gibt, falls wirklich nichts kommt.
+    val tagVorbei = persoenlich.istHeute && naechste == null
+    var nachgeladenFuer by remember { mutableStateOf<LocalDate?>(null) }
+    LaunchedEffect(tagVorbei, persoenlich.datum) {
+        if (tagVorbei && nachgeladenFuer != persoenlich.datum) {
+            nachgeladenFuer = persoenlich.datum
+            onTagVorbei()
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -167,7 +187,7 @@ fun HomeScreen(
             if (naechste != null) {
                 HeroKarte(naechste, persoenlich.istHeute, persoenlich.datum, jetzt, dunkel)
             } else {
-                LeerKarte()
+                LeerKarte(tagVorbei = tagVorbei, laedt = aktualisiertGerade)
             }
         }
 
@@ -177,7 +197,7 @@ fun HomeScreen(
                     titel = "Hinweise für ${if (persoenlich.istHeute) "heute" else "diesen Tag"}",
                     text = plan.hinweise.joinToString("\n"),
                     hervorgehoben = plan.hinweise.any { it.contains("klausur", ignoreCase = true) },
-                    onClick = {}
+                    onClick = null
                 )
             }
         }
@@ -201,6 +221,10 @@ fun HomeScreen(
                     onClick = onOeffnePruefungen
                 )
             }
+        }
+
+        if (freunde.isNotEmpty()) {
+            item { FreundeKarte(freunde, persoenlich, onFreund) }
         }
 
         item {
@@ -273,17 +297,18 @@ private fun OfflineHinweis(geprueftUm: Long, aktualisiertGerade: Boolean) {
 }
 
 @Composable
-private fun UebersichtKarte(
+internal fun UebersichtKarte(
     titel: String,
     text: String,
     hervorgehoben: Boolean,
-    onClick: () -> Unit
+    onClick: (() -> Unit)?
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
+            // Ohne Aktion auch kein Klick-Effekt (vorher: Welle, aber nichts passierte).
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (hervorgehoben) MaterialTheme.colorScheme.errorContainer
@@ -358,7 +383,7 @@ fun planAlsText(persoenlich: PersoenlicherPlan): String = buildString {
     persoenlich.plan.schluss()?.let { append("\nSchluss: ${it.format(zeitFormat)}") }
 }
 
-private fun laeuft(lesson: Lesson, jetzt: LocalTime): Boolean {
+internal fun laeuft(lesson: Lesson, jetzt: LocalTime): Boolean {
     val b = lesson.beginn ?: return false
     val e = lesson.ende ?: return false
     return !jetzt.isBefore(b) && jetzt.isBefore(e)
@@ -376,7 +401,6 @@ private fun HeroKarte(
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
     val istVertretung = status == LessonStatus.VERTRETUNG
-    val istRaum = status == LessonStatus.RAUMAENDERUNG
     val gestoert = status != LessonStatus.NORMAL
 
     val akzent = when (status) {
@@ -464,7 +488,7 @@ private fun HeroKarte(
                         titel = "Raum",
                         wert = if (istEntfall) "—" else lesson.raum.ifBlank { "—" },
                         gestoert = gestoert,
-                        originalWert = if (istRaum) lesson.originalRoom else null,
+                        originalWert = if (lesson.raumGeaendert) lesson.originalRoom else null,
                         modifier = Modifier.weight(1f)
                     )
                     val beginn = lesson.beginn
@@ -556,7 +580,7 @@ private fun InfoBlock(
 }
 
 @Composable
-private fun LeerKarte() {
+private fun LeerKarte(tagVorbei: Boolean, laedt: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -565,9 +589,16 @@ private fun LeerKarte() {
         )
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
-            Text(text = "Frei", style = MaterialTheme.typography.headlineMedium)
             Text(
-                text = "In den nächsten Tagen ist in deinen Kursen kein Unterricht eingetragen.",
+                text = if (tagVorbei) "Schluss für heute" else "Frei",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            Text(
+                text = when {
+                    tagVorbei && laedt -> "Der nächste Schultag wird geladen …"
+                    tagVorbei -> "Für die nächsten Tage ist in deinen Kursen noch kein Unterricht eingetragen."
+                    else -> "In den nächsten Tagen ist in deinen Kursen kein Unterricht eingetragen."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -576,17 +607,16 @@ private fun LeerKarte() {
 }
 
 @Composable
-private fun StundenZeile(
+internal fun StundenZeile(
     lesson: Lesson,
     istNaechste: Boolean,
     laeuftGerade: Boolean,
     dunkel: Boolean,
-    onClick: () -> Unit
+    onClick: (() -> Unit)?
 ) {
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
     val istVertretung = status == LessonStatus.VERTRETUNG
-    val istRaum = status == LessonStatus.RAUMAENDERUNG
 
     val akzent = when (status) {
         LessonStatus.ENTFALL -> Color.Gray
@@ -615,6 +645,10 @@ private fun StundenZeile(
             LessonStatus.RAUMAENDERUNG -> append(", Raumänderung nach ${lesson.raum}")
             else -> append(", bei ${lesson.lehrer}")
         }
+        if (!lesson.entfaellt && lesson.raum.isNotBlank() && status != LessonStatus.RAUMAENDERUNG) {
+            append(", Raum ${lesson.raum}")
+        }
+        if (lesson.istKlausur && !lesson.entfaellt) append(", Klausur")
         if (lesson.hatAufgaben) append(", Aufgaben erteilt")
     }
 
@@ -624,7 +658,10 @@ private fun StundenZeile(
             .clip(RoundedCornerShape(14.dp))
             .background(hintergrund)
             .alpha(alpha)
-            .clickable(onClickLabel = "Hausaufgabe eintragen", onClick = onClick)
+            .then(
+                if (onClick != null) Modifier.clickable(onClickLabel = "Hausaufgabe eintragen", onClick = onClick)
+                else Modifier
+            )
             .semantics(mergeDescendants = true) { contentDescription = desc }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -739,37 +776,38 @@ private fun StundenZeile(
                 )
                 Spacer(Modifier.height(2.dp))
             }
-            when {
-                istEntfall -> StatusBadge(
+            if (istEntfall) {
+                StatusBadge(
                     text = "entfällt",
                     hintergrund = MaterialTheme.colorScheme.error,
                     vordergrund = MaterialTheme.colorScheme.onError
                 )
-                istVertretung -> StatusBadge(
-                    text = "Vertretung",
-                    hintergrund = Color(0xFFFF9800),
-                    vordergrund = Color.White
-                )
-                istRaum -> Column(horizontalAlignment = Alignment.End) {
-                    if (lesson.originalRoom != null) {
-                        Text(
-                            text = lesson.originalRoom,
-                            style = MaterialTheme.typography.labelSmall,
-                            textDecoration = TextDecoration.LineThrough,
-                            color = textNeben
-                        )
-                    }
+            } else {
+                if (istVertretung) {
+                    StatusBadge(
+                        text = "Vertretung",
+                        hintergrund = Color(0xFFFF9800),
+                        vordergrund = Color.White
+                    )
+                    Spacer(Modifier.height(2.dp))
+                }
+                // Den Raum immer zeigen – auch bei einer Vertretung (dort fehlte er vorher ganz),
+                // und eine Raumänderung auch dann markieren, wenn zugleich vertreten wird.
+                if (lesson.raumGeaendert && lesson.originalRoom != null) {
+                    Text(
+                        text = lesson.originalRoom,
+                        style = MaterialTheme.typography.labelSmall,
+                        textDecoration = TextDecoration.LineThrough,
+                        color = textNeben
+                    )
+                }
+                if (lesson.raum.isNotBlank()) {
                     Text(
                         text = lesson.raum,
                         style = MaterialTheme.typography.titleSmall,
-                        color = Color(0xFFE65100)
+                        color = if (lesson.raumGeaendert) Color(0xFFE65100) else textHaupt
                     )
                 }
-                lesson.raum.isNotBlank() -> Text(
-                    text = lesson.raum,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = textHaupt
-                )
             }
         }
     }

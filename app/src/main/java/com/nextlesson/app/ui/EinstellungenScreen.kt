@@ -29,13 +29,13 @@ import android.content.Intent
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.nextlesson.app.data.AenderungsArt
+import com.nextlesson.app.data.BenachrichtigungsEinstellungen
 import com.nextlesson.app.work.EntfallNotifier
 import com.nextlesson.app.work.HintergrundStatus
 import java.time.Instant
@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Erinnerung
+import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.IndiwareCredentials
 
 /**
@@ -64,7 +65,9 @@ fun EinstellungenScreen(
     onZugangSpeichern: (IndiwareCredentials) -> Unit,
     onErinnerungSetzen: (aktiv: Boolean, stunde: Int, minute: Int) -> Unit,
     onGrosserTextSetzen: (Boolean) -> Unit,
-    onKurseAendern: () -> Unit
+    onKurseAendern: () -> Unit,
+    freunde: List<Freund> = emptyList(),
+    onFreundBearbeiten: (Freund?) -> Unit = {}
 ) {
     var schulnummer by remember { mutableStateOf(credentials?.schulnummer.orEmpty()) }
     var benutzer by remember { mutableStateOf(credentials?.benutzername.orEmpty()) }
@@ -156,6 +159,12 @@ fun EinstellungenScreen(
                 }
                 OutlinedButton(onClick = onKurseAendern) { Text("Ändern") }
             }
+        }
+
+        // --- Freunde ---
+        // Braucht die Kursliste der Schule – also erst, wenn ein Zugang gespeichert ist.
+        if (credentials != null) {
+            FreundeEinstellungenKarte(freunde = freunde, onBearbeiten = onFreundBearbeiten)
         }
 
         // --- Widget ---
@@ -253,22 +262,17 @@ fun EinstellungenScreen(
 }
 
 /**
- * Zeigt, ob Ausfall-Meldungen überhaupt ankommen können – und bietet einen Test.
+ * Zeigt, ob Meldungen überhaupt ankommen können, welche Änderungen gemeldet werden – und bietet einen Test.
  * Der Stand wird bei jeder Rückkehr in die App neu geprüft (z.B. nach dem Ändern in den
  * Android-Einstellungen).
  */
 @Composable
 private fun BenachrichtigungenKarte() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     var pruefung by remember { mutableIntStateOf(0) }
-    DisposableEffect(lifecycleOwner) {
-        val beobachter = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) pruefung++
-        }
-        lifecycleOwner.lifecycle.addObserver(beobachter)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(beobachter) }
-    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { pruefung++ }
+    val einstellungen = remember { BenachrichtigungsEinstellungen(context) }
+    var aktiveArten by remember { mutableStateOf(einstellungen.aktiveArten()) }
 
     val erlaubt = remember(pruefung) {
         EntfallNotifier.darfBenachrichtigen(context) &&
@@ -288,7 +292,28 @@ private fun BenachrichtigungenKarte() {
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ausfall-Benachrichtigungen", style = MaterialTheme.typography.titleMedium)
+            Text("Benachrichtigungen", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "Gemeldet werden neue Änderungen in deinen Kursen – je Tag eine Meldung.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            AenderungsArt.entries.forEach { art ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = art.anzeige,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = art in aktiveArten,
+                        onCheckedChange = { an ->
+                            einstellungen.setzen(art, an)
+                            aktiveArten = einstellungen.aktiveArten()
+                        }
+                    )
+                }
+            }
 
             StatusZeile(
                 ok = erlaubt,

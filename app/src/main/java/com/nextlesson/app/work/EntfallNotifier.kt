@@ -11,32 +11,34 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.nextlesson.app.R
-import com.nextlesson.app.data.Lesson
+import com.nextlesson.app.data.Aenderung
+import com.nextlesson.app.data.AenderungsText
 import com.nextlesson.app.ui.MainActivity
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /**
- * Schickt eine Push-Benachrichtigung – ausschließlich bei NEUEM Entfall in den Kursen,
- * die der Schüler ausgewählt hat. Raumwechsel oder Vertretungen lösen bewusst keine
- * Benachrichtigung aus.
+ * Push-Benachrichtigungen bei NEUEN Änderungen in den gewählten Kursen: Ausfall, Vertretung,
+ * Raumänderung (welche davon, stellt man in der App ein). Je Tag gibt es genau eine Meldung,
+ * die alle aktuellen Änderungen des Tages auflistet.
+ *
+ * Name aus der Zeit, als nur Ausfälle gemeldet wurden; der Kanal heißt intern weiter "entfall",
+ * damit Einstellungen, die jemand in Android dafür getroffen hat, erhalten bleiben.
  */
 object EntfallNotifier {
 
     private const val CHANNEL_ID = "entfall"
     private const val NOTIFICATION_ID_BASIS = 4200
     private const val TEST_ID = 4199
-    private val tagFormat = DateTimeFormatter.ofPattern("EEEE, dd.MM.", Locale.GERMAN)
 
     fun kanalAnlegen(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        // Name und Beschreibung eines bestehenden Kanals darf man ändern (die Wichtigkeit nicht).
         val kanal = NotificationChannel(
             CHANNEL_ID,
-            "Stundenausfall",
+            "Stundenplan-Änderungen",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Meldet, wenn eine deiner Stunden neu ausfällt."
+            description = "Meldet, wenn eine deiner Stunden ausfällt, vertreten wird oder den Raum wechselt."
         }
         context.getSystemService(NotificationManager::class.java)?.createNotificationChannel(kanal)
     }
@@ -50,24 +52,24 @@ object EntfallNotifier {
     }
 
     /**
-     * Meldet NEUEN Entfall eines Tages. Der Text listet aber ALLE aktuellen Ausfälle des Tages:
-     * Die Meldung eines Tages hat eine feste ID – vorher ersetzte ein zweiter Ausfall am selben
-     * Tag die erste Meldung, und der erste Ausfall war aus der Leiste verschwunden.
+     * Meldet NEUE Änderungen eines Tages. Der Text listet aber ALLE aktuellen Änderungen des
+     * Tages: Die Meldung eines Tages hat eine feste ID, eine zweite Änderung am selben Tag
+     * ersetzt also die erste – und die erste darf dabei nicht verloren gehen.
      *
-     * @param alle alle aktuell ausfallenden Stunden des Tages (eigene Kurse).
-     * @param neu nur die seit dem letzten Abruf neu ausgefallenen – bestimmen Titel und Alarm.
+     * @param alle alle aktuell anzuzeigenden Änderungen des Tages.
+     * @param neu nur die seit dem letzten Abruf neuen – bestimmen Titel und Ton.
      */
-    fun melden(context: Context, datum: LocalDate, alle: List<Lesson>, neu: List<Lesson>) {
+    fun melden(context: Context, datum: LocalDate, alle: List<Aenderung>, neu: List<Aenderung>) {
         if (neu.isEmpty() || !darfBenachrichtigen(context)) return
-        zeigen(context, datum, alle, titel(datum, neu), leise = false)
+        zeigen(context, datum, alle, AenderungsText.titel(neu, datum, LocalDate.now()), leise = false)
     }
 
     /**
-     * Stand einer bereits sichtbaren Meldung nachziehen, ohne erneut zu klingeln: Wurde ein
-     * Ausfall zurückgenommen, verschwindet er aus dem Text – fällt nichts mehr aus, verschwindet
-     * die Meldung ganz. Sonst stünde dort weiter ein Ausfall, der gar nicht mehr gilt.
+     * Stand einer bereits sichtbaren Meldung nachziehen, ohne erneut zu klingeln: Wurde eine
+     * Änderung zurückgenommen oder ist die Stunde vorbei, verschwindet sie aus dem Text – bleibt
+     * nichts übrig, verschwindet die Meldung ganz.
      */
-    fun nachziehen(context: Context, datum: LocalDate, alle: List<Lesson>) {
+    fun nachziehen(context: Context, datum: LocalDate, alle: List<Aenderung>) {
         val id = notificationId(datum)
         val sichtbar = runCatching {
             context.getSystemService(NotificationManager::class.java)
@@ -79,7 +81,7 @@ object EntfallNotifier {
             return
         }
         if (!darfBenachrichtigen(context)) return
-        zeigen(context, datum, alle, titel(datum, alle), leise = true)
+        zeigen(context, datum, alle, AenderungsText.titel(alle, datum, LocalDate.now()), leise = true)
     }
 
     /** Probe-Meldung aus den Einstellungen – zeigt, ob Benachrichtigungen ankommen. */
@@ -89,7 +91,7 @@ object EntfallNotifier {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_entfall)
             .setContentTitle("Test: Benachrichtigungen funktionieren")
-            .setContentText("So sieht eine Meldung aus, wenn eine deiner Stunden ausfällt.")
+            .setContentText("So sieht eine Meldung aus, wenn sich eine deiner Stunden ändert.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(oeffnenIntent(context))
@@ -99,38 +101,9 @@ object EntfallNotifier {
         }.isSuccess
     }
 
-    private fun wann(datum: LocalDate): String {
-        val heute = LocalDate.now()
-        return when (datum) {
-            heute -> "heute"
-            heute.plusDays(1) -> "morgen"
-            else -> datum.format(tagFormat)
-        }
-    }
-
-    private fun titel(datum: LocalDate, stunden: List<Lesson>): String {
-        val wann = wann(datum)
-        if (stunden.size != 1) return "${stunden.size} Stunden fallen $wann aus"
-        val l = stunden.first()
-        // Beim Ausfall steht im Fach oft nur "---". Ein kurzer Info-Text nennt dann den echten
-        // Kurs ("ENG2 Herr Niemietz fällt aus"); lange Sammel-Hinweise taugen nicht als Titel.
-        return when {
-            l.fach.any { it.isLetterOrDigit() } -> "${l.fach} fällt $wann aus"
-            l.info.isNotBlank() && l.info.length <= 60 && ';' !in l.info ->
-                "${wann.replaceFirstChar { it.uppercase() }}: ${l.info}"
-            else -> "Unterricht fällt $wann aus"
-        }
-    }
-
-    private fun zeigen(context: Context, datum: LocalDate, alle: List<Lesson>, titel: String, leise: Boolean) {
+    private fun zeigen(context: Context, datum: LocalDate, alle: List<Aenderung>, titel: String, leise: Boolean) {
         kanalAnlegen(context)
-        val text = alle.sortedBy { it.stunde }.joinToString("\n") { l ->
-            buildString {
-                append("${l.stunde}. Std")
-                if (l.fach.any { it.isLetterOrDigit() }) append(" ${l.fach}")
-                if (l.info.isNotBlank()) append(" – ${l.info}")
-            }
-        }
+        val text = AenderungsText.text(alle)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_entfall)
