@@ -42,8 +42,14 @@ object IndiwareXmlParser {
 
     private val KLASSE_TAGS = setOf("Kl", "Klasse")
 
-    /** Einzelwörter, die (nur als ganzes Wort) Entfall bedeuten. */
-    private val ENTFALL_WOERTER = Regex("""(?<![\p{L}\p{N}])(selbst|eva|frei|eigenv\p{L}*)(?![\p{L}\p{N}])""")
+    /**
+     * Stichwörter für Entfall. "selbst…" (Selbstbeschäftigung, Selbstlernzeit …) und
+     * "eigenv…" (eigenverantwortlich) zählen am Wortanfang, "eva" und "frei" nur als
+     * ganzes Wort – sonst träfen sie "Freitag", "Evangelisch" oder Namen wie "Evers".
+     */
+    private val ENTFALL_WOERTER = Regex(
+        """(?<![\p{L}\p{N}])(selbst|eigenv)|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
+    )
 
     /** Eindeutige Wendungen – hier reicht ein Teilstring. */
     private val ENTFALL_PHRASEN = listOf(
