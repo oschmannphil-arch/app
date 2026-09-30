@@ -74,7 +74,6 @@ jobs:
           # Tag auf den gebauten Commit setzen, nicht auf main – sonst sortiert GitHub das
           # Release nach dem (alten) main-Commit ganz nach unten in die Liste.
           target_commitish: ${{ github.sha }}
-          make_latest: true
           name: Build ${{ github.run_number }}
           prerelease: true
           files: NaechsteStunde.apk
