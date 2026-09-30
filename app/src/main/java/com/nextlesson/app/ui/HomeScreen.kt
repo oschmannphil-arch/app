@@ -7,6 +7,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
+import com.nextlesson.app.data.Freiblock
+import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.Hausaufgabe
 import com.nextlesson.app.data.Pruefung
@@ -156,6 +158,14 @@ fun HomeScreen(
     // geöffneter App die beim Laden ermittelte Stunde stehen, obwohl sie längst vorbei ist.
     val naechste = if (persoenlich.istHeute) plan.naechsteStunde(jetzt) else persoenlich.naechste
     val dunkel = isSystemInDarkTheme()
+    // Freistunden im Zeitraster der Schule (auch vor der ersten Stunde), je an der Stelle der
+    // Stunde, die danach kommt.
+    val freiVor = remember(persoenlich) {
+        Freizeit.freiBloecke(plan, persoenlich.gesamt.zeitraster).mapNotNull { block ->
+            val danach = plan.stunden.indexOfFirst { l -> l.beginn?.let { !it.isBefore(block.ende) } == true }
+            if (danach >= 0) danach to block else null
+        }.toMap()
+    }
 
     // Endet die letzte Stunde, während die App offen ist, einmal neu laden: Dann springt die
     // Ansicht auf den nächsten Schultag, statt "kein Unterricht in den nächsten Tagen" zu zeigen.
@@ -255,10 +265,9 @@ fun HomeScreen(
 
         // Bewusst ohne key: bei mehreren gewählten Kursblöcken können zwei Stunden
         // dieselbe Nummer und dasselbe Fach haben, und doppelte Keys lassen LazyColumn abstürzen.
-        val freiVor = plan.freistunden().associate { (index, von, bis) -> index to (von to bis) }
         itemsIndexed(plan.stunden) { index, lesson ->
             Column {
-                freiVor[index]?.let { (von, bis) -> FreistundenZeile(von, bis) }
+                freiVor[index]?.let { FreistundenZeile(it) }
                 StundenZeile(
                     lesson = lesson,
                     istNaechste = lesson.stunde == naechste?.lesson?.stunde,
@@ -352,11 +361,12 @@ private fun pruefungText(p: Pruefung): String {
     return if (name.isBlank()) wann.replaceFirstChar { it.uppercase() } else "$name · $wann"
 }
 
-/** Dezente Zeile für eine Lücke im Tag, damit man Freistunden auf einen Blick sieht. */
+/** Dezente Zeile für eine Freistunde, damit man freie Zeit auf einen Blick sieht. */
 @Composable
-private fun FreistundenZeile(von: LocalTime, bis: LocalTime) {
+internal fun FreistundenZeile(block: Freiblock) {
+    val zeit = "${block.beginn.format(zeitFormat)}–${block.ende.format(zeitFormat)}"
     Text(
-        text = "Frei · ${von.format(zeitFormat)}–${bis.format(zeitFormat)}",
+        text = listOfNotNull("Freistunde", block.stundenText, zeit).joinToString(" · "),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 14.dp, bottom = 10.dp)

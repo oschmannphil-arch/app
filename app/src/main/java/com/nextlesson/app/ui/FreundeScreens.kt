@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -33,11 +33,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.nextlesson.app.data.Freiblock
 import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.KursInfo
 import com.nextlesson.app.data.PersoenlicherPlan
 import com.nextlesson.app.data.TagesPlan
+import com.nextlesson.app.data.Zeitfenster
 import com.nextlesson.app.data.kennung
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -51,14 +53,18 @@ private fun zeitraum(von: LocalTime, bis: LocalTime) = "${von.format(uhrzeit)}�
 private fun tagLabel(persoenlich: PersoenlicherPlan): String =
     if (persoenlich.istHeute) "heute" else persoenlich.datum.format(wochentag)
 
+/** "3.–4. Std (08:45–11:00)" bzw. nur die Uhrzeit, wenn der Plan keine Stundennummern hergibt. */
+private fun blockText(b: Freiblock): String =
+    b.stundenText?.let { "$it (${zeitraum(b.beginn, b.ende)})" } ?: zeitraum(b.beginn, b.ende)
+
 /** Kurzfassung für die Karte auf der Startseite: Unterrichtszeit und gemeinsame Freistunden. */
-private fun zusammenfassung(eigen: TagesPlan, freund: TagesPlan): String {
+private fun zusammenfassung(eigen: TagesPlan, freund: TagesPlan, raster: List<Zeitfenster>): String {
     val belegt = Freizeit.belegt(freund)
     if (belegt.isEmpty()) return "hat an diesem Tag keinen Unterricht"
-    val frei = Freizeit.gemeinsamFrei(eigen, freund)
+    val frei = Freizeit.gemeinsamFrei(eigen, freund, raster)
     val unterricht = zeitraum(belegt.first().first, belegt.last().second)
     val gemeinsam = if (frei.isEmpty()) "keine gemeinsame Freistunde"
-    else "gemeinsam frei " + frei.joinToString(", ") { zeitraum(it.first, it.second) }
+    else "gemeinsam frei: " + frei.joinToString(", ") { blockText(it) }
     return "$unterricht · $gemeinsam"
 }
 
@@ -90,7 +96,7 @@ fun FreundeKarte(freunde: List<Freund>, persoenlich: PersoenlicherPlan, onFreund
                 ) {
                     Text(text = freund.name, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        text = zusammenfassung(persoenlich.plan, plan),
+                        text = zusammenfassung(persoenlich.plan, plan, persoenlich.gesamt.zeitraster),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -106,7 +112,16 @@ fun FreundTagScreen(freund: Freund, persoenlich: PersoenlicherPlan, onBearbeiten
     val jetzt by rememberJetzt()
     val dunkel = isSystemInDarkTheme()
     val plan = remember(freund, persoenlich) { persoenlich.gesamt.tagesplanFuer(freund.kurse) }
-    val frei = remember(plan, persoenlich) { Freizeit.gemeinsamFrei(persoenlich.plan, plan) }
+    val frei = remember(plan, persoenlich) {
+        Freizeit.gemeinsamFrei(persoenlich.plan, plan, persoenlich.gesamt.zeitraster)
+    }
+    // Freistunden des Freundes in seiner Stundenliste, wie im eigenen Plan.
+    val freiVor = remember(plan, persoenlich) {
+        Freizeit.freiBloecke(plan, persoenlich.gesamt.zeitraster).mapNotNull { block ->
+            val danach = plan.stunden.indexOfFirst { l -> l.beginn?.let { !it.isBefore(block.ende) } == true }
+            if (danach >= 0) danach to block else null
+        }.toMap()
+    }
     val zusammen = remember(plan, persoenlich) {
         Freizeit.gemeinsameStunden(plan, persoenlich.plan).mapTo(HashSet()) { it.kennung() }
     }
@@ -121,8 +136,8 @@ fun FreundTagScreen(freund: Freund, persoenlich: PersoenlicherPlan, onBearbeiten
             Spacer(Modifier.height(4.dp))
             UebersichtKarte(
                 titel = "Gemeinsam frei · ${tagLabel(persoenlich)}",
-                text = if (frei.isEmpty()) "Keine gemeinsame Freistunde (ab 30 Minuten)."
-                else frei.joinToString("\n") { zeitraum(it.first, it.second) },
+                text = if (frei.isEmpty()) "Keine gemeinsame Freistunde."
+                else frei.joinToString("\n") { blockText(it) },
                 hervorgehoben = false,
                 onClick = null
             )
@@ -136,8 +151,9 @@ fun FreundTagScreen(freund: Freund, persoenlich: PersoenlicherPlan, onBearbeiten
                 )
             }
         }
-        items(plan.stunden) { lesson ->
+        itemsIndexed(plan.stunden) { index, lesson ->
             Column {
+                freiVor[index]?.let { FreistundenZeile(it) }
                 if (lesson.kennung() in zusammen) {
                     Text(
                         text = "zusammen mit dir",

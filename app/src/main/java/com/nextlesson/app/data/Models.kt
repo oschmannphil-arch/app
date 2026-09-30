@@ -117,6 +117,9 @@ data class GesamtPlan(
     val kopf: PlanKopf,
     val klassen: List<KlassenPlan>
 ) {
+    /** Zeitraster der ganzen Schule an diesem Tag – daraus ergeben sich die Freistunden. */
+    val zeitraster: List<Zeitfenster> by lazy { zeitraster(klassen.flatMap { it.stunden }) }
+
     /** Alle Kurse der ganzen Schule, für die Auswahlliste ("ganze Klasse" jeweils zuerst). */
     val alleKurse: List<KursInfo>
         get() = klassen.flatMap { it.kurse }.sortedWith(

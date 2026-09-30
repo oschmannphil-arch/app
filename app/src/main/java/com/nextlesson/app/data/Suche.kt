@@ -45,17 +45,7 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
     }
 
     /** Zeitraster: je Stundennummer die häufigste Beginn/Ende-Kombination. */
-    val raster: List<Zeitfenster> = stunden.filter { it.stunde > 0 }
-        .groupBy { it.stunde }
-        .map { (nr, ls) ->
-            val zeit = ls.filter { it.beginn != null && it.ende != null }
-                .groupingBy { it.beginn to it.ende }
-                .eachCount()
-                .maxByOrNull { it.value }
-                ?.key
-            Zeitfenster(nr, zeit?.first, zeit?.second)
-        }
-        .sortedBy { it.stunde }
+    val raster: List<Zeitfenster> = zeitraster(stunden)
 
     private val nachLehrer: Map<String, List<Lesson>> = index { lehrerVon(it.lehrer) }
     private val nachRaum: Map<String, List<Lesson>> = index { raeumeVon(it.raum) }
@@ -181,6 +171,19 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
         }
     }
 }
+
+/** Zeitraster der Schule: je Stundennummer die häufigste Beginn/Ende-Kombination. */
+fun zeitraster(stunden: List<Lesson>): List<Zeitfenster> = stunden.filter { it.stunde > 0 }
+    .groupBy { it.stunde }
+    .map { (nr, ls) ->
+        val zeit = ls.filter { it.beginn != null && it.ende != null }
+            .groupingBy { it.beginn to it.ende }
+            .eachCount()
+            .maxByOrNull { it.value }
+            ?.key
+        Zeitfenster(nr, zeit?.first, zeit?.second)
+    }
+    .sortedBy { it.stunde }
 
 /** Nächster Schultag (Mo–Fr) in Richtung [richtung]; Feiertage und Ferien kennt die App nicht. */
 fun schultagVersetzt(datum: LocalDate, richtung: Int): LocalDate {

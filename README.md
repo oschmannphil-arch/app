@@ -85,9 +85,14 @@ Unterricht stehen darin nicht; "frei" heißt also nur "laut Plan kein Unterricht
 ## Freunde
 
 In den Einstellungen lassen sich Freunde mit ihren Kursen anlegen. Die Startseite zeigt
-dann je Freund die Unterrichtszeit und die gemeinsamen Freistunden (ab 30 Minuten, nur
-wenn beide in der Schule sind); antippen zeigt den ganzen Tag des Freundes und welche
-Stunden ihr zusammen habt. Alles wird nur auf dem Gerät gespeichert.
+dann je Freund die Unterrichtszeit und die gemeinsamen Freistunden mit Stundennummer
+("1. Std", "3.–4. Std"). Es zählen normale Freistunden und Ausfälle, auch am Tagesanfang –
+solange ihr beide danach noch Unterricht habt; nach dem Schluss des einen zählt nichts mehr.
+Antippen zeigt den ganzen Tag des Freundes und welche Stunden ihr zusammen habt. Alles
+wird nur auf dem Gerät gespeichert.
+
+Grundlage ist das Zeitraster der Schule (Beginn/Ende je Stunde aus dem Plan). Im eigenen
+Tagesplan stehen Freistunden deshalb als eigene Zeile, auch vor der ersten Stunde.
 
 ## Hausaufgaben
 
