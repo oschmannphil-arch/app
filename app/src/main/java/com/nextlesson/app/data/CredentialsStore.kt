@@ -15,13 +15,26 @@ class CredentialsStore(context: Context) {
     private val prefs: SharedPreferences
 
     init {
+        prefs = try {
+            oeffnen(context)
+        } catch (e: Exception) {
+            // Die Datei lässt sich mit dem Schlüssel im Keystore nicht mehr entschlüsseln –
+            // typisch nach einem Geräteumzug (Android 12+ überträgt die Datei trotz
+            // allowBackup=false, den Keystore-Schlüssel aber nicht). Ohne diesen Weg stürzte
+            // die App bei jedem Start ab. Die Zugangsdaten müssen dann neu eingegeben werden.
+            context.deleteSharedPreferences(DATEI)
+            oeffnen(context)
+        }
+    }
+
+    private fun oeffnen(context: Context): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
 
-        prefs = EncryptedSharedPreferences.create(
+        return EncryptedSharedPreferences.create(
             context,
-            "indiware_credentials",
+            DATEI,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
@@ -49,6 +62,7 @@ class CredentialsStore(context: Context) {
     }
 
     companion object {
+        private const val DATEI = "indiware_credentials"
         private const val KEY_SCHULNUMMER = "schulnummer"
         private const val KEY_BENUTZER = "benutzername"
         private const val KEY_PASSWORT = "passwort"

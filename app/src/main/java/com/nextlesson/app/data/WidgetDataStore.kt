@@ -1,6 +1,10 @@
 package com.nextlesson.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -13,7 +17,6 @@ class WidgetDataStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("widget_daten", Context.MODE_PRIVATE)
     private val zeitFmt = DateTimeFormatter.ofPattern("HH:mm")
-    private val tagFmt = DateTimeFormatter.ofPattern("EEE dd.MM.", Locale.GERMAN)
 
     /**
      * @param datum Tag, zu dem die Stunde gehört – nur so kann das Widget "morgen" statt
@@ -42,13 +45,16 @@ class WidgetDataStore(context: Context) {
             editor.putBoolean(KEY_AENDERUNG, lesson.hatAenderung)
             editor.putBoolean(KEY_ENTFAELLT, lesson.entfaellt)
             editor.putBoolean(KEY_VORSCHAU, ergebnis.istVorschau)
-            editor.putString(KEY_TAG, datum?.let { tagLabel(it) })
+            // Das Datum, nicht die fertige Beschriftung: "morgen" wäre nach Mitternacht falsch,
+            // solange noch kein neuer Abruf gelaufen ist.
+            if (datum != null) editor.putLong(KEY_DATUM, datum.toEpochDay()) else editor.remove(KEY_DATUM)
+            editor.remove(KEY_TAG)
             // Absolute Zeitpunkte, damit das Widget den Countdown beim Zeichnen selbst
             // ausrechnen kann statt einen beim Speichern eingefrorenen Text zu zeigen.
             editor.putLong(KEY_BEGINN_MILLIS, epochMillis(datum, lesson.beginn))
             editor.putLong(KEY_ENDE_MILLIS, epochMillis(datum, lesson.ende))
         } else {
-            listOf(KEY_FACH, KEY_RAUM, KEY_LEHRER, KEY_BEGINN, KEY_ENDE, KEY_TAG)
+            listOf(KEY_FACH, KEY_RAUM, KEY_LEHRER, KEY_BEGINN, KEY_ENDE, KEY_TAG, KEY_DATUM)
                 .forEach { editor.remove(it) }
             editor.putInt(KEY_STUNDE, 0)
             editor.putBoolean(KEY_AENDERUNG, false)
@@ -65,16 +71,6 @@ class WidgetDataStore(context: Context) {
     private fun epochMillis(datum: LocalDate?, zeit: java.time.LocalTime?): Long {
         if (datum == null || zeit == null) return 0L
         return datum.atTime(zeit).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-    }
-
-    /** "heute" wird weggelassen, alles andere klar benannt. */
-    private fun tagLabel(datum: LocalDate): String? {
-        val heute = LocalDate.now()
-        return when (datum) {
-            heute -> null
-            heute.plusDays(1) -> "morgen"
-            else -> datum.format(tagFmt)
-        }
     }
 
     data class WidgetInhalt(
@@ -137,7 +133,11 @@ class WidgetDataStore(context: Context) {
         beginn = prefs.getString(KEY_BEGINN, null),
         ende = prefs.getString(KEY_ENDE, null),
         stunde = prefs.getInt(KEY_STUNDE, 0),
-        tag = prefs.getString(KEY_TAG, null),
+        tag = if (prefs.contains(KEY_DATUM)) {
+            tagLabel(LocalDate.ofEpochDay(prefs.getLong(KEY_DATUM, 0L)), LocalDate.now())
+        } else {
+            prefs.getString(KEY_TAG, null) // Stand aus einer älteren App-Version
+        },
         hatAenderung = prefs.getBoolean(KEY_AENDERUNG, false),
         entfaellt = prefs.getBoolean(KEY_ENTFAELLT, false),
         istVorschau = prefs.getBoolean(KEY_VORSCHAU, false),
@@ -148,11 +148,31 @@ class WidgetDataStore(context: Context) {
         grosserText = prefs.getBoolean(KEY_GROSSER_TEXT, false)
     )
 
+    /**
+     * Liefert bei jeder Änderung den neuen Stand. Das Widget liest so auch dann frische Daten,
+     * wenn seine Glance-Sitzung von einem vorherigen Update noch läuft.
+     */
+    fun inhaltFlow(): Flow<WidgetInhalt> = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(laden()) }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(laden())
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
     fun grosserTextSetzen(aktiv: Boolean) {
         prefs.edit().putBoolean(KEY_GROSSER_TEXT, aktiv).apply()
     }
 
     companion object {
+        private val tagFmt = DateTimeFormatter.ofPattern("EEE dd.MM.", Locale.GERMAN)
+
+        /** "heute" wird weggelassen, alles andere klar benannt. */
+        internal fun tagLabel(datum: LocalDate, heute: LocalDate): String? = when (datum) {
+            heute -> null
+            heute.plusDays(1) -> "morgen"
+            else -> datum.format(tagFmt)
+        }
+
         private const val KEY_KLASSE = "klasse"
         private const val KEY_FACH = "fach"
         private const val KEY_RAUM = "raum"
@@ -161,6 +181,7 @@ class WidgetDataStore(context: Context) {
         private const val KEY_ENDE = "ende"
         private const val KEY_STUNDE = "stunde"
         private const val KEY_TAG = "tag"
+        private const val KEY_DATUM = "datum_epoch_day"
         private const val KEY_AENDERUNG = "aenderung"
         private const val KEY_ENTFAELLT = "entfaellt"
         private const val KEY_VORSCHAU = "vorschau"

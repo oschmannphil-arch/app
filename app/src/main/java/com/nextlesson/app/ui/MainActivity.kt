@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -118,6 +119,13 @@ private fun AppInhalt(
     var tab by remember { mutableStateOf(Tab.HEUTE) }
     var zeigeEinstellungen by remember { mutableStateOf(false) }
     var zeigeKurse by remember { mutableStateOf(false) }
+
+    // Nach einer Kursänderung oder einem Neu-Laden steht die Woche auf "nicht geladen".
+    // Ist der Wochen-Reiter dann offen, muss sie hier nachgeladen werden – sonst dreht
+    // der Ladekreis endlos, weil nur ein Tipp auf den Reiter das Laden auslöste.
+    LaunchedEffect(tab, wochenZustand) {
+        if (tab == Tab.WOCHE && wochenZustand is WochenZustand.NichtGeladen) planViewModel.wocheLaden()
+    }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()

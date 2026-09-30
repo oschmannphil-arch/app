@@ -2,11 +2,13 @@ package com.nextlesson.app.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -52,8 +54,15 @@ class NextLessonWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val inhalt = WidgetDataStore(context).laden()
-        provideContent { WidgetInhalt(inhalt) }
+        val store = WidgetDataStore(context)
+        val start = store.laden()
+        provideContent {
+            // Nicht nur einmal beim Start der Sitzung lesen: Läuft die Glance-Sitzung von einem
+            // vorherigen Update noch (z.B. Tippen aufs Widget, kurz darauf fertiger Abruf), würde
+            // sonst der alte Stand weiter angezeigt.
+            val inhalt by remember { store.inhaltFlow() }.collectAsState(initial = start)
+            WidgetInhalt(inhalt)
+        }
     }
 
     @Composable

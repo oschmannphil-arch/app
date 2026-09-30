@@ -46,7 +46,7 @@ fun StatusBadge(
 }
 
 /**
- * Tickende Uhrzeit: aktualisiert sich jede halbe Minute, damit der Countdown
+ * Tickende Uhrzeit: aktualisiert sich zu jeder vollen Minute, damit der Countdown
  * auf dem Bildschirm nicht einfriert, während man draufschaut.
  */
 @Composable

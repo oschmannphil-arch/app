@@ -91,6 +91,9 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     fun ladeGespeichertUndAktualisiere() {
         // Läuft schon ein Ladevorgang (z.B. Resume direkt nach dem Start), nicht doppelt starten.
         if (ladeJob?.isActive == true) return
+        // Während der Kurswahl nicht neu laden: Der Zustand fiele kurz auf "Laedt" und die
+        // bereits angekreuzten, noch nicht gespeicherten Kurse gingen verloren.
+        if (_zustand.value is UiZustand.KurseWaehlen) return
         viewModelScope.launch {
             val creds = withContext(Dispatchers.IO) { credentialsStore.laden() }
             if (creds == null) _zustand.value = UiZustand.LoginNoetig else aktualisiere(creds)

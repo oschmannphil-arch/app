@@ -96,6 +96,22 @@ private val WORT = Regex("[\\p{L}\\p{N}]+")
 /** Sieht aus wie ein Kurskürzel ("DEU3", "MAT2"), auch wenn es in keiner Kursliste steht. */
 private val KURS_MUSTER = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
 
+private fun nurStriche(s: String) = s.isNotEmpty() && s.all { !it.isLetterOrDigit() }
+
+/**
+ * Die Stunde findet statt (war nur wegen fremder Ausfall-Hinweise als Entfall markiert).
+ * Vertretung/Raumänderung bleiben dabei erhalten, statt pauschal auf NORMAL zu fallen.
+ */
+private fun Lesson.findetStatt(klausur: Boolean) = copy(
+    entfaellt = false,
+    istKlausur = klausur,
+    status = when {
+        lehrerGeaendert -> LessonStatus.VERTRETUNG
+        raumGeaendert -> LessonStatus.RAUMAENDERUNG
+        else -> LessonStatus.NORMAL
+    }
+)
+
 /** Alles, was in einer PlanKl-Datei steht – alle Klassen der Schule für diesen Tag. */
 data class GesamtPlan(
     val kopf: PlanKopf,
@@ -166,8 +182,12 @@ data class GesamtPlan(
         // kompilierten Musters je Kürzel (bei einem Schulplan sonst tausende pro Tag).
         fun nennt(zeile: String, kuerzel: Set<String>): Boolean =
             WORT.findAll(zeile).any { it.value in kuerzel }
+        // Fremd ist eine Zeile auch, wenn sie ein Kurskürzel nennt, das in keiner Kursliste
+        // dieses Plans steht (z.B. "CHE1 … fällt aus" aus einem anderen Jahrgang).
+        val eigeneKlassen = betroffene.map { it.klasse }.toSet()
         val hinweise = kopf.zusatzInfo.filter { zeile ->
-            alleGewaehlt || nennt(zeile, eigeneKuerzel) || !nennt(zeile, alleKuerzel)
+            alleGewaehlt || nennt(zeile, eigeneKuerzel) || nennt(zeile, eigeneKlassen) ||
+                (!nennt(zeile, alleKuerzel) && !KURS_MUSTER.containsMatchIn(zeile))
         }
 
         // Klausurtage: Die Schule schreibt "Klausur!" und listet die ausfallenden Kurse
@@ -200,12 +220,19 @@ data class GesamtPlan(
             if (eigenerAusfall) return@map l
             val ausdruecklich = kurs in klausurWoerter
             val alsAusfallGenannt = kurs in ausfallWoerter
-            if (ausdruecklich || (!alsAusfallGenannt && praefix(kurs) in genannteFaecher)) {
-                l.copy(entfaellt = false, status = LessonStatus.NORMAL, istKlausur = true)
-            } else if (l.istKlausur && l.entfaellt) {
+            when {
+                ausdruecklich || (!alsAusfallGenannt && praefix(kurs) in genannteFaecher) ->
+                    l.findetStatt(klausur = true)
                 // Der Kurs wird ausdrücklich als Ausfall genannt: das ist keine Klausur.
-                l.copy(istKlausur = false)
-            } else l
+                l.istKlausur && l.entfaellt && alsAusfallGenannt -> l.copy(istKlausur = false)
+                // Die Stunde trägt die Klausur-Liste nur im eigenen Hinweis und fällt allein
+                // wegen der Wendungen über ANDERE Kurse aus – sie selbst wird nicht genannt.
+                // "entfällt" wäre sicher falsch; ob sie die Klausur ist, lässt sich nicht
+                // sagen, also normal anzeigen (der Hinweistext bleibt sichtbar).
+                l.istKlausur && l.entfaellt && !nurStriche(l.fach) && l.lehrer != "---" ->
+                    l.findetStatt(klausur = false)
+                else -> l
+            }
         }
 
         return TagesPlan(

@@ -308,11 +308,14 @@ object IndiwareXmlParser {
     private fun Element?.hatAttribut(attribut: String): Boolean =
         this != null && getAttribute(attribut).orEmpty().isNotBlank()
 
+    /** Einmal angelegt statt pro Stunde neu – bei einem ganzen Schulplan sind das tausende. */
+    private val UHRZEIT_FORMATE = listOf(DateTimeFormatter.ofPattern("H:mm"), DateTimeFormatter.ofPattern("HH:mm"))
+
     private fun parseUhrzeit(text: String): LocalTime? {
         if (text.isBlank()) return null
-        for (pattern in listOf("H:mm", "HH:mm")) {
+        for (format in UHRZEIT_FORMATE) {
             try {
-                return LocalTime.parse(text, DateTimeFormatter.ofPattern(pattern))
+                return LocalTime.parse(text, format)
             } catch (_: DateTimeParseException) {
                 // nächstes Format
             }

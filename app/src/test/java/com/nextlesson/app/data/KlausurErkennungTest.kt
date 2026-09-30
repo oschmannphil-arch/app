@@ -83,6 +83,34 @@ $zusatz
     }
 
     @Test
+    fun fremdesFachMitListeImHinweis_istKeinAusfall() {
+        // INF1 wird in der Liste nicht genannt und ist kein Deutsch-Kurs: Die Stunde fiel
+        // nur wegen "BIO3 … fällt aus" usw. im eigenen Hinweis als Entfall auf.
+        val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf><Klassen><Kl><Kurz>12/5</Kurz>
+<Kurse><Ku><KKz>INF1</KKz></Ku><Ku><KKz>DEU3</KKz></Ku><Ku><KKz>BIO3</KKz></Ku></Kurse>
+<Pl><Std><St>1</St><Beginn>07:15</Beginn><Ende>08:00</Ende><Fa>INF1</Fa><Le>X</Le><Ra>131</Ra><Nr></Nr><If>$liste</If></Std></Pl>
+</Kl></Klassen></WplanVp>"""
+        val l = IndiwareXmlParser.parse(xml.byteInputStream(), "1")!!
+            .tagesplanFuer(setOf("12/5::INF1")).lesson("INF1")
+        assertFalse("INF1 darf nicht als Entfall erscheinen", l.entfaellt)
+        assertFalse("INF1 ist nicht als Klausur belegt", l.istKlausur)
+        assertEquals(LessonStatus.NORMAL, l.status)
+    }
+
+    @Test
+    fun klausurBehaeltVertretungsStatus() {
+        val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf><Klassen><Kl><Kurz>12/5</Kurz>
+<Kurse><Ku><KKz>DEU1</KKz></Ku><Ku><KKz>DEU3</KKz></Ku></Kurse>
+<Pl><Std><St>1</St><Beginn>07:15</Beginn><Ende>08:00</Ende><Fa>DEU1</Fa><Le LeAe="Got">Mei</Le><Ra>033</Ra><Nr></Nr><If>$liste</If></Std></Pl>
+</Kl></Klassen></WplanVp>"""
+        val l = IndiwareXmlParser.parse(xml.byteInputStream(), "1")!!
+            .tagesplanFuer(setOf("12/5::DEU1")).lesson("DEU1")
+        assertTrue(l.istKlausur)
+        assertFalse(l.entfaellt)
+        assertEquals(LessonStatus.VERTRETUNG, l.status)
+    }
+
+    @Test
     fun platzhalterWerdenNichtAlsAlterRaumAngezeigt() {
         val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf><Klassen><Kl><Kurz>12/5</Kurz>
 <Kurse><Ku><KKz>PHY1</KKz></Ku></Kurse>
