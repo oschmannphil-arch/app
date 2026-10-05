@@ -40,6 +40,14 @@ sealed class PlanResult {
     data class NetzwerkFehler(val nachricht: String) : PlanResult()
 }
 
+/** Kurzer Grund, warum der Plan eines Tages fehlt – null, wenn er geladen wurde. */
+fun PlanResult.tagesFehler(): String? = when (this) {
+    is PlanResult.Success -> null
+    is PlanResult.AuthFehler -> "Login fehlgeschlagen"
+    is PlanResult.KeinPlanFuerTag -> "Kein Plan veröffentlicht"
+    is PlanResult.NetzwerkFehler -> "Keine Verbindung"
+}
+
 /**
  * Der persönliche Plan des Schülers für den gerade relevanten Tag.
  *

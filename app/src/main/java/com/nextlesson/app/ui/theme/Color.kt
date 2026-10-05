@@ -2,11 +2,8 @@ package com.nextlesson.app.ui.theme
 
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
-import com.nextlesson.app.data.DesignStore
 
 /*
  * "Mocha": warmes Dunkelbraun als Grund, Karamell für die Hauptkarte,
@@ -130,8 +127,12 @@ val FachFarbAuswahl: List<Color> = listOf(
     Color(0xFF7B6A5F), Color(0xFF4FA3C7)
 )
 
-fun fachFarbe(fach: String, dunkel: Boolean): Color {
-    DesignStore.aktuell?.fachFarben?.get(fach.trim().lowercase())?.let { return Color(it) }
+/** Farbe eines Fachs: die in den Einstellungen gewählte, sonst eine feste aus dem Namen. */
+@Composable
+fun fachFarbe(fach: String, dunkel: Boolean): Color =
+    LocalFachFarben.current[fach.trim().lowercase()]?.let { Color(it) } ?: automatischeFachFarbe(fach, dunkel)
+
+private fun automatischeFachFarbe(fach: String, dunkel: Boolean): Color {
     if (fach.isBlank()) return if (dunkel) Color(0xFFA08D7B) else Color(0xFF83766A)
     val palette = if (dunkel) FachFarbenDunkel else FachFarbenHell
     // Stabiler, vorzeichenfreier Hash über den Fachnamen.
@@ -142,4 +143,4 @@ fun fachFarbe(fach: String, dunkel: Boolean): Color {
 
 /** Ist das Design gerade dunkel? Gilt auch, wenn der Nutzer es abweichend vom System gewählt hat. */
 @Composable
-fun istDunkel(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
+fun istDunkel(): Boolean = LocalDunkel.current

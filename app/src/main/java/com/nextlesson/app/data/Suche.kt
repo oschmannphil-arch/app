@@ -208,6 +208,13 @@ fun schultagVersetzt(datum: LocalDate, richtung: Int): LocalDate {
     return d
 }
 
+/**
+ * Ein Tag in der Woche, die angezeigt werden soll: [versatz] 0 = diese Woche (am Wochenende
+ * schon die kommende), 1 = die danach, -1 = die davor. Für [IndiwareRepository.holeWoche].
+ */
+fun wochenReferenz(versatz: Int, heute: LocalDate = LocalDate.now()): LocalDate =
+    ersterSchultag(heute).plusWeeks(versatz.toLong())
+
 /** Heute – oder am Wochenende der kommende Montag. */
 fun ersterSchultag(heute: LocalDate): LocalDate =
     if (heute.dayOfWeek == DayOfWeek.SATURDAY || heute.dayOfWeek == DayOfWeek.SUNDAY) schultagVersetzt(heute, 1) else heute

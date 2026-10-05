@@ -59,8 +59,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import com.nextlesson.app.data.raumGruppe
 import com.nextlesson.app.data.stundenListe
 import java.time.LocalDate
@@ -70,7 +68,6 @@ import java.util.Locale
 
 private val uhrzeitFormat = DateTimeFormatter.ofPattern("HH:mm")
 private val tagFormat = DateTimeFormatter.ofPattern("EEE, d. MMM", Locale.GERMAN)
-private val wochentagFormat = DateTimeFormatter.ofPattern("EEEE, d. MMM", Locale.GERMAN)
 
 /**
  * Lehrer- und Raumsuche: "Wo ist Frau X gerade?" und "Ist Raum 121 frei?" – für heute oder
@@ -408,33 +405,22 @@ private fun Detail(
 /** Ein Tag der Wochenübersicht: wann unterrichtet die Lehrkraft, wann hat sie Lücken? */
 @Composable
 private fun LehrerWochenKarte(wt: SucheWochenTag, t: Treffer.Lehrer) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Text(
-                text = wt.datum.format(wochentagFormat) + if (wt.datum == LocalDate.now()) " · heute" else "",
-                style = MaterialTheme.typography.titleSmall
-            )
-            val grau = MaterialTheme.colorScheme.onSurfaceVariant
-            val tag = wt.tag
-            if (tag == null) {
-                Text(wt.fehler ?: "Kein Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
-                return@Column
-            }
-            val stunden = tag.unterrichtsStunden(t)
-            if (stunden.isEmpty()) {
-                Text("kein Unterricht laut Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
-                return@Column
-            }
-            Text("Unterricht: ${stundenListe(stunden)}", style = MaterialTheme.typography.bodyMedium)
-            val luecken = tag.luecken(t)
-            if (luecken.isEmpty()) {
-                Text("Keine Lücke dazwischen", style = MaterialTheme.typography.bodySmall, color = grau)
-            } else {
+    val tag = wt.tag
+    val stunden = remember(tag, t) { tag?.unterrichtsStunden(t).orEmpty() }
+    val luecken = remember(tag, t) { tag?.luecken(t).orEmpty() }
+    val schluss = remember(tag, t) {
+        tag?.stundenVon(t)?.filter { !it.entfaellt }?.mapNotNull { it.ende }?.maxOrNull()
+    }
+    TagesKarte(wt.datum) {
+        val grau = MaterialTheme.colorScheme.onSurfaceVariant
+        when {
+            tag == null -> Text(wt.fehler ?: "Kein Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
+            stunden.isEmpty() -> Text("kein Unterricht laut Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
+            else -> {
+                Text("Unterricht: ${stundenListe(stunden)}", style = MaterialTheme.typography.bodyMedium)
+                if (luecken.isEmpty()) {
+                    Text("Keine Lücke dazwischen", style = MaterialTheme.typography.bodySmall, color = grau)
+                }
                 luecken.forEach { b ->
                     Text(
                         text = "Frei: " + blockText(b),
@@ -442,9 +428,13 @@ private fun LehrerWochenKarte(wt: SucheWochenTag, t: Treffer.Lehrer) {
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-            }
-            tag.stundenVon(t).filter { !it.entfaellt }.mapNotNull { it.ende }.maxOrNull()?.let {
-                Text("Letzte Stunde endet ${it.format(uhrzeitFormat)}", style = MaterialTheme.typography.bodySmall, color = grau)
+                if (schluss != null) {
+                    Text(
+                        "Letzte Stunde endet ${schluss.format(uhrzeitFormat)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = grau
+                    )
+                }
             }
         }
     }

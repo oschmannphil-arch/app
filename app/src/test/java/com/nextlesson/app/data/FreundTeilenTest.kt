@@ -2,6 +2,7 @@ package com.nextlesson.app.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FreundTeilenTest {
@@ -39,5 +40,24 @@ class FreundTeilenTest {
             setOf("12/5::MAT2"),
             FreundTeilen.lesen("nextlesson://freund?name=A&kurse=quatsch,12%2F5%3A%3AMAT2")!!.kurse
         )
+    }
+
+    @Test
+    fun satzzeichenAmEndeGehoerenNichtZumLink() {
+        val link = FreundTeilen.link("A", setOf("12/5::MAT2"))
+        assertEquals(setOf("12/5::MAT2"), FreundTeilen.lesen("($link)")!!.kurse)
+        assertEquals(setOf("12/5::MAT2"), FreundTeilen.lesen("$link.")!!.kurse)
+        assertEquals(setOf("12/5::*"), FreundTeilen.lesen(FreundTeilen.link("A", setOf("12/5::*")) + "!")!!.kurse)
+    }
+
+    @Test
+    fun formMitSchraegstrich() {
+        assertEquals(setOf("12/5::MAT2"), FreundTeilen.lesen("nextlesson://freund/?name=A&kurse=12%2F5%3A%3AMAT2")!!.kurse)
+    }
+
+    @Test
+    fun nachrichtNenntWessenKurse() {
+        assertTrue(FreundTeilen.nachricht("Anna", setOf("12/5::MAT2")).startsWith("Meine Kurse"))
+        assertTrue(FreundTeilen.nachricht("Anna", setOf("12/5::MAT2"), eigene = false).startsWith("Die Kurse von Anna"))
     }
 }

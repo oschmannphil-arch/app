@@ -16,6 +16,8 @@ import com.nextlesson.app.data.PersoenlicherResult
 import com.nextlesson.app.data.PlanResult
 import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.WidgetDataStore
+import com.nextlesson.app.data.tagesFehler
+import com.nextlesson.app.data.wochenReferenz
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
@@ -23,7 +25,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.DayOfWeek
 import java.time.LocalDate
 
 sealed class UiZustand {
@@ -191,28 +192,20 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         
         wochenJob?.cancel()
         wochenJob = viewModelScope.launch {
-            val heute = LocalDate.now()
-
-            // Basis-Woche bestimmen: ab Samstag springen wir standardmäßig in die neue Woche.
-            val base = if (heute.dayOfWeek == DayOfWeek.SATURDAY || heute.dayOfWeek == DayOfWeek.SUNDAY) {
-                heute.plusWeeks(1)
-            } else {
-                heute
-            }
-            
-            val referenz = when (_wochenAuswahl.value) {
-                WochenAuswahl.LETZTE -> base.minusWeeks(1)
-                WochenAuswahl.AKTUELL -> base
-                WochenAuswahl.NAECHSTE -> base.plusWeeks(1)
-            }
-            
-            val tage = repository.holeWoche(creds, referenz, erzwingen).map { (datum, ergebnis) ->
-                when (ergebnis) {
-                    is PlanResult.Success -> WochenTag(datum, ergebnis.plan.tagesplanFuer(kurse))
-                    is PlanResult.AuthFehler -> WochenTag(datum, null, "Login fehlgeschlagen")
-                    is PlanResult.KeinPlanFuerTag -> WochenTag(datum, null, "Kein Plan veröffentlicht")
-                    is PlanResult.NetzwerkFehler -> WochenTag(datum, null, "Netzwerkfehler")
+            // Am Wochenende zählt als "diese Woche" schon die kommende.
+            val referenz = wochenReferenz(
+                when (_wochenAuswahl.value) {
+                    WochenAuswahl.LETZTE -> -1
+                    WochenAuswahl.AKTUELL -> 0
+                    WochenAuswahl.NAECHSTE -> 1
                 }
+            )
+            val tage = repository.holeWoche(creds, referenz, erzwingen).map { (datum, ergebnis) ->
+                WochenTag(
+                    datum = datum,
+                    plan = (ergebnis as? PlanResult.Success)?.plan?.tagesplanFuer(kurse),
+                    fehlermeldung = ergebnis.tagesFehler()
+                )
             }
             _wochenZustand.value = WochenZustand.Geladen(tage)
         }

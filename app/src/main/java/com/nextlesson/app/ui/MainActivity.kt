@@ -84,9 +84,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         design = DesignStore(applicationContext)
-        DesignStore.aktuell = design
-        // Beim Drehen kommt derselbe Intent noch einmal – nur beim echten Start auswerten.
-        if (savedInstanceState == null) freundLinkAuswerten(intent)
+        // Beim Drehen kommt derselbe Intent noch einmal, ebenso beim Öffnen aus "Zuletzt
+        // verwendet" (Android liefert dann den ursprünglichen Link erneut) – nur beim echten
+        // Start auswerten.
+        val ausVerlauf = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (savedInstanceState == null && !ausVerlauf) freundLinkAuswerten(intent)
 
         EntfallNotifier.kanalAnlegen(applicationContext)
         LernErinnerung.kanalAnlegen(applicationContext)
@@ -105,13 +107,13 @@ class MainActivity : ComponentActivity() {
                     statusBarStyle = SystemBarStyle.auto(
                         android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT
                     ) { dunkel },
-                    navigationBarStyle = SystemBarStyle.auto(
-                        android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT
-                    ) { dunkel }
+                    // Mit Schleier wie bei enableEdgeToEdge(): Auf Android 8–9 mit Tasten-
+                    // Navigation lägen die Tasten sonst direkt über dem Inhalt.
+                    navigationBarStyle = SystemBarStyle.auto(NAVI_SCHLEIER_HELL, NAVI_SCHLEIER_DUNKEL) { dunkel }
                 )
                 onDispose { }
             }
-            NaechsteStundeTheme(dunkel = dunkel) {
+            NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben) {
                 Surface {
                     AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel, design)
                 }
@@ -145,6 +147,10 @@ class MainActivity : ComponentActivity() {
         benachrichtigungAnfrage.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }
+
+// Dieselben Schleier wie enableEdgeToEdge() sie standardmäßig für die Navigationsleiste nimmt.
+private val NAVI_SCHLEIER_HELL = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
+private val NAVI_SCHLEIER_DUNKEL = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)
 
 private enum class Tab(val titel: String, val symbol: ImageVector) {
     HEUTE("Heute", Icons.Filled.CheckCircle),
@@ -338,12 +344,7 @@ private fun AppInhalt(
                     }
                     val angezeigt = zustand as? UiZustand.Angezeigt
                     if (!einrichtung && tab == Tab.HEUTE && angezeigt != null) {
-                        IconButton(onClick = {
-                            val senden = Intent(Intent.ACTION_SEND)
-                                .setType("text/plain")
-                                .putExtra(Intent.EXTRA_TEXT, planAlsText(angezeigt.plan))
-                            runCatching { context.startActivity(Intent.createChooser(senden, "Plan teilen")) }
-                        }) {
+                        IconButton(onClick = { teilen(context, planAlsText(angezeigt.plan), "Plan teilen") }) {
                             Icon(Icons.Filled.Share, contentDescription = "Plan teilen")
                         }
                     }
@@ -439,12 +440,7 @@ private fun AppInhalt(
                         onLinkImportieren = { freundeViewModel.importVorschlagen(it.copy(id = UUID.randomUUID().toString())) },
                         onKurseTeilen = {
                             val kurse = planViewModel.aktuelleKursAuswahl()
-                            if (kurse.isNotEmpty()) {
-                                val senden = Intent(Intent.ACTION_SEND)
-                                    .setType("text/plain")
-                                    .putExtra(Intent.EXTRA_TEXT, FreundTeilen.nachricht("", kurse))
-                                runCatching { context.startActivity(Intent.createChooser(senden, "Kurse teilen")) }
-                            }
+                            if (kurse.isNotEmpty()) teilen(context, FreundTeilen.nachricht("", kurse), "Kurse teilen")
                         },
                         modus = design.modus,
                         onModus = design::modusSetzen,
@@ -482,7 +478,6 @@ private fun AppInhalt(
                 gruppeOffen && !brauchtZugang -> {
                     GemeinsamFreiScreen(
                         freunde = freunde,
-                        eigeneKurse = remember { freundeViewModel.eigeneKurse() },
                         startAuswahl = gruppeStart,
                         woche = freundeWoche,
                         onWocheLaden = freundeViewModel::wocheLaden

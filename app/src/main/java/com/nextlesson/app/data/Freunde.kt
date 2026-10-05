@@ -49,8 +49,8 @@ object Freizeit {
         val letzte = belegend.mapNotNull { it.ende }.maxOrNull() ?: return emptyList()
         val fenster = mitZeiten(raster)
         if (fenster.isEmpty()) {
-            // Ohne Raster: nur Lücken zwischen zwei Stunden (wie bisher).
-            return plan.freistunden().map { (_, von, bis) -> Freiblock(null, null, von, bis) }
+            // Ohne Raster: nur Lücken zwischen zwei Stunden – mit denselben belegenden Stunden.
+            return plan.copy(stunden = belegend).freistunden().map { (_, von, bis) -> Freiblock(null, null, von, bis) }
         }
         return bloecke(fenster) { f -> !f.ende!!.isAfter(letzte) && belegend.none { belegt(it, f) } }
     }
@@ -91,11 +91,23 @@ object Freizeit {
 
     /**
      * Der Freiblock, in dem man zur Uhrzeit [jetzt] gerade frei ist (Ausfall zählt als frei),
-     * oder null – wer Unterricht hat, nicht mehr in der Schule ist oder heute keinen hat.
+     * oder null – wer Unterricht hat, noch nicht oder nicht mehr in der Schule ist oder heute
+     * keinen hat. Vor der ersten stattfindenden Stunde ist man "noch nicht da", nicht frei.
      */
-    fun jetztFrei(plan: TagesPlan, raster: List<Zeitfenster>, jetzt: LocalTime): Freiblock? =
-        freiBloecke(plan, raster, ausfallIstFrei = true)
+    fun jetztFrei(plan: TagesPlan, raster: List<Zeitfenster>, jetzt: LocalTime): Freiblock? {
+        val erste = plan.stunden.filter { !it.entfaellt }.mapNotNull { it.beginn }.minOrNull() ?: return null
+        return freiBloecke(plan, raster, ausfallIstFrei = true)
+            .filter { !it.beginn.isBefore(erste) }
             .firstOrNull { !jetzt.isBefore(it.beginn) && jetzt.isBefore(it.ende) }
+    }
+
+    /** Ist man um [jetzt] in der Schule – zwischen Beginn der ersten und Ende der letzten Stunde? */
+    fun inDerSchule(plan: TagesPlan, jetzt: LocalTime): Boolean {
+        val aktiv = plan.stunden.filter { !it.entfaellt }
+        val beginn = aktiv.mapNotNull { it.beginn }.minOrNull() ?: return false
+        val ende = aktiv.mapNotNull { it.ende }.maxOrNull() ?: return false
+        return !jetzt.isBefore(beginn) && jetzt.isBefore(ende)
+    }
 
     /**
      * Stunden aus [a], die [b] ebenfalls hat – ohne ausgefallene. Derselbe Kurs gilt auch dann
@@ -107,17 +119,25 @@ object Freizeit {
     }
 
     /**
-     * Schlüssel für "gleicher Unterricht": Stunde, Zeit, Kurs und Lehrkraft. Klasse und
-     * Unterrichtsnummer zählen nicht – ein Kurs, der in mehreren Klassen steht, ist derselbe.
-     * Ohne Kurskürzel (Klassenunterricht) gehört die Klasse dazu.
+     * Schlüssel für "gleicher Unterricht": Stunde, Zeit, Kurs, Lehrkraft und Jahrgang. Die
+     * Klasse innerhalb des Jahrgangs (12/5 vs. 12/6) und die Unterrichtsnummer zählen nicht –
+     * ein Kurs, der in mehreren Klassen steht, ist derselbe. Gleiche Kürzel in verschiedenen
+     * Jahrgängen (SPO1 in 11 und 12) sind dagegen verschiedene Kurse.
+     * Ohne Kurskürzel (Klassenunterricht) gehört die ganze Klasse dazu.
      */
     fun zusammenKey(l: Lesson): String {
         val kurs = l.kursKuerzel?.trim()?.takeIf { it.isNotEmpty() }
         return if (kurs != null) {
-            listOf(l.stunde, l.beginn, kurs.lowercase(), l.lehrer.trim().lowercase())
+            listOf(l.stunde, l.beginn, kurs.lowercase(), l.lehrer.trim().lowercase(), jahrgang(l.klasse))
         } else {
             listOf(l.stunde, l.beginn, l.klasse, l.fach.trim().lowercase())
         }.joinToString("|")
+    }
+
+    /** "12/5" → "12", "12a" → "12", "Q1/2" → "Q1". */
+    internal fun jahrgang(klasse: String): String {
+        val k = klasse.trim()
+        return k.takeWhile { it.isDigit() }.ifEmpty { k.substringBefore('/').trim() }
     }
 
     private fun mitZeiten(raster: List<Zeitfenster>) =

@@ -11,6 +11,8 @@ import com.nextlesson.app.data.Quelle
 import com.nextlesson.app.data.SchulTag
 import com.nextlesson.app.data.Treffer
 import com.nextlesson.app.data.ersterSchultag
+import com.nextlesson.app.data.tagesFehler
+import com.nextlesson.app.data.wochenReferenz
 import com.nextlesson.app.data.schultagVersetzt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,7 +21,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.DayOfWeek
 import java.time.LocalDate
 
 sealed class SucheZustand {
@@ -51,10 +52,27 @@ class SucheViewModel(app: Application) : AndroidViewModel(app) {
     private val _woche = MutableStateFlow<SucheWoche>(SucheWoche.Laedt)
     val woche: StateFlow<SucheWoche> = _woche.asStateFlow()
     private var wochenJob: Job? = null
+    private var wocheLaedtFuer: LocalDate? = null
+    /** Geladene Wochen (Montag-Referenz → Zeitpunkt, Tage) – gilt für jede Lehrkraft. */
+    private val wochen = HashMap<LocalDate, Pair<Long, List<SucheWochenTag>>>()
 
-    /** Plan der ganzen Schule für Montag–Freitag – Grundlage für "Wann ist Herr X frei?". */
+    /**
+     * Plan der ganzen Schule für Montag–Freitag – Grundlage für "Wann ist Herr X frei?".
+     * Eine schon geladene Woche (höchstens 5 Minuten alt) wird für jede Lehrkraft wiederverwendet.
+     */
     fun wocheLaden(naechste: Boolean) {
+        val referenz = wochenReferenz(if (naechste) 1 else 0)
+        wochen[referenz]?.let { (um, tage) ->
+            if (System.currentTimeMillis() - um < NEU_LADEN_NACH_MILLIS) {
+                wochenJob?.cancel()
+                _woche.value = SucheWoche.Geladen(tage)
+                return
+            }
+        }
+        if (wochenJob?.isActive == true && wocheLaedtFuer == referenz) return
+
         wochenJob?.cancel()
+        wocheLaedtFuer = referenz
         _woche.value = SucheWoche.Laedt
         wochenJob = viewModelScope.launch {
             val creds = withContext(Dispatchers.IO) { credentialsStore.laden() }
@@ -62,21 +80,15 @@ class SucheViewModel(app: Application) : AndroidViewModel(app) {
                 _woche.value = SucheWoche.Fehler("Bitte zuerst in den Einstellungen die Zugangsdaten eintragen.")
                 return@launch
             }
-            val heute = LocalDate.now()
-            val basis = if (heute.dayOfWeek == DayOfWeek.SATURDAY || heute.dayOfWeek == DayOfWeek.SUNDAY) {
-                heute.plusWeeks(1)
-            } else {
-                heute
-            }
-            val referenz = if (naechste) basis.plusWeeks(1) else basis
-            val tage = repository.holeWoche(creds, referenz).map { (datum, ergebnis) ->
-                when (ergebnis) {
-                    is PlanResult.Success ->
-                        SucheWochenTag(datum, withContext(Dispatchers.Default) { SchulTag(datum, ergebnis.plan) })
-                    is PlanResult.AuthFehler -> SucheWochenTag(datum, null, "Login fehlgeschlagen")
-                    is PlanResult.KeinPlanFuerTag -> SucheWochenTag(datum, null, "Kein Plan veröffentlicht")
-                    is PlanResult.NetzwerkFehler -> SucheWochenTag(datum, null, "Keine Verbindung")
+            val ergebnisse = repository.holeWoche(creds, referenz)
+            val tage = withContext(Dispatchers.Default) {
+                ergebnisse.map { (datum, ergebnis) ->
+                    if (ergebnis is PlanResult.Success) SucheWochenTag(datum, SchulTag(datum, ergebnis.plan))
+                    else SucheWochenTag(datum, null, ergebnis.tagesFehler())
                 }
+            }
+            if (ergebnisse.none { it.second is PlanResult.NetzwerkFehler }) {
+                wochen[referenz] = System.currentTimeMillis() to tage
             }
             _woche.value = SucheWoche.Geladen(tage)
         }
@@ -114,7 +126,10 @@ class SucheViewModel(app: Application) : AndroidViewModel(app) {
         laden()
     }
 
-    fun aktualisieren() = laden(erzwingen = true)
+    fun aktualisieren() {
+        wochen.clear()
+        laden(erzwingen = true)
+    }
 
     private fun laden(erzwingen: Boolean = false) {
         ladeJob?.cancel()

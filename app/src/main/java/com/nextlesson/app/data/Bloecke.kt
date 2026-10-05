@@ -57,3 +57,7 @@ private fun Lesson.schliesstAn(b: Lesson, maxPauseMinuten: Long): Boolean {
     }
     return true
 }
+
+/** Für die Anzeige: als Blöcke ([bloecke] = true) oder jede Stunde als eigener Eintrag. */
+fun List<Lesson>.alsEintraege(bloecke: Boolean): List<StundenBlock> =
+    if (bloecke) alsBloecke() else mapIndexed { i, l -> StundenBlock(i, listOf(l)) }

@@ -55,10 +55,7 @@ class DesignStore(context: Context) {
             if (farbe == null) null else s.substring(0, i) to farbe
         }.toMap()
 
-    companion object {
-        /** Die laufende Instanz, damit [com.nextlesson.app.ui.theme.fachFarbe] die eigenen Farben kennt. */
-        var aktuell: DesignStore? = null
-
+    private companion object {
         private const val KEY_MODUS = "modus"
         private const val KEY_BLOECKE = "block_ansicht"
         private const val KEY_FARBEN = "fach_farben"

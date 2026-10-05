@@ -11,19 +11,28 @@ import java.net.URLEncoder
 object FreundTeilen {
 
     const val SCHEMA = "nextlesson"
-    private val LINK = Regex("nextlesson://freund\\?\\S+", RegexOption.IGNORE_CASE)
+    // Auch "nextlesson://freund/?…", wie es manche Apps beim Normalisieren daraus machen.
+    private val LINK = Regex("nextlesson://freund/?\\?\\S+", RegexOption.IGNORE_CASE)
+
+    /** Satzzeichen, die beim Einfügen aus einer Nachricht am Link hängen bleiben können. */
+    private const val ANHAENGSEL = ").,;:!?]}>\"'»“”"
 
     fun link(name: String, kurse: Set<String>): String =
         "$SCHEMA://freund?name=${kodieren(name.trim())}&kurse=" + kurse.sorted().joinToString(",") { kodieren(it) }
 
-    /** Text zum Verschicken (Messenger): kurze Erklärung plus Link. */
-    fun nachricht(name: String, kurse: Set<String>): String =
-        "Meine Kurse für die Stundenplan-App: ${link(name, kurse)}\n" +
-            "(In der App: Einstellungen → Freunde → \"Link einfügen\")"
+    /**
+     * Text zum Verschicken (Messenger): kurze Erklärung plus Link. [eigene] = die eigenen
+     * Kurse; sonst die eines Freundes namens [name].
+     */
+    fun nachricht(name: String, kurse: Set<String>, eigene: Boolean = true): String {
+        val wessen = if (eigene || name.isBlank()) "Meine Kurse" else "Die Kurse von ${name.trim()}"
+        return "$wessen für die Stundenplan-App: ${link(name, kurse)}\n" +
+            "(In der App: Einstellungen → Freunde → \"Link von einem Freund einfügen\")"
+    }
 
     /** Findet einen Link irgendwo in [text] (auch in einer ganzen Nachricht) und liest ihn. */
     fun lesen(text: String?): Freund? {
-        val treffer = LINK.find(text.orEmpty())?.value ?: return null
+        val treffer = LINK.find(text.orEmpty())?.value?.trimEnd { it in ANHAENGSEL } ?: return null
         val query = treffer.substringAfter('?')
         val felder = query.split('&').mapNotNull { teil ->
             val i = teil.indexOf('=')

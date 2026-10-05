@@ -191,4 +191,49 @@ class FreizeitTest {
         assertTrue(Freizeit.gemeinsameStunden(meins, andererLehrer).isEmpty())
         assertTrue(Freizeit.gemeinsameStunden(meins, andereZeit).isEmpty())
     }
+
+    @Test
+    fun jetztFrei_vorDerErstenStundeIstManNochNichtDa() {
+        val spaet = plan(stunde(3, "09:05", "09:50", "DEU1"), stunde(5, "11:00", "11:45", "ENG2"))
+        assertNull(Freizeit.jetztFrei(spaet, raster, t("07:20")))
+        assertEquals("4. Std", Freizeit.jetztFrei(spaet, raster, t("10:00"))?.stundenText)
+        // 1.–2. fällt aus: Unterricht beginnt erst mit der 3. – davor nicht "frei".
+        val ausfallZuerst = plan(
+            stunde(1, "07:15", "08:00", "A", entfaellt = true),
+            stunde(2, "08:00", "08:45", "A", entfaellt = true),
+            stunde(3, "09:05", "09:50", "A"),
+            stunde(5, "11:00", "11:45", "A")
+        )
+        assertNull(Freizeit.jetztFrei(ausfallZuerst, raster, t("07:30")))
+        assertTrue(Freizeit.inDerSchule(spaet, t("10:00")))
+        assertTrue(!Freizeit.inDerSchule(spaet, t("08:00")))
+        assertTrue(!Freizeit.inDerSchule(spaet, t("11:45")))
+    }
+
+    @Test
+    fun ohneRaster_ausfallZaehltAlsFreiWennGewuenscht() {
+        val p = plan(
+            stunde(1, "07:15", "08:00", "A"),
+            stunde(2, "08:00", "08:45", "A", entfaellt = true),
+            stunde(3, "08:45", "09:30", "A")
+        )
+        assertTrue(Freizeit.freiBloecke(p, emptyList()).isEmpty())
+        assertEquals(
+            listOf(t("08:00") to t("08:45")),
+            Freizeit.freiBloecke(p, emptyList(), ausfallIstFrei = true).map { it.beginn to it.ende }
+        )
+        // Lehrkraft mit 1. und (ausgefallener) 5. Stunde: keine Lücke, der Tag endet nach der 1.
+        val q = plan(stunde(1, "07:15", "08:00", "A"), stunde(5, "11:00", "11:45", "A", entfaellt = true))
+        assertTrue(Freizeit.freiBloecke(q, emptyList(), ausfallIstFrei = true).isEmpty())
+    }
+
+    @Test
+    fun gleichesKuerzelAnderesJahrgangIstNichtZusammen() {
+        val elf = plan(stunde(5, "11:00", "11:45", "SPO1").copy(klasse = "11"))
+        val zwoelf = plan(stunde(5, "11:00", "11:45", "SPO1").copy(klasse = "12"))
+        assertTrue(Freizeit.gemeinsameStunden(elf, zwoelf).isEmpty())
+        assertEquals("12", Freizeit.jahrgang("12/5"))
+        assertEquals("12", Freizeit.jahrgang("12a"))
+        assertEquals("Q1", Freizeit.jahrgang("Q1/2"))
+    }
 }

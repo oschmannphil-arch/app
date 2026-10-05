@@ -34,7 +34,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import android.content.Intent
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,9 +41,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Freiblock
-import com.nextlesson.app.data.alsBloecke
+import com.nextlesson.app.data.alsEintraege
 import com.nextlesson.app.data.FreundTeilen
-import com.nextlesson.app.data.GesamtPlan
 import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.KursInfo
@@ -99,6 +97,10 @@ fun FreundeKarte(
             Freizeit.jetztFrei(p, persoenlich.gesamt.zeitraster, jetzt)?.let { f to it }
         }
     }
+    // Vor Schulbeginn und nach Schulschluss aller Freunde wäre "niemand frei" irreführend.
+    val jemandDa = remember(tage, persoenlich, jetzt) {
+        persoenlich.istHeute && tage.any { (_, p) -> Freizeit.inDerSchule(p, jetzt) }
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -111,7 +113,7 @@ fun FreundeKarte(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (persoenlich.istHeute) {
+            if (gerade.isNotEmpty() || jemandDa) {
                 Text(
                     text = if (gerade.isEmpty()) "Gerade hat niemand eine Freistunde."
                     else "Gerade frei: " + gerade.joinToString(", ") { (f, b) -> "${f.name} (bis ${b.ende.format(uhrzeit)})" },
@@ -166,7 +168,7 @@ fun FreundTagScreen(
             if (danach >= 0) danach to block else null
         }.toMap()
     }
-    val bloecke = remember(plan) { plan.stunden.alsBloecke() }
+    val eintraege = remember(plan, blockAnsicht) { plan.stunden.alsEintraege(blockAnsicht) }
     val zusammen = remember(plan, persoenlich) {
         Freizeit.gemeinsameStunden(plan, persoenlich.plan).mapTo(HashSet()) { Freizeit.zusammenKey(it) }
     }
@@ -199,35 +201,19 @@ fun FreundTagScreen(
         if (plan.stunden.isNotEmpty()) {
             item { AnsichtUmschalter(blockAnsicht, onBlockAnsicht) }
         }
-        if (blockAnsicht) {
-            itemsIndexed(bloecke) { _, block ->
-                val lesson = block.zusammengefasst
-                Column {
-                    freiVor[block.ersteIndex]?.let { FreistundenZeile(it) }
-                    if (block.stunden.any { Freizeit.zusammenKey(it) in zusammen }) ZusammenHinweis()
-                    StundenZeile(
-                        lesson = lesson,
-                        istNaechste = false,
-                        laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
-                        dunkel = dunkel,
-                        onClick = null,
-                        stundenText = block.stundenText
-                    )
-                }
-            }
-        } else {
-            itemsIndexed(plan.stunden) { index, lesson ->
-                Column {
-                    freiVor[index]?.let { FreistundenZeile(it) }
-                    if (Freizeit.zusammenKey(lesson) in zusammen) ZusammenHinweis()
-                    StundenZeile(
-                        lesson = lesson,
-                        istNaechste = false,
-                        laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
-                        dunkel = dunkel,
-                        onClick = null
-                    )
-                }
+        itemsIndexed(eintraege) { _, block ->
+            val lesson = block.zusammengefasst
+            Column {
+                freiVor[block.ersteIndex]?.let { FreistundenZeile(it) }
+                if (block.stunden.any { Freizeit.zusammenKey(it) in zusammen }) ZusammenHinweis()
+                StundenZeile(
+                    lesson = lesson,
+                    istNaechste = false,
+                    laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                    dunkel = dunkel,
+                    onClick = null,
+                    stundenText = if (blockAnsicht) block.stundenText else null
+                )
             }
         }
         item {
@@ -308,12 +294,7 @@ fun FreundBearbeitenScreen(
         if (!istNeu) {
             val context = LocalContext.current
             OutlinedButton(
-                onClick = {
-                    val senden = Intent(Intent.ACTION_SEND)
-                        .setType("text/plain")
-                        .putExtra(Intent.EXTRA_TEXT, FreundTeilen.nachricht(name, auswahl))
-                    runCatching { context.startActivity(Intent.createChooser(senden, "Kurse teilen")) }
-                },
+                onClick = { teilen(context, FreundTeilen.nachricht(name, auswahl, eigene = false), "Kurse teilen") },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Kurse als Link teilen") }
         }
@@ -425,20 +406,28 @@ private fun LinkEinfuegenDialog(onAbbrechen: () -> Unit, onImportieren: (Freund)
     )
 }
 
-private val wochentagLang = DateTimeFormatter.ofPattern("EEEE, d. MMM", Locale.GERMAN)
-
 private class TagErgebnis(val frei: List<Freiblock>, val ohneUnterricht: List<String>)
 
-/** Gemeinsame Freistunden von dir und den gewählten Freunden an einem Tag. */
-private fun gemeinsamAm(gesamt: GesamtPlan, eigeneKurse: Set<String>, freunde: List<Freund>): TagErgebnis {
-    val ich = gesamt.tagesplanFuer(eigeneKurse)
-    val plaene = freunde.map { it to gesamt.tagesplanFuer(it.kurse) }
+/** Gemeinsame Freistunden von dir und den gewählten Freunden an einem Tag (Pläne schon gefiltert). */
+private fun gemeinsamAm(tag: WocheTag, freunde: List<Freund>): TagErgebnis? {
+    val ich = tag.eigen ?: return null
+    val plaene = freunde.mapNotNull { f -> tag.freunde[f.id]?.let { f to it } }
     val ohne = buildList {
         if (ich.stunden.none { !it.entfaellt }) add("Du")
         plaene.filter { (_, p) -> p.stunden.none { !it.entfaellt } }.forEach { add(it.first.name) }
     }
-    val frei = Freizeit.gemeinsamFreiAlle(listOf(ich) + plaene.map { it.second }, gesamt.zeitraster)
+    val frei = Freizeit.gemeinsamFreiAlle(listOf(ich) + plaene.map { it.second }, tag.raster)
     return TagErgebnis(frei, ohne)
+}
+
+/** "Du hast" / "Anna hat" / "Du und Anna haben" … keinen Unterricht. */
+private fun ohneUnterrichtText(namen: List<String>): String {
+    val verb = when {
+        namen == listOf("Du") -> "hast"
+        namen.size == 1 -> "hat"
+        else -> "haben"
+    }
+    return "${namen.joinToString(" und ")} $verb an diesem Tag keinen Unterricht"
 }
 
 /**
@@ -448,7 +437,6 @@ private fun gemeinsamAm(gesamt: GesamtPlan, eigeneKurse: Set<String>, freunde: L
 @Composable
 fun GemeinsamFreiScreen(
     freunde: List<Freund>,
-    eigeneKurse: Set<String>,
     startAuswahl: Set<String>,
     woche: FreundeWoche,
     onWocheLaden: (naechste: Boolean) -> Unit
@@ -459,8 +447,8 @@ fun GemeinsamFreiScreen(
 
     val gewaehlte = remember(freunde, auswahl) { freunde.filter { it.id in auswahl } }
     val tage = (woche as? FreundeWoche.Geladen)?.tage
-    val ergebnisse = remember(tage, gewaehlte, eigeneKurse) {
-        tage?.map { tag -> tag to tag.gesamt?.let { gemeinsamAm(it, eigeneKurse, gewaehlte) } }.orEmpty()
+    val ergebnisse = remember(tage, gewaehlte) {
+        tage?.map { tag -> tag to gemeinsamAm(tag, gewaehlte) }.orEmpty()
     }
 
     LazyColumn(
@@ -515,35 +503,22 @@ fun GemeinsamFreiScreen(
 
 @Composable
 private fun GemeinsamTagKarte(datum: LocalDate, ergebnis: TagErgebnis?, fehler: String?) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Text(
-                text = datum.format(wochentagLang) + if (datum == LocalDate.now()) " · heute" else "",
-                style = MaterialTheme.typography.titleSmall
+    TagesKarte(datum) {
+        val grau = MaterialTheme.colorScheme.onSurfaceVariant
+        when {
+            ergebnis == null -> Text(fehler ?: "Kein Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
+            ergebnis.ohneUnterricht.isNotEmpty() -> Text(
+                text = ohneUnterrichtText(ergebnis.ohneUnterricht),
+                style = MaterialTheme.typography.bodyMedium,
+                color = grau
             )
-            val grau = MaterialTheme.colorScheme.onSurfaceVariant
-            when {
-                ergebnis == null -> Text(fehler ?: "Kein Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
-                ergebnis.ohneUnterricht.isNotEmpty() -> Text(
-                    text = ergebnis.ohneUnterricht.joinToString(" und ") +
-                        if (ergebnis.ohneUnterricht.size == 1 && ergebnis.ohneUnterricht[0] == "Du") " hast an diesem Tag keinen Unterricht"
-                        else " haben an diesem Tag keinen Unterricht",
+            ergebnis.frei.isEmpty() -> Text("Keine gemeinsame Freistunde", style = MaterialTheme.typography.bodyMedium, color = grau)
+            else -> ergebnis.frei.forEach { b ->
+                Text(
+                    text = blockText(b),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = grau
+                    color = MaterialTheme.colorScheme.primary
                 )
-                ergebnis.frei.isEmpty() -> Text("Keine gemeinsame Freistunde", style = MaterialTheme.typography.bodyMedium, color = grau)
-                else -> ergebnis.frei.forEach { b ->
-                    Text(
-                        text = blockText(b),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
             }
         }
     }

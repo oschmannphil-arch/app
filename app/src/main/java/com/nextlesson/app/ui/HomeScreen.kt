@@ -7,7 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import com.nextlesson.app.data.Freiblock
-import com.nextlesson.app.data.alsBloecke
+import com.nextlesson.app.data.alsEintraege
 import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.Hausaufgabe
@@ -171,7 +171,7 @@ fun HomeScreen(
         }.toMap()
     }
 
-    val bloecke = remember(plan) { plan.stunden.alsBloecke() }
+    val eintraege = remember(plan, blockAnsicht) { plan.stunden.alsEintraege(blockAnsicht) }
 
     // Endet die letzte Stunde, während die App offen ist, einmal neu laden: Dann springt die
     // Ansicht auf den nächsten Schultag, statt "kein Unterricht in den nächsten Tagen" zu zeigen.
@@ -273,33 +273,18 @@ fun HomeScreen(
 
         // Bewusst ohne key: bei mehreren gewählten Kursblöcken können zwei Stunden
         // dieselbe Nummer und dasselbe Fach haben, und doppelte Keys lassen LazyColumn abstürzen.
-        if (blockAnsicht) {
-            itemsIndexed(bloecke) { _, block ->
-                val lesson = block.zusammengefasst
-                Column {
-                    freiVor[block.ersteIndex]?.let { FreistundenZeile(it) }
-                    StundenZeile(
-                        lesson = lesson,
-                        istNaechste = block.stunden.any { it.stunde == naechste?.lesson?.stunde },
-                        laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
-                        dunkel = dunkel,
-                        onClick = { onStundeAntippen(block.erste) },
-                        stundenText = block.stundenText
-                    )
-                }
-            }
-        } else {
-            itemsIndexed(plan.stunden) { index, lesson ->
-                Column {
-                    freiVor[index]?.let { FreistundenZeile(it) }
-                    StundenZeile(
-                        lesson = lesson,
-                        istNaechste = lesson.stunde == naechste?.lesson?.stunde,
-                        laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
-                        dunkel = dunkel,
-                        onClick = { onStundeAntippen(lesson) }
-                    )
-                }
+        itemsIndexed(eintraege) { _, block ->
+            val lesson = block.zusammengefasst
+            Column {
+                freiVor[block.ersteIndex]?.let { FreistundenZeile(it) }
+                StundenZeile(
+                    lesson = lesson,
+                    istNaechste = block.stunden.any { it.stunde == naechste?.lesson?.stunde },
+                    laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                    dunkel = dunkel,
+                    onClick = { onStundeAntippen(block.erste) },
+                    stundenText = if (blockAnsicht) block.stundenText else null
+                )
             }
         }
 

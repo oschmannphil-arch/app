@@ -47,7 +47,7 @@ import com.nextlesson.app.data.LessonStatus
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
-import com.nextlesson.app.data.alsBloecke
+import com.nextlesson.app.data.alsEintraege
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -211,17 +211,10 @@ private fun TagKarte(tag: WochenTag, dunkel: Boolean, blockAnsicht: Boolean) {
                     Spacer(Modifier.height(10.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(Modifier.height(6.dp))
-                    if (blockAnsicht) {
-                        val bloecke = stunden.alsBloecke()
-                        bloecke.forEachIndexed { index, block ->
-                            WochenStundenZeile(block.zusammengefasst, dunkel, block.stundenKurz)
-                            if (index < bloecke.lastIndex) Spacer(Modifier.height(4.dp))
-                        }
-                    } else {
-                        stunden.forEachIndexed { index, lesson ->
-                            WochenStundenZeile(lesson, dunkel)
-                            if (index < stunden.lastIndex) Spacer(Modifier.height(4.dp))
-                        }
+                    val eintraege = remember(stunden, blockAnsicht) { stunden.alsEintraege(blockAnsicht) }
+                    eintraege.forEachIndexed { index, block ->
+                        WochenStundenZeile(block.zusammengefasst, dunkel, if (blockAnsicht) block.stundenKurz else null)
+                        if (index < eintraege.lastIndex) Spacer(Modifier.height(4.dp))
                     }
                 }
             }

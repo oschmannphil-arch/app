@@ -138,4 +138,13 @@ ${std(1, "07:15", "08:00", "DEU3", "Mei", "031", liste)}
         assertEquals("A · Etage 1", raumGruppe("A101"))
         assertEquals("Sonstige", raumGruppe("12"))
     }
+
+    @Test
+    fun wochenReferenzSpringtAmWochenende() {
+        val samstag = LocalDate.of(2026, 10, 10)
+        assertEquals(LocalDate.of(2026, 10, 12), wochenReferenz(0, samstag))
+        assertEquals(LocalDate.of(2026, 10, 19), wochenReferenz(1, samstag))
+        assertEquals(LocalDate.of(2026, 10, 5), wochenReferenz(-1, samstag))
+        assertEquals(dienstag, wochenReferenz(0, dienstag))
+    }
 }

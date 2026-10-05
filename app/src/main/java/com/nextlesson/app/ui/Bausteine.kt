@@ -1,5 +1,14 @@
 package com.nextlesson.app.ui
 
+import android.content.Context
+import android.content.Intent
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -27,6 +36,36 @@ import com.nextlesson.app.data.Lesson
 import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.LocalTime
+
+/** Text über das Teilen-Menü von Android verschicken (Messenger, Mail …). */
+fun teilen(context: Context, text: String, titel: String) {
+    val senden = Intent(Intent.ACTION_SEND)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_TEXT, text)
+    runCatching { context.startActivity(Intent.createChooser(senden, titel)) }
+}
+
+/** "Montag, 6. Okt." */
+internal val wochentagDatumFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEEE, d. MMM", Locale.GERMAN)
+
+/** Karte für einen Tag einer Wochenübersicht: Überschrift "Montag, 6. Okt. · heute" plus [inhalt]. */
+@Composable
+fun TagesKarte(datum: LocalDate, inhalt: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(
+                text = datum.format(wochentagDatumFormat) + if (datum == LocalDate.now()) " · heute" else "",
+                style = MaterialTheme.typography.titleSmall
+            )
+            inhalt()
+        }
+    }
+}
 
 /** Umschalter "Stunden | Blöcke" für die Stundenlisten. */
 @Composable
