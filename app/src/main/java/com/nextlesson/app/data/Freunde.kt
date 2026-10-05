@@ -97,10 +97,27 @@ object Freizeit {
         freiBloecke(plan, raster, ausfallIstFrei = true)
             .firstOrNull { !jetzt.isBefore(it.beginn) && jetzt.isBefore(it.ende) }
 
-    /** Stunden aus [a], die [b] ebenfalls hat (gleicher Kurs zur gleichen Stunde) – ohne ausgefallene. */
+    /**
+     * Stunden aus [a], die [b] ebenfalls hat – ohne ausgefallene. Derselbe Kurs gilt auch dann
+     * als gemeinsam, wenn er in der Schule unter verschiedenen Klassen geführt wird.
+     */
     fun gemeinsameStunden(a: TagesPlan, b: TagesPlan): List<Lesson> {
-        val kennungenB = b.stunden.filter { !it.entfaellt }.mapTo(HashSet()) { it.kennung() }
-        return a.stunden.filter { !it.entfaellt && it.kennung() in kennungenB }
+        val schluesselB = b.stunden.filter { !it.entfaellt }.mapTo(HashSet()) { zusammenKey(it) }
+        return a.stunden.filter { !it.entfaellt && zusammenKey(it) in schluesselB }
+    }
+
+    /**
+     * Schlüssel für "gleicher Unterricht": Stunde, Zeit, Kurs und Lehrkraft. Klasse und
+     * Unterrichtsnummer zählen nicht – ein Kurs, der in mehreren Klassen steht, ist derselbe.
+     * Ohne Kurskürzel (Klassenunterricht) gehört die Klasse dazu.
+     */
+    fun zusammenKey(l: Lesson): String {
+        val kurs = l.kursKuerzel?.trim()?.takeIf { it.isNotEmpty() }
+        return if (kurs != null) {
+            listOf(l.stunde, l.beginn, kurs.lowercase(), l.lehrer.trim().lowercase())
+        } else {
+            listOf(l.stunde, l.beginn, l.klasse, l.fach.trim().lowercase())
+        }.joinToString("|")
     }
 
     private fun mitZeiten(raster: List<Zeitfenster>) =

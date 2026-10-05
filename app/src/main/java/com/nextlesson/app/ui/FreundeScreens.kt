@@ -50,7 +50,6 @@ import com.nextlesson.app.data.KursInfo
 import com.nextlesson.app.data.PersoenlicherPlan
 import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.Zeitfenster
-import com.nextlesson.app.data.kennung
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
 import java.time.LocalTime
@@ -165,7 +164,7 @@ fun FreundTagScreen(
         }.toMap()
     }
     val zusammen = remember(plan, persoenlich) {
-        Freizeit.gemeinsameStunden(plan, persoenlich.plan).mapTo(HashSet()) { it.kennung() }
+        Freizeit.gemeinsameStunden(plan, persoenlich.plan).mapTo(HashSet()) { Freizeit.zusammenKey(it) }
     }
 
     LazyColumn(
@@ -196,7 +195,7 @@ fun FreundTagScreen(
         itemsIndexed(plan.stunden) { index, lesson ->
             Column {
                 freiVor[index]?.let { FreistundenZeile(it) }
-                if (lesson.kennung() in zusammen) {
+                if (Freizeit.zusammenKey(lesson) in zusammen) {
                     Text(
                         text = "zusammen mit dir",
                         style = MaterialTheme.typography.labelSmall,

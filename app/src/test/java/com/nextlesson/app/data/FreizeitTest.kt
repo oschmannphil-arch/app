@@ -173,4 +173,22 @@ class FreizeitTest {
         assertTrue(Freizeit.gemeinsamFreiAlle(listOf(ich, b, plan()), raster).isEmpty())
         assertTrue(Freizeit.gemeinsamFreiAlle(emptyList(), raster).isEmpty())
     }
+
+    @Test
+    fun gleicherKursInAnderenKlassenIstZusammen() {
+        val meins = plan(stunde(3, "09:05", "09:50", "DEU1").copy(lehrer = "Got", unterrichtsNr = "11"))
+        // Derselbe Kurs, von einem Freund aus Klasse 12/6 gewählt: andere Klasse, andere Unterrichtsnummer.
+        val seins = plan(stunde(3, "09:05", "09:50", "DEU1").copy(klasse = "12/6", lehrer = "Got", unterrichtsNr = "42"))
+        assertEquals(listOf(3), Freizeit.gemeinsameStunden(meins, seins).map { it.stunde })
+        assertEquals(Freizeit.zusammenKey(meins.stunden[0]), Freizeit.zusammenKey(seins.stunden[0]))
+    }
+
+    @Test
+    fun anderesLehrerOderAndereZeitIstNichtZusammen() {
+        val meins = plan(stunde(3, "09:05", "09:50", "DEU1").copy(lehrer = "Got"))
+        val andererLehrer = plan(stunde(3, "09:05", "09:50", "DEU1").copy(klasse = "12/6", lehrer = "Mei"))
+        val andereZeit = plan(stunde(4, "09:50", "10:35", "DEU1").copy(klasse = "12/6", lehrer = "Got"))
+        assertTrue(Freizeit.gemeinsameStunden(meins, andererLehrer).isEmpty())
+        assertTrue(Freizeit.gemeinsameStunden(meins, andereZeit).isEmpty())
+    }
 }
