@@ -1,5 +1,19 @@
 package com.nextlesson.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
+import com.nextlesson.app.data.DesignModus
+import com.nextlesson.app.ui.theme.FachFarbAuswahl
+import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -67,8 +81,16 @@ fun EinstellungenScreen(
     onGrosserTextSetzen: (Boolean) -> Unit,
     onKurseAendern: () -> Unit,
     freunde: List<Freund> = emptyList(),
-    onFreundBearbeiten: (Freund?) -> Unit = {}
+    onFreundBearbeiten: (Freund?) -> Unit = {},
+    onLinkImportieren: (Freund) -> Unit = {},
+    onKurseTeilen: () -> Unit = {},
+    modus: DesignModus = DesignModus.SYSTEM,
+    onModus: (DesignModus) -> Unit = {},
+    fachNamen: List<String> = emptyList(),
+    fachFarben: Map<String, Int> = emptyMap(),
+    onFachFarbe: (String, Int?) -> Unit = { _, _ -> }
 ) {
+    var farbDialog by remember { mutableStateOf(false) }
     var schulnummer by remember { mutableStateOf(credentials?.schulnummer.orEmpty()) }
     var benutzer by remember { mutableStateOf(credentials?.benutzername.orEmpty()) }
     var passwort by remember { mutableStateOf(credentials?.passwort.orEmpty()) }
@@ -142,29 +164,56 @@ fun EinstellungenScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Deine Kurse", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = "Legt fest, welche Stunden angezeigt werden.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Deine Kurse", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Legt fest, welche Stunden angezeigt werden.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(onClick = onKurseAendern) { Text("Ändern") }
                 }
-                OutlinedButton(onClick = onKurseAendern) { Text("Ändern") }
+                OutlinedButton(onClick = onKurseTeilen, modifier = Modifier.fillMaxWidth()) {
+                    Text("Meine Kurse als Link teilen")
+                }
+            }
+        }
+
+        // --- Darstellung ---
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Darstellung", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DesignModus.entries.forEach { m ->
+                        FilterChip(selected = modus == m, onClick = { onModus(m) }, label = { Text(m.anzeige) })
+                    }
+                }
+                OutlinedButton(onClick = { farbDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Farbe pro Fach anpassen")
+                }
             }
         }
 
         // --- Freunde ---
         // Braucht die Kursliste der Schule – also erst, wenn ein Zugang gespeichert ist.
         if (credentials != null) {
-            FreundeEinstellungenKarte(freunde = freunde, onBearbeiten = onFreundBearbeiten)
+            FreundeEinstellungenKarte(
+                freunde = freunde,
+                onBearbeiten = onFreundBearbeiten,
+                onLinkImportieren = onLinkImportieren
+            )
         }
 
         // --- Widget ---
@@ -245,6 +294,15 @@ fun EinstellungenScreen(
         }
 
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (farbDialog) {
+        FachFarbenDialog(
+            faecher = fachNamen,
+            farben = fachFarben,
+            onFarbe = onFachFarbe,
+            onFertig = { farbDialog = false }
+        )
     }
 
     if (zeitDialog) {
@@ -417,5 +475,65 @@ private fun ZeitDialog(
         dismissButton = {
             TextButton(onClick = onAbbrechen) { Text("Abbrechen") }
         }
+    )
+}
+
+/** Pro Fach eine eigene Farbe wählen (oder zurück zur automatischen). */
+@Composable
+private fun FachFarbenDialog(
+    faecher: List<String>,
+    farben: Map<String, Int>,
+    onFarbe: (String, Int?) -> Unit,
+    onFertig: () -> Unit
+) {
+    val dunkel = istDunkel()
+    AlertDialog(
+        onDismissRequest = onFertig,
+        title = { Text("Farbe pro Fach") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                if (faecher.isEmpty()) {
+                    Text(
+                        text = "Sobald dein Plan geladen ist, erscheinen hier deine Fächer.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                faecher.forEach { fach ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(14.dp)
+                                    .clip(CircleShape)
+                                    .background(fachFarbe(fach, dunkel))
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(fach, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            if (farben.containsKey(fach.trim().lowercase())) {
+                                TextButton(onClick = { onFarbe(fach, null) }) { Text("Automatisch") }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FachFarbAuswahl.forEach { farbe ->
+                                Box(
+                                    Modifier
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(farbe)
+                                        .clickable { onFarbe(fach, farbe.toArgb()) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onFertig) { Text("Fertig") } }
     )
 }

@@ -117,4 +117,25 @@ ${std(1, "07:15", "08:00", "DEU3", "Mei", "031", liste)}
         assertEquals(LocalDate.of(2026, 10, 12), ersterSchultag(LocalDate.of(2026, 10, 10)))
         assertEquals(dienstag, ersterSchultag(dienstag))
     }
+
+    @Test
+    fun lehrerWocheLueckenUndUnterricht() {
+        val t = schultag()
+        val weis = Treffer.Lehrer("Weis")
+        // Weis unterrichtet 1., 2. (12/5) und 4. (10/2); dazwischen ist die 3. Stunde frei.
+        assertEquals(listOf(1, 2, 4), t.unterrichtsStunden(weis))
+        assertEquals(listOf("3. Std"), t.luecken(weis).map { it.stundenText })
+        // Luth: nur die 3. Stunde – davor ist nicht "Lücke", sondern noch nicht da.
+        assertTrue(t.luecken(Treffer.Lehrer("Luth")).isEmpty())
+        assertTrue(t.luecken(Treffer.Lehrer("gibtEsNicht")).isEmpty())
+    }
+
+    @Test
+    fun raumGruppenZumFiltern() {
+        assertEquals("Etage 2", raumGruppe("204"))
+        assertEquals("EG", raumGruppe("033"))
+        assertEquals("SH", raumGruppe("SH 1"))
+        assertEquals("A · Etage 1", raumGruppe("A101"))
+        assertEquals("Sonstige", raumGruppe("12"))
+    }
 }

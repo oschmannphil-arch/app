@@ -1,7 +1,6 @@
 package com.nextlesson.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +45,7 @@ import androidx.compose.ui.semantics.semantics
 import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.LessonStatus
 import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -70,7 +70,7 @@ fun WochenScreen(
                 }
             }
             is WochenZustand.Geladen -> {
-                val dunkel = isSystemInDarkTheme()
+                val dunkel = istDunkel()
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()

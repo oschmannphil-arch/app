@@ -55,6 +55,14 @@ import com.nextlesson.app.data.LessonStatus
 import com.nextlesson.app.data.SchulTag
 import com.nextlesson.app.data.Treffer
 import com.nextlesson.app.data.Zeitfenster
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import com.nextlesson.app.data.raumGruppe
+import com.nextlesson.app.data.stundenListe
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -62,6 +70,7 @@ import java.util.Locale
 
 private val uhrzeitFormat = DateTimeFormatter.ofPattern("HH:mm")
 private val tagFormat = DateTimeFormatter.ofPattern("EEE, d. MMM", Locale.GERMAN)
+private val wochentagFormat = DateTimeFormatter.ofPattern("EEEE, d. MMM", Locale.GERMAN)
 
 /**
  * Lehrer- und Raumsuche: "Wo ist Frau X gerade?" und "Ist Raum 121 frei?" – für heute oder
@@ -73,7 +82,11 @@ fun SucheScreen(
     datum: LocalDate,
     onBlaettern: (Int) -> Unit,
     onHeute: () -> Unit,
-    onNeuLaden: () -> Unit
+    onNeuLaden: () -> Unit,
+    favoriten: List<Treffer> = emptyList(),
+    onFavorit: (Treffer) -> Unit = {},
+    woche: SucheWoche = SucheWoche.Laedt,
+    onWocheLaden: (naechste: Boolean) -> Unit = {}
 ) {
     var anfrage by rememberSaveable { mutableStateOf("") }
     var auswahl by rememberSaveable { mutableStateOf<Treffer?>(null) }
@@ -125,8 +138,14 @@ fun SucheScreen(
                 val tag = zustand.tag
                 val gewaehlt = auswahl
                 when {
-                    gewaehlt != null -> Detail(tag, gewaehlt, istHeute, jetzt)
-                    anfrage.isBlank() -> Startansicht(tag, istHeute, jetzt, zustand.ausCache) { auswahl = it }
+                    gewaehlt != null -> Detail(
+                        tag, gewaehlt, istHeute, jetzt,
+                        istFavorit = gewaehlt in favoriten,
+                        onFavorit = { onFavorit(gewaehlt) },
+                        woche = woche,
+                        onWocheLaden = onWocheLaden
+                    )
+                    anfrage.isBlank() -> Startansicht(tag, istHeute, jetzt, zustand.ausCache, favoriten) { auswahl = it }
                     else -> Trefferliste(tag, tag.suche(anfrage), istHeute, jetzt) {
                         fokus.clearFocus()
                         auswahl = it
@@ -178,9 +197,11 @@ private fun Startansicht(
     istHeute: Boolean,
     jetzt: LocalTime,
     ausCache: Boolean,
+    favoriten: List<Treffer>,
     onWahl: (Treffer) -> Unit
 ) {
     val frei = remember(tag, istHeute, jetzt) { if (istHeute) tag.freieRaeume(jetzt) else null }
+    var gruppe by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -189,6 +210,14 @@ private fun Startansicht(
     ) {
         if (ausCache) {
             item { Hinweistext("Gespeicherter Stand – gerade keine Verbindung.") }
+        }
+        if (favoriten.isNotEmpty()) {
+            item {
+                Text(text = "Favoriten", style = MaterialTheme.typography.titleSmall)
+            }
+            items(favoriten, key = { "F:" + (if (it is Treffer.Lehrer) "L:" else "R:") + it.name }) { t ->
+                TrefferZeile(tag, t, istHeute, jetzt, onWahl)
+            }
         }
         item {
             Text(
@@ -203,16 +232,30 @@ private fun Startansicht(
                 if (frei == null) {
                     Hinweistext("Gerade ist kein Unterricht – freie Räume gibt es hier während der Schulzeit.")
                 } else {
+                    // Filter nach Haus bzw. Etage – nur, wenn es überhaupt etwas zu unterscheiden gibt.
+                    val gruppen = frei.map { raumGruppe(it.first) }.distinct().sorted()
+                    val aktiv = gruppe?.takeIf { it in gruppen }
+                    val sichtbar = if (aktiv == null) frei else frei.filter { raumGruppe(it.first) == aktiv }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "Jetzt frei (${frei.size})",
+                            text = "Jetzt frei (${sichtbar.size})",
                             style = MaterialTheme.typography.titleSmall
                         )
+                        if (gruppen.size > 1) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                item {
+                                    FilterChip(selected = aktiv == null, onClick = { gruppe = null }, label = { Text("Alle") })
+                                }
+                                items(gruppen, key = { it }) { g ->
+                                    FilterChip(selected = aktiv == g, onClick = { gruppe = g }, label = { Text(g) })
+                                }
+                            }
+                        }
                         if (frei.isEmpty()) {
                             Hinweistext("Laut Plan ist gerade jeder Raum belegt.")
                         }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(frei, key = { it.first }) { (raum, bis) ->
+                            items(sichtbar, key = { it.first }) { (raum, bis) ->
                                 AssistChip(
                                     onClick = { onWahl(Treffer.Raum(raum)) },
                                     label = { Text(if (bis == null) raum else "$raum · bis ${bis.format(uhrzeitFormat)}") }
@@ -250,34 +293,51 @@ private fun Trefferliste(
             }
         }
         items(treffer, key = { (if (it is Treffer.Lehrer) "L:" else "R:") + it.name }) { t ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { onWahl(t) }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TrefferSymbol(t)
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = t.name, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = statusText(tag, t, istHeute, jetzt),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            TrefferZeile(tag, t, istHeute, jetzt, onWahl)
         }
         item { QuellenHinweis() }
     }
 }
 
 @Composable
-private fun Detail(tag: SchulTag, t: Treffer, istHeute: Boolean, jetzt: LocalTime) {
+private fun TrefferZeile(tag: SchulTag, t: Treffer, istHeute: Boolean, jetzt: LocalTime, onWahl: (Treffer) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { onWahl(t) }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TrefferSymbol(t)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = t.name, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = statusText(tag, t, istHeute, jetzt),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun Detail(
+    tag: SchulTag,
+    t: Treffer,
+    istHeute: Boolean,
+    jetzt: LocalTime,
+    istFavorit: Boolean,
+    onFavorit: () -> Unit,
+    woche: SucheWoche,
+    onWocheLaden: (naechste: Boolean) -> Unit
+) {
     val zeilen = remember(tag, t) { tag.tagesablauf(t) }
+    var wocheOffen by rememberSaveable(t.name) { mutableStateOf(false) }
+    var naechste by rememberSaveable(t.name) { mutableStateOf(false) }
+    LaunchedEffect(wocheOffen, naechste) { if (wocheOffen) onWocheLaden(naechste) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -288,13 +348,21 @@ private fun Detail(tag: SchulTag, t: Treffer, istHeute: Boolean, jetzt: LocalTim
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                 TrefferSymbol(t)
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (t is Treffer.Lehrer) "Lehrkraft" else "Raum",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(text = t.name, style = MaterialTheme.typography.headlineSmall)
+                }
+                IconButton(onClick = onFavorit) {
+                    Icon(
+                        imageVector = Icons.Filled.Star,
+                        contentDescription = if (istFavorit) "Aus Favoriten entfernen" else "Zu Favoriten hinzufügen",
+                        tint = if (istFavorit) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outlineVariant
+                    )
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -304,13 +372,81 @@ private fun Detail(tag: SchulTag, t: Treffer, istHeute: Boolean, jetzt: LocalTim
                 fontWeight = FontWeight.SemiBold
             )
         }
-        if (zeilen.isEmpty()) {
-            item { Hinweistext("An diesem Tag steht dazu nichts im Plan.") }
+        if (t is Treffer.Lehrer) {
+            item {
+                OutlinedButton(onClick = { wocheOffen = !wocheOffen }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (wocheOffen) "Zurück zum Tag" else "Wann ist ${t.name} diese Woche frei?")
+                }
+            }
         }
-        items(zeilen) { (fenster, stunden) ->
-            ZeitfensterZeile(fenster, stunden, t, laeuft = istHeute && laeuftIn(fenster, jetzt))
+        if (wocheOffen && t is Treffer.Lehrer) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !naechste, onClick = { naechste = false }, label = { Text("Diese Woche") })
+                    FilterChip(selected = naechste, onClick = { naechste = true }, label = { Text("Nächste Woche") })
+                }
+            }
+            when (woche) {
+                is SucheWoche.Laedt -> item { LadeZeile() }
+                is SucheWoche.Fehler -> item { Hinweistext(woche.nachricht) }
+                is SucheWoche.Geladen -> items(woche.tage, key = { it.datum.toString() }) { wt ->
+                    LehrerWochenKarte(wt, t)
+                }
+            }
+        } else {
+            if (zeilen.isEmpty()) {
+                item { Hinweistext("An diesem Tag steht dazu nichts im Plan.") }
+            }
+            items(zeilen) { (fenster, stunden) ->
+                ZeitfensterZeile(fenster, stunden, t, laeuft = istHeute && laeuftIn(fenster, jetzt))
+            }
         }
         item { QuellenHinweis() }
+    }
+}
+
+/** Ein Tag der Wochenübersicht: wann unterrichtet die Lehrkraft, wann hat sie Lücken? */
+@Composable
+private fun LehrerWochenKarte(wt: SucheWochenTag, t: Treffer.Lehrer) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(
+                text = wt.datum.format(wochentagFormat) + if (wt.datum == LocalDate.now()) " · heute" else "",
+                style = MaterialTheme.typography.titleSmall
+            )
+            val grau = MaterialTheme.colorScheme.onSurfaceVariant
+            val tag = wt.tag
+            if (tag == null) {
+                Text(wt.fehler ?: "Kein Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
+                return@Column
+            }
+            val stunden = tag.unterrichtsStunden(t)
+            if (stunden.isEmpty()) {
+                Text("kein Unterricht laut Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
+                return@Column
+            }
+            Text("Unterricht: ${stundenListe(stunden)}", style = MaterialTheme.typography.bodyMedium)
+            val luecken = tag.luecken(t)
+            if (luecken.isEmpty()) {
+                Text("Keine Lücke dazwischen", style = MaterialTheme.typography.bodySmall, color = grau)
+            } else {
+                luecken.forEach { b ->
+                    Text(
+                        text = "Frei: " + blockText(b),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            tag.stundenVon(t).filter { !it.entfaellt }.mapNotNull { it.ende }.maxOrNull()?.let {
+                Text("Letzte Stunde endet ${it.format(uhrzeitFormat)}", style = MaterialTheme.typography.bodySmall, color = grau)
+            }
+        }
     }
 }
 

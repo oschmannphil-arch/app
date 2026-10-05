@@ -2,6 +2,9 @@ package com.nextlesson.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +24,19 @@ import com.nextlesson.app.data.Lesson
 import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.LocalTime
+
+/** Ladekreis für innerhalb einer scrollenden Liste (dort darf nichts "fillMaxSize" sein). */
+@Composable
+fun LadeZeile() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
+    }
+}
 
 /** Kleines farbiges Etikett, z.B. "Entfällt", "Raum neu", "läuft". */
 @Composable

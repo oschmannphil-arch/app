@@ -1,7 +1,6 @@
 package com.nextlesson.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Pruefung
 import com.nextlesson.app.data.PruefungsArt
 import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -61,7 +61,7 @@ fun PruefungenScreen(
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
     var bearbeitungsPruefung by remember { mutableStateOf<Pruefung?>(null) }
-    val dunkel = isSystemInDarkTheme()
+    val dunkel = istDunkel()
     val heute = LocalDate.now()
 
     val kommend = pruefungen.filterNot { it.istVorbei(heute) }

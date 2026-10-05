@@ -2,7 +2,6 @@ package com.nextlesson.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +45,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Hausaufgabe
 import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -62,7 +62,7 @@ fun HausaufgabenScreen(
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
     var bearbeitungsAufgabe by remember { mutableStateOf<Hausaufgabe?>(null) }
-    val dunkel = isSystemInDarkTheme()
+    val dunkel = istDunkel()
     val heute = LocalDate.now()
 
     val offen = aufgaben.filterNot { it.erledigt }

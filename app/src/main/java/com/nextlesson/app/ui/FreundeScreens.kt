@@ -1,7 +1,6 @@
 package com.nextlesson.app.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,22 +10,31 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import android.content.Intent
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +42,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Freiblock
+import com.nextlesson.app.data.FreundTeilen
+import com.nextlesson.app.data.GesamtPlan
 import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.KursInfo
@@ -41,6 +51,8 @@ import com.nextlesson.app.data.PersoenlicherPlan
 import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.Zeitfenster
 import com.nextlesson.app.data.kennung
+import com.nextlesson.app.ui.theme.istDunkel
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -54,7 +66,7 @@ private fun tagLabel(persoenlich: PersoenlicherPlan): String =
     if (persoenlich.istHeute) "heute" else persoenlich.datum.format(wochentag)
 
 /** "3.–4. Std (08:45–11:00)" bzw. nur die Uhrzeit, wenn der Plan keine Stundennummern hergibt. */
-private fun blockText(b: Freiblock): String =
+internal fun blockText(b: Freiblock): String =
     b.stundenText?.let { "$it (${zeitraum(b.beginn, b.ende)})" } ?: zeitraum(b.beginn, b.ende)
 
 /** Kurzfassung für die Karte auf der Startseite: Unterrichtszeit und gemeinsame Freistunden. */
@@ -70,9 +82,22 @@ private fun zusammenfassung(eigen: TagesPlan, freund: TagesPlan, raster: List<Ze
 
 /** Karte auf der Startseite: je Freund die Unterrichtszeit und gemeinsame Freistunden. */
 @Composable
-fun FreundeKarte(freunde: List<Freund>, persoenlich: PersoenlicherPlan, onFreund: (Freund) -> Unit) {
+fun FreundeKarte(
+    freunde: List<Freund>,
+    persoenlich: PersoenlicherPlan,
+    onFreund: (Freund) -> Unit,
+    onWoche: () -> Unit = {}
+) {
+    val jetzt by rememberJetzt()
     val tage = remember(freunde, persoenlich) {
         freunde.map { f -> f to persoenlich.gesamt.tagesplanFuer(f.kurse) }
+    }
+    // "Wer ist gerade frei?" – nur für den heutigen Tag sinnvoll.
+    val gerade = remember(tage, persoenlich, jetzt) {
+        if (!persoenlich.istHeute) emptyList()
+        else tage.mapNotNull { (f, p) ->
+            Freizeit.jetztFrei(p, persoenlich.gesamt.zeitraster, jetzt)?.let { f to it }
+        }
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -86,6 +111,17 @@ fun FreundeKarte(freunde: List<Freund>, persoenlich: PersoenlicherPlan, onFreund
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (persoenlich.istHeute) {
+                Text(
+                    text = if (gerade.isEmpty()) "Gerade hat niemand eine Freistunde."
+                    else "Gerade frei: " + gerade.joinToString(", ") { (f, b) -> "${f.name} (bis ${b.ende.format(uhrzeit)})" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (gerade.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                )
+            }
             tage.forEach { (freund, plan) ->
                 Column(
                     modifier = Modifier
@@ -102,15 +138,21 @@ fun FreundeKarte(freunde: List<Freund>, persoenlich: PersoenlicherPlan, onFreund
                     )
                 }
             }
+            TextButton(onClick = onWoche) { Text("Gemeinsam frei – ganze Woche") }
         }
     }
 }
 
 /** Der Tag eines Freundes: gemeinsame Freistunden, gemeinsame Stunden und sein Plan. */
 @Composable
-fun FreundTagScreen(freund: Freund, persoenlich: PersoenlicherPlan, onBearbeiten: () -> Unit) {
+fun FreundTagScreen(
+    freund: Freund,
+    persoenlich: PersoenlicherPlan,
+    onWoche: () -> Unit,
+    onBearbeiten: () -> Unit
+) {
     val jetzt by rememberJetzt()
-    val dunkel = isSystemInDarkTheme()
+    val dunkel = istDunkel()
     val plan = remember(freund, persoenlich) { persoenlich.gesamt.tagesplanFuer(freund.kurse) }
     val frei = remember(plan, persoenlich) {
         Freizeit.gemeinsamFrei(persoenlich.plan, plan, persoenlich.gesamt.zeitraster)
@@ -172,6 +214,10 @@ fun FreundTagScreen(freund: Freund, persoenlich: PersoenlicherPlan, onBearbeiten
             }
         }
         item {
+            Button(onClick = onWoche, modifier = Modifier.fillMaxWidth()) {
+                Text("Gemeinsam frei – ganze Woche")
+            }
+            Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onBearbeiten, modifier = Modifier.fillMaxWidth()) {
                 Text("Kurse von ${freund.name} bearbeiten")
             }
@@ -232,6 +278,18 @@ fun FreundBearbeitenScreen(
                 }
             )
         }
+        if (!istNeu) {
+            val context = LocalContext.current
+            OutlinedButton(
+                onClick = {
+                    val senden = Intent(Intent.ACTION_SEND)
+                        .setType("text/plain")
+                        .putExtra(Intent.EXTRA_TEXT, FreundTeilen.nachricht(name, auswahl))
+                    runCatching { context.startActivity(Intent.createChooser(senden, "Kurse teilen")) }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Kurse als Link teilen") }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onAbbrechen, modifier = Modifier.weight(1f)) { Text("Abbrechen") }
             if (!istNeu) {
@@ -247,7 +305,12 @@ fun FreundBearbeitenScreen(
 
 /** Abschnitt in den Einstellungen: Freunde verwalten. */
 @Composable
-fun FreundeEinstellungenKarte(freunde: List<Freund>, onBearbeiten: (Freund?) -> Unit) {
+fun FreundeEinstellungenKarte(
+    freunde: List<Freund>,
+    onBearbeiten: (Freund?) -> Unit,
+    onLinkImportieren: (Freund) -> Unit = {}
+) {
+    var linkDialog by rememberSaveable { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -280,6 +343,180 @@ fun FreundeEinstellungenKarte(freunde: List<Freund>, onBearbeiten: (Freund?) -> 
             }
             OutlinedButton(onClick = { onBearbeiten(null) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Freund hinzufügen")
+            }
+            OutlinedButton(onClick = { linkDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Link von einem Freund einfügen")
+            }
+        }
+    }
+
+    if (linkDialog) {
+        LinkEinfuegenDialog(
+            onAbbrechen = { linkDialog = false },
+            onImportieren = {
+                linkDialog = false
+                onLinkImportieren(it)
+            }
+        )
+    }
+}
+
+@Composable
+private fun LinkEinfuegenDialog(onAbbrechen: () -> Unit, onImportieren: (Freund) -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    val freund = remember(text) { FreundTeilen.lesen(text) }
+    AlertDialog(
+        onDismissRequest = onAbbrechen,
+        title = { Text("Link einfügen") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Füge den Link oder die ganze Nachricht ein, die dein Freund dir geschickt hat.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("nextlesson://freund?…") },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (text.isNotBlank() && freund == null) {
+                    Text(
+                        text = "Darin steckt kein gültiger Link.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { freund?.let(onImportieren) }, enabled = freund != null) { Text("Weiter") }
+        },
+        dismissButton = { TextButton(onClick = onAbbrechen) { Text("Abbrechen") } }
+    )
+}
+
+private val wochentagLang = DateTimeFormatter.ofPattern("EEEE, d. MMM", Locale.GERMAN)
+
+private class TagErgebnis(val frei: List<Freiblock>, val ohneUnterricht: List<String>)
+
+/** Gemeinsame Freistunden von dir und den gewählten Freunden an einem Tag. */
+private fun gemeinsamAm(gesamt: GesamtPlan, eigeneKurse: Set<String>, freunde: List<Freund>): TagErgebnis {
+    val ich = gesamt.tagesplanFuer(eigeneKurse)
+    val plaene = freunde.map { it to gesamt.tagesplanFuer(it.kurse) }
+    val ohne = buildList {
+        if (ich.stunden.none { !it.entfaellt }) add("Du")
+        plaene.filter { (_, p) -> p.stunden.none { !it.entfaellt } }.forEach { add(it.first.name) }
+    }
+    val frei = Freizeit.gemeinsamFreiAlle(listOf(ich) + plaene.map { it.second }, gesamt.zeitraster)
+    return TagErgebnis(frei, ohne)
+}
+
+/**
+ * Wann haben du und (mehrere) Freunde in der ganzen Woche gleichzeitig frei? Freunde lassen
+ * sich einzeln an- und abwählen; gezeigt werden nur Zeiten, in denen ALLE Gewählten frei sind.
+ */
+@Composable
+fun GemeinsamFreiScreen(
+    freunde: List<Freund>,
+    eigeneKurse: Set<String>,
+    startAuswahl: Set<String>,
+    woche: FreundeWoche,
+    onWocheLaden: (naechste: Boolean) -> Unit
+) {
+    var auswahl by rememberSaveable(stateSaver = KursAuswahlSaver) { mutableStateOf(startAuswahl) }
+    var naechste by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(naechste) { onWocheLaden(naechste) }
+
+    val gewaehlte = remember(freunde, auswahl) { freunde.filter { it.id in auswahl } }
+    val tage = (woche as? FreundeWoche.Geladen)?.tage
+    val ergebnisse = remember(tage, gewaehlte, eigeneKurse) {
+        tage?.map { tag -> tag to tag.gesamt?.let { gemeinsamAm(it, eigeneKurse, gewaehlte) } }.orEmpty()
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !naechste, onClick = { naechste = false }, label = { Text("Diese Woche") })
+                    FilterChip(selected = naechste, onClick = { naechste = true }, label = { Text("Nächste Woche") })
+                }
+                Text(
+                    text = "Mit wem? Es zählen nur Zeiten, in denen alle Gewählten frei haben.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(freunde, key = { it.id }) { f ->
+                        FilterChip(
+                            selected = f.id in auswahl,
+                            onClick = { auswahl = if (f.id in auswahl) auswahl - f.id else auswahl + f.id },
+                            label = { Text(f.name) }
+                        )
+                    }
+                }
+            }
+        }
+        when {
+            gewaehlte.isEmpty() -> item {
+                Text(
+                    text = "Wähle mindestens einen Freund aus.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            woche is FreundeWoche.Laedt -> item { LadeZeile() }
+            woche is FreundeWoche.Fehler -> item {
+                Text(text = woche.nachricht, style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(onClick = { onWocheLaden(naechste) }) { Text("Erneut versuchen") }
+            }
+            else -> items(ergebnisse, key = { it.first.datum.toString() }) { (tag, ergebnis) ->
+                GemeinsamTagKarte(tag.datum, ergebnis, tag.fehler)
+            }
+        }
+        item { Spacer(Modifier.height(12.dp)) }
+    }
+}
+
+@Composable
+private fun GemeinsamTagKarte(datum: LocalDate, ergebnis: TagErgebnis?, fehler: String?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(
+                text = datum.format(wochentagLang) + if (datum == LocalDate.now()) " · heute" else "",
+                style = MaterialTheme.typography.titleSmall
+            )
+            val grau = MaterialTheme.colorScheme.onSurfaceVariant
+            when {
+                ergebnis == null -> Text(fehler ?: "Kein Plan", style = MaterialTheme.typography.bodyMedium, color = grau)
+                ergebnis.ohneUnterricht.isNotEmpty() -> Text(
+                    text = ergebnis.ohneUnterricht.joinToString(" und ") +
+                        if (ergebnis.ohneUnterricht.size == 1 && ergebnis.ohneUnterricht[0] == "Du") " hast an diesem Tag keinen Unterricht"
+                        else " haben an diesem Tag keinen Unterricht",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = grau
+                )
+                ergebnis.frei.isEmpty() -> Text("Keine gemeinsame Freistunde", style = MaterialTheme.typography.bodyMedium, color = grau)
+                else -> ergebnis.frei.forEach { b ->
+                    Text(
+                        text = blockText(b),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }

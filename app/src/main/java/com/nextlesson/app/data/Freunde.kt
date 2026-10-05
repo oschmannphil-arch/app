@@ -65,20 +65,37 @@ object Freizeit {
         b: TagesPlan,
         raster: List<Zeitfenster> = emptyList(),
         minMinuten: Long = 30
+    ): List<Freiblock> = gemeinsamFreiAlle(listOf(a, b), raster, minMinuten)
+
+    /**
+     * Wie [gemeinsamFrei], aber für beliebig viele Leute: Zeiten, in denen ALLE frei haben,
+     * solange alle danach noch Unterricht haben. Wer an dem Tag gar keinen Unterricht hat,
+     * ist nicht in der Schule – dann gibt es keine gemeinsame Zeit.
+     */
+    fun gemeinsamFreiAlle(
+        plaene: List<TagesPlan>,
+        raster: List<Zeitfenster> = emptyList(),
+        minMinuten: Long = 30
     ): List<Freiblock> {
+        if (plaene.isEmpty()) return emptyList()
         val fenster = mitZeiten(raster)
         if (fenster.isEmpty()) {
-            return gemeinsamFreiOhneRaster(a, b, minMinuten).map { (von, bis) -> Freiblock(null, null, von, bis) }
+            return gemeinsamFreiOhneRaster(plaene, minMinuten).map { (von, bis) -> Freiblock(null, null, von, bis) }
         }
-        val sa = a.stunden.filter { !it.entfaellt }
-        val sb = b.stunden.filter { !it.entfaellt }
-        val endeA = sa.mapNotNull { it.ende }.maxOrNull() ?: return emptyList()
-        val endeB = sb.mapNotNull { it.ende }.maxOrNull() ?: return emptyList()
-        val bis = minOf(endeA, endeB)
+        val aktive = plaene.map { p -> p.stunden.filter { !it.entfaellt } }
+        val bis = aktive.map { s -> s.mapNotNull { it.ende }.maxOrNull() ?: return emptyList() }.min()
         return bloecke(fenster) { f ->
-            !f.ende!!.isAfter(bis) && sa.none { belegt(it, f) } && sb.none { belegt(it, f) }
+            !f.ende!!.isAfter(bis) && aktive.all { s -> s.none { belegt(it, f) } }
         }
     }
+
+    /**
+     * Der Freiblock, in dem man zur Uhrzeit [jetzt] gerade frei ist (Ausfall zählt als frei),
+     * oder null – wer Unterricht hat, nicht mehr in der Schule ist oder heute keinen hat.
+     */
+    fun jetztFrei(plan: TagesPlan, raster: List<Zeitfenster>, jetzt: LocalTime): Freiblock? =
+        freiBloecke(plan, raster, ausfallIstFrei = true)
+            .firstOrNull { !jetzt.isBefore(it.beginn) && jetzt.isBefore(it.ende) }
 
     /** Stunden aus [a], die [b] ebenfalls hat (gleicher Kurs zur gleichen Stunde) – ohne ausgefallene. */
     fun gemeinsameStunden(a: TagesPlan, b: TagesPlan): List<Lesson> {
@@ -116,17 +133,16 @@ object Freizeit {
         return out
     }
 
-    private fun gemeinsamFreiOhneRaster(a: TagesPlan, b: TagesPlan, minMinuten: Long): List<Pair<LocalTime, LocalTime>> {
-        val za = belegt(a)
-        val zb = belegt(b)
-        if (za.isEmpty() || zb.isEmpty()) return emptyList()
-        val von = maxOf(za.first().first, zb.first().first)
-        val bis = minOf(za.last().second, zb.last().second)
+    private fun gemeinsamFreiOhneRaster(plaene: List<TagesPlan>, minMinuten: Long): List<Pair<LocalTime, LocalTime>> {
+        val zeiten = plaene.map { belegt(it) }
+        if (zeiten.any { it.isEmpty() }) return emptyList()
+        val von = zeiten.maxOf { it.first().first }
+        val bis = zeiten.minOf { it.last().second }
         if (!von.isBefore(bis)) return emptyList()
 
         val frei = ArrayList<Pair<LocalTime, LocalTime>>()
         var t = von
-        for ((beginn, ende) in zusammenlegen(za + zb)) {
+        for ((beginn, ende) in zusammenlegen(zeiten.flatten())) {
             if (!beginn.isBefore(bis)) break
             if (beginn.isAfter(t)) frei += t to beginn
             if (ende.isAfter(t)) t = ende

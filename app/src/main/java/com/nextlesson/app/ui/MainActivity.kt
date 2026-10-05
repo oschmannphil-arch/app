@@ -5,11 +5,13 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -38,6 +40,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,7 +54,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.nextlesson.app.data.DesignModus
+import com.nextlesson.app.data.DesignStore
 import com.nextlesson.app.data.Freund
+import com.nextlesson.app.data.FreundTeilen
 import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.ui.theme.NaechsteStundeTheme
 import com.nextlesson.app.widget.NextLessonWidgetReceiver
@@ -69,6 +75,7 @@ class MainActivity : ComponentActivity() {
     private val aufgabenViewModel: AufgabenViewModel by viewModels()
     private val sucheViewModel: SucheViewModel by viewModels()
     private val freundeViewModel: FreundeViewModel by viewModels()
+    private lateinit var design: DesignStore
 
     private val benachrichtigungAnfrage =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* Ergebnis egal */ }
@@ -76,6 +83,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        design = DesignStore(applicationContext)
+        DesignStore.aktuell = design
+        // Beim Drehen kommt derselbe Intent noch einmal – nur beim echten Start auswerten.
+        if (savedInstanceState == null) freundLinkAuswerten(intent)
 
         EntfallNotifier.kanalAnlegen(applicationContext)
         LernErinnerung.kanalAnlegen(applicationContext)
@@ -83,12 +94,40 @@ class MainActivity : ComponentActivity() {
         benachrichtigungErlaubnisAnfragen()
 
         setContent {
-            NaechsteStundeTheme {
+            val dunkel = when (design.modus) {
+                DesignModus.SYSTEM -> isSystemInDarkTheme()
+                DesignModus.HELL -> false
+                DesignModus.DUNKEL -> true
+            }
+            // Symbole in Status- und Navigationsleiste müssen zum gewählten Design passen.
+            DisposableEffect(dunkel) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(
+                        android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT
+                    ) { dunkel },
+                    navigationBarStyle = SystemBarStyle.auto(
+                        android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT
+                    ) { dunkel }
+                )
+                onDispose { }
+            }
+            NaechsteStundeTheme(dunkel = dunkel) {
                 Surface {
-                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel)
+                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel, design)
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        freundLinkAuswerten(intent)
+    }
+
+    /** Ein angetippter Kurs-Link ("nextlesson://freund?…") wird als Freund vorgeschlagen. */
+    private fun freundLinkAuswerten(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        FreundTeilen.lesen(intent?.dataString)?.let { freundeViewModel.importVorschlagen(it) }
     }
 
     /** Beim Öffnen immer frisch nachsehen – nicht auf den 15-Minuten-Takt warten. */
@@ -124,7 +163,8 @@ private fun AppInhalt(
     planViewModel: PlanViewModel,
     aufgabenViewModel: AufgabenViewModel,
     sucheViewModel: SucheViewModel,
-    freundeViewModel: FreundeViewModel
+    freundeViewModel: FreundeViewModel,
+    design: DesignStore
 ) {
     val zustand by planViewModel.zustand.collectAsState()
     val wochenZustand by planViewModel.wochenZustand.collectAsState()
@@ -137,6 +177,10 @@ private fun AppInhalt(
     val freunde by freundeViewModel.freunde.collectAsState()
     val sucheZustand by sucheViewModel.zustand.collectAsState()
     val sucheDatum by sucheViewModel.datum.collectAsState()
+    val favoriten by sucheViewModel.favoriten.collectAsState()
+    val sucheWoche by sucheViewModel.woche.collectAsState()
+    val importVorschlag by freundeViewModel.importVorschlag.collectAsState()
+    val freundeWoche by freundeViewModel.woche.collectAsState()
     val uebersicht = remember(hausaufgaben, pruefungen) {
         Uebersicht.berechne(hausaufgaben, pruefungen)
     }
@@ -148,6 +192,9 @@ private fun AppInhalt(
     var freundAnsicht by rememberSaveable { mutableStateOf<String?>(null) }
     // ID des Freundes, der gerade angelegt/bearbeitet wird – als ID, damit sie saveable ist.
     var entwurfId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Gemeinsame Freistunden der Woche: offen? und welche Freunde sind anfangs gewählt?
+    var gruppeOffen by rememberSaveable { mutableStateOf(false) }
+    var gruppeStart by rememberSaveable(stateSaver = KursAuswahlSaver) { mutableStateOf<Set<String>>(emptySet()) }
 
     // Hausaufgabe direkt aus einer angetippten Stunde: Stunde + Tag, an dem sie stattfindet.
     var aufgabeAusStunde by remember { mutableStateOf<Pair<Lesson, LocalDate>?>(null) }
@@ -161,6 +208,17 @@ private fun AppInhalt(
             throw e // Dialog geschlossen – Abbruch nicht verschlucken
         } catch (e: Exception) {
             null
+        }
+    }
+
+    // Ein angetippter Freund-Link öffnet direkt das Formular mit den Kursen des Freundes.
+    LaunchedEffect(importVorschlag) {
+        importVorschlag?.let {
+            zeigeEinstellungen = false
+            zeigeKurse = false
+            freundAnsicht = null
+            gruppeOffen = false
+            entwurfId = it.id
         }
     }
 
@@ -192,26 +250,47 @@ private fun AppInhalt(
     // Unbekannte ID = neuer Freund, der noch nicht gespeichert ist.
     val entwurf = entwurfId?.let { id ->
         freunde.firstOrNull { it.id == id }?.let { FreundEntwurf(it, neu = false) }
-            ?: FreundEntwurf(Freund(id = id, name = "", kurse = emptySet()), neu = true)
+            ?: FreundEntwurf(
+                importVorschlag?.takeIf { it.id == id } ?: Freund(id = id, name = "", kurse = emptySet()),
+                neu = true
+            )
     }
     // Gelöschter Freund → Ansicht schließt sich von selbst.
     val angezeigterFreund = freundAnsicht?.let { id -> freunde.firstOrNull { it.id == id } }
     // Überlagernde Ansichten verdecken die Reiter und lassen sich mit "Zurück" schließen.
-    val overlay = zeigeEinstellungen || zeigeKurse || entwurf != null || angezeigterFreund != null
+    val overlay = zeigeEinstellungen || zeigeKurse || entwurf != null || gruppeOffen || angezeigterFreund != null
     val einrichtung = brauchtZugang || brauchtKurse || overlay
 
     // Die Zurück-Taste schloss vorher die ganze App, auch aus den Einstellungen heraus.
+    fun entwurfSchliessen() {
+        entwurfId = null
+        freundeViewModel.importVerwerfen()
+    }
+
     fun zurueck() {
         when {
-            entwurfId != null -> entwurfId = null
+            entwurfId != null -> entwurfSchliessen()
             zeigeKurse -> zeigeKurse = false
             zeigeEinstellungen -> zeigeEinstellungen = false
+            gruppeOffen -> gruppeOffen = false
             freundAnsicht != null -> freundAnsicht = null
             tab != Tab.HEUTE -> tab = Tab.HEUTE
         }
     }
     val zurueckMoeglich = !brauchtZugang && (overlay || (!brauchtKurse && tab != Tab.HEUTE))
     BackHandler(enabled = zurueckMoeglich) { zurueck() }
+
+    // Fächer, für die man in den Einstellungen eine Farbe wählen kann.
+    val fachNamen = remember(zustand, wochenZustand, hausaufgaben, pruefungen) {
+        val ausPlan = (zustand as? UiZustand.Angezeigt)?.plan?.plan?.stunden?.map { it.fach }.orEmpty()
+        val ausWoche = (wochenZustand as? WochenZustand.Geladen)?.tage
+            ?.flatMap { t -> t.plan?.stunden?.map { it.fach }.orEmpty() }.orEmpty()
+        (ausPlan + ausWoche + hausaufgaben.map { it.fach } + pruefungen.map { it.fach })
+            .map { it.trim() }
+            .filter { f -> f.any { it.isLetter() } }
+            .distinctBy { it.lowercase() }
+            .sortedBy { it.lowercase() }
+    }
 
     val offeneAufgaben = hausaufgaben.count { !it.erledigt }
 
@@ -220,6 +299,7 @@ private fun AppInhalt(
         entwurf != null -> if (entwurf.neu) "Freund hinzufügen" else entwurf.freund.name
         zeigeEinstellungen -> "Einstellungen"
         brauchtKurse || zeigeKurse -> "Deine Kurse"
+        gruppeOffen -> "Gemeinsam frei"
         angezeigterFreund != null -> angezeigterFreund.name
         else -> tab.titel
     }
@@ -320,13 +400,13 @@ private fun AppInhalt(
                             verfuegbareKurse = verfuegbareKurse,
                             onSpeichern = { f ->
                                 freundeViewModel.speichern(f)
-                                entwurfId = null
+                                entwurfSchliessen()
                             },
                             onLoeschen = {
                                 freundeViewModel.loeschen(entwurf.freund.id)
-                                entwurfId = null
+                                entwurfSchliessen()
                             },
-                            onAbbrechen = { entwurfId = null }
+                            onAbbrechen = { entwurfSchliessen() }
                         )
                     }
                 }
@@ -355,7 +435,22 @@ private fun AppInhalt(
                             zeigeKurse = true
                         },
                         freunde = freunde,
-                        onFreundBearbeiten = { f -> entwurfId = f?.id ?: UUID.randomUUID().toString() }
+                        onFreundBearbeiten = { f -> entwurfId = f?.id ?: UUID.randomUUID().toString() },
+                        onLinkImportieren = { freundeViewModel.importVorschlagen(it.copy(id = UUID.randomUUID().toString())) },
+                        onKurseTeilen = {
+                            val kurse = planViewModel.aktuelleKursAuswahl()
+                            if (kurse.isNotEmpty()) {
+                                val senden = Intent(Intent.ACTION_SEND)
+                                    .setType("text/plain")
+                                    .putExtra(Intent.EXTRA_TEXT, FreundTeilen.nachricht("", kurse))
+                                runCatching { context.startActivity(Intent.createChooser(senden, "Kurse teilen")) }
+                            }
+                        },
+                        modus = design.modus,
+                        onModus = design::modusSetzen,
+                        fachNamen = fachNamen,
+                        fachFarben = design.fachFarben,
+                        onFachFarbe = design::fachFarbeSetzen
                     )
                 }
 
@@ -383,6 +478,17 @@ private fun AppInhalt(
                     )
                 }
 
+                // Gemeinsame Freistunden der Woche (du + gewählte Freunde)
+                gruppeOffen && !brauchtZugang -> {
+                    GemeinsamFreiScreen(
+                        freunde = freunde,
+                        eigeneKurse = remember { freundeViewModel.eigeneKurse() },
+                        startAuswahl = gruppeStart,
+                        woche = freundeWoche,
+                        onWocheLaden = freundeViewModel::wocheLaden
+                    )
+                }
+
                 // 3. Tag eines Freundes
                 angezeigterFreund != null -> {
                     val angezeigt = zustand as? UiZustand.Angezeigt
@@ -390,6 +496,10 @@ private fun AppInhalt(
                         FreundTagScreen(
                             freund = angezeigterFreund,
                             persoenlich = angezeigt.plan,
+                            onWoche = {
+                                gruppeStart = setOf(angezeigterFreund.id)
+                                gruppeOffen = true
+                            },
                             onBearbeiten = { entwurfId = angezeigterFreund.id }
                         )
                     } else {
@@ -417,6 +527,10 @@ private fun AppInhalt(
                                 onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to z.plan.datum },
                                 freunde = freunde,
                                 onFreund = { freundAnsicht = it.id },
+                                onFreundeWoche = {
+                                    gruppeStart = freunde.map { it.id }.toSet()
+                                    gruppeOffen = true
+                                },
                                 onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
                             )
                             is UiZustand.Fehler -> FehlerScreen(
@@ -458,7 +572,11 @@ private fun AppInhalt(
                             datum = sucheDatum,
                             onBlaettern = sucheViewModel::blaettern,
                             onHeute = sucheViewModel::zuHeute,
-                            onNeuLaden = sucheViewModel::aktualisieren
+                            onNeuLaden = sucheViewModel::aktualisieren,
+                            favoriten = favoriten,
+                            onFavorit = sucheViewModel::favoritUmschalten,
+                            woche = sucheWoche,
+                            onWocheLaden = sucheViewModel::wocheLaden
                         )
                     }
 

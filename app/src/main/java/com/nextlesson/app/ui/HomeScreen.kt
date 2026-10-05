@@ -1,7 +1,6 @@
 package com.nextlesson.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -57,6 +56,7 @@ import com.nextlesson.app.data.LessonStatus
 import com.nextlesson.app.data.NaechsteStundeErgebnis
 import com.nextlesson.app.data.PersoenlicherPlan
 import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -150,6 +150,7 @@ fun HomeScreen(
     onStundeAntippen: (Lesson) -> Unit = {},
     freunde: List<Freund> = emptyList(),
     onFreund: (Freund) -> Unit = {},
+    onFreundeWoche: () -> Unit = {},
     onTagVorbei: () -> Unit = {}
 ) {
     val jetzt by rememberJetzt(aktualisiertGerade)
@@ -157,7 +158,7 @@ fun HomeScreen(
     // Heute wird "nächste Stunde" mit der tickenden Uhr neu bestimmt. Sonst bliebe bei
     // geöffneter App die beim Laden ermittelte Stunde stehen, obwohl sie längst vorbei ist.
     val naechste = if (persoenlich.istHeute) plan.naechsteStunde(jetzt) else persoenlich.naechste
-    val dunkel = isSystemInDarkTheme()
+    val dunkel = istDunkel()
     // Freistunden im Zeitraster der Schule (auch vor der ersten Stunde), je an der Stelle der
     // Stunde, die danach kommt.
     val freiVor = remember(persoenlich) {
@@ -234,7 +235,7 @@ fun HomeScreen(
         }
 
         if (freunde.isNotEmpty()) {
-            item { FreundeKarte(freunde, persoenlich, onFreund) }
+            item { FreundeKarte(freunde, persoenlich, onFreund, onFreundeWoche) }
         }
 
         item {

@@ -1,6 +1,7 @@
 package com.nextlesson.app.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalTime
@@ -126,5 +127,50 @@ class FreizeitTest {
         val b = Freizeit.gemeinsamFrei(ich, freund, raster)
         assertEquals(listOf("3.–4. Std"), b.map { it.stundenText })
         assertEquals(t("08:45") to t("11:00"), b[0].beginn to b[0].ende)
+    }
+
+    @Test
+    fun jetztFrei_nurInDerLueckeUndNichtNachSchluss() {
+        // Ich: Unterricht 1., 2., 5., 6. Std – frei 08:45–11:00 (Pausen eingerechnet).
+        assertEquals("3.–4. Std", Freizeit.jetztFrei(ich, raster, t("09:30"))?.stundenText)
+        assertEquals("3.–4. Std", Freizeit.jetztFrei(ich, raster, t("08:50"))?.stundenText)
+        assertNull(Freizeit.jetztFrei(ich, raster, t("08:30")))   // 2. Std läuft
+        assertNull(Freizeit.jetztFrei(ich, raster, t("11:00")))   // 5. Std beginnt
+        assertNull(Freizeit.jetztFrei(ich, raster, t("12:40")))   // Schule aus
+        assertNull(Freizeit.jetztFrei(plan(), raster, t("09:30")))  // kein Unterricht = nicht da
+    }
+
+    @Test
+    fun jetztFrei_ausfallZaehltAlsFrei() {
+        val p = plan(
+            stunde(1, "07:15", "08:00", "A"),
+            stunde(3, "09:05", "09:50", "A", entfaellt = true),
+            stunde(5, "11:00", "11:45", "A")
+        )
+        assertEquals(t("11:00"), Freizeit.jetztFrei(p, raster, t("09:20"))?.ende)
+    }
+
+    @Test
+    fun gemeinsamFreiAlle_mitDreiLeuten() {
+        val b = plan(
+            stunde(1, "07:15", "08:00", "MAT2"), stunde(2, "08:00", "08:45", "MAT2"),
+            stunde(3, "09:05", "09:50", "DEU1"), stunde(6, "11:45", "12:30", "ENG2")
+        )
+        val c = plan(
+            stunde(1, "07:15", "08:00", "X"), stunde(2, "08:00", "08:45", "X"),
+            stunde(5, "11:00", "11:45", "Y"), stunde(6, "11:45", "12:30", "Y")
+        )
+        // ich frei 3.–4., b frei 4.–5., c frei 3.–4. → alle drei nur in der 4. Stunde.
+        val mitRaster = Freizeit.gemeinsamFreiAlle(listOf(ich, b, c), raster)
+        assertEquals(listOf("4. Std"), mitRaster.map { it.stundenText })
+        assertEquals(t("09:50") to t("11:00"), mitRaster[0].beginn to mitRaster[0].ende)
+        // Ohne Raster dasselbe Fenster als reine Uhrzeit.
+        assertEquals(
+            listOf(t("09:50") to t("11:00")),
+            Freizeit.gemeinsamFreiAlle(listOf(ich, b, c)).map { it.beginn to it.ende }
+        )
+        // Wer nicht in der Schule ist, nimmt allen die gemeinsame Zeit.
+        assertTrue(Freizeit.gemeinsamFreiAlle(listOf(ich, b, plan()), raster).isEmpty())
+        assertTrue(Freizeit.gemeinsamFreiAlle(emptyList(), raster).isEmpty())
     }
 }

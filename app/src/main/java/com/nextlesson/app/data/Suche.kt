@@ -141,6 +141,21 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
         }
     }
 
+    /** Stundennummern, in denen [t] an diesem Tag Unterricht hat (ohne Ausfall). */
+    fun unterrichtsStunden(t: Treffer): List<Int> =
+        stundenVon(t).filter { !it.entfaellt }.map { it.stunde }.distinct().sorted()
+
+    /**
+     * Lücken im Tag einer Lehrkraft bzw. eines Raums: Zeiten im Zeitraster ohne Unterricht
+     * zwischen der ersten und der letzten Stunde. Ausgefallene Stunden zählen als frei.
+     */
+    fun luecken(t: Treffer): List<Freiblock> {
+        val erste = unterrichtsStunden(t).firstOrNull() ?: return emptyList()
+        val plan = TagesPlan(PlanKopf("", "", ""), "", stundenVon(t))
+        return Freizeit.freiBloecke(plan, raster, ausfallIstFrei = true)
+            .filter { (it.von ?: Int.MAX_VALUE) > erste }
+    }
+
     companion object {
         /** Lehrerkürzel eines Eintrags; mehrere (Team-Teaching) stehen durch Leerzeichen o.ä. getrennt. */
         internal fun lehrerVon(feld: String): List<String> =
@@ -196,3 +211,30 @@ fun schultagVersetzt(datum: LocalDate, richtung: Int): LocalDate {
 /** Heute – oder am Wochenende der kommende Montag. */
 fun ersterSchultag(heute: LocalDate): LocalDate =
     if (heute.dayOfWeek == DayOfWeek.SATURDAY || heute.dayOfWeek == DayOfWeek.SUNDAY) schultagVersetzt(heute, 1) else heute
+
+/**
+ * Gruppe eines Raums zum Filtern: führende Buchstaben als Haus ("A101" → "A", "SH 1" → "SH"),
+ * bei Nummern ab drei Ziffern die erste Ziffer als Etage ("204" → "Etage 2", "033" → "EG").
+ */
+fun raumGruppe(raum: String): String {
+    val r = raum.trim()
+    val haus = r.takeWhile { it.isLetter() }
+    val ziffern = r.drop(haus.length).trimStart().takeWhile { it.isDigit() }
+    val etage = if (ziffern.length >= 3) ziffern.first() else null
+    val teile = listOfNotNull(
+        haus.takeIf { it.isNotEmpty() },
+        etage?.let { if (it == '0') "EG" else "Etage $it" }
+    )
+    return if (teile.isEmpty()) "Sonstige" else teile.joinToString(" · ")
+}
+
+/** [1, 2, 5] → "1.–2., 5. Std" */
+fun stundenListe(nummern: List<Int>): String {
+    val gruppen = ArrayList<IntRange>()
+    for (n in nummern.distinct().sorted()) {
+        val letzte = gruppen.lastOrNull()
+        if (letzte != null && letzte.last + 1 == n) gruppen[gruppen.lastIndex] = letzte.first..n
+        else gruppen += n..n
+    }
+    return gruppen.joinToString(", ") { if (it.first == it.last) "${it.first}." else "${it.first}.–${it.last}." } + " Std"
+}
