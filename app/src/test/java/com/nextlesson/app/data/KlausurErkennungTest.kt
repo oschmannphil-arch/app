@@ -157,4 +157,13 @@ $zusatz
         assertTrue(l.entfaellt)
         assertFalse(l.istKlausur)
     }
+
+    @Test
+    fun klausurUndAusfallImSelbenSatz_mitStrich() {
+        // Ein Hinweis, zwei Aussagen: DEU1 schreibt, BIO3 fällt aus.
+        val tp = plan(zusatz("Klausur DEU1, DEU2 – BIO3 Herr Lonzer fällt aus"), "", ausfall = true)
+            .tagesplanFuer(alleDeutsch)
+        assertTrue("DEU1 soll Klausur sein", tp.lesson("DEU1").istKlausur)
+        assertFalse("DEU1 findet statt", tp.lesson("DEU1").entfaellt)
+    }
 }

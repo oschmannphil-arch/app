@@ -18,11 +18,7 @@ data class Freund(
 data class Freiblock(val von: Int?, val bis: Int?, val beginn: LocalTime, val ende: LocalTime) {
     /** "3. Std" bzw. "3.–4. Std"; null ohne Stundennummern. */
     val stundenText: String?
-        get() = when {
-            von == null || bis == null -> null
-            von == bis -> "$von. Std"
-            else -> "$von.–$bis. Std"
-        }
+        get() = if (von == null || bis == null) null else stundenListe((von..bis).toList())
 }
 
 /** Wann hat man frei, wann haben zwei Leute gleichzeitig frei, und welche Stunden zusammen? */
@@ -43,17 +39,38 @@ object Freizeit {
      * (Unterricht erst ab der 3. Stunde), nicht aber die nach der letzten Stunde.
      * [ausfallIstFrei]: zählen ausgefallene Stunden als frei? Für die eigene Stundenliste
      * nein – die stehen dort ohnehin als "entfällt".
+     * [abErsterStunde]: nur Lücken nach Beginn der ersten Stunde – vorher ist man "noch nicht
+     * da" (für "gerade frei" und die Lücken einer Lehrkraft).
      */
-    fun freiBloecke(plan: TagesPlan, raster: List<Zeitfenster>, ausfallIstFrei: Boolean = false): List<Freiblock> {
+    fun freiBloecke(
+        plan: TagesPlan,
+        raster: List<Zeitfenster>,
+        ausfallIstFrei: Boolean = false,
+        abErsterStunde: Boolean = false
+    ): List<Freiblock> {
         val belegend = plan.stunden.filter { !ausfallIstFrei || !it.entfaellt }
         val letzte = belegend.mapNotNull { it.ende }.maxOrNull() ?: return emptyList()
         val fenster = mitZeiten(raster)
-        if (fenster.isEmpty()) {
+        val alle = if (fenster.isEmpty()) {
             // Ohne Raster: nur Lücken zwischen zwei Stunden – mit denselben belegenden Stunden.
-            return plan.copy(stunden = belegend).freistunden().map { (_, von, bis) -> Freiblock(null, null, von, bis) }
+            plan.copy(stunden = belegend).freistunden().map { (_, von, bis) -> Freiblock(null, null, von, bis) }
+        } else {
+            bloecke(fenster, belegend) { f -> !f.ende!!.isAfter(letzte) && belegend.none { belegt(it, f) } }
         }
-        return bloecke(fenster) { f -> !f.ende!!.isAfter(letzte) && belegend.none { belegt(it, f) } }
+        if (!abErsterStunde) return alle
+        val erste = belegend.mapNotNull { it.beginn }.minOrNull() ?: return alle
+        return alle.filter { !it.beginn.isBefore(erste) }
     }
+
+    /**
+     * Freistunden für die Stundenliste, je an der Stelle (Index in [TagesPlan.stunden]) der
+     * Stunde, die danach kommt.
+     */
+    fun freiVor(plan: TagesPlan, raster: List<Zeitfenster>): Map<Int, Freiblock> =
+        freiBloecke(plan, raster).mapNotNull { block ->
+            val danach = plan.stunden.indexOfFirst { l -> l.beginn?.let { !it.isBefore(block.beginn) } == true }
+            if (danach >= 0) danach to block else null
+        }.toMap()
 
     /**
      * Zeiten, in denen beide frei haben (Ausfall zählt als frei) – solange beide danach noch
@@ -84,7 +101,7 @@ object Freizeit {
         }
         val aktive = plaene.map { p -> p.stunden.filter { !it.entfaellt } }
         val bis = aktive.map { s -> s.mapNotNull { it.ende }.maxOrNull() ?: return emptyList() }.min()
-        return bloecke(fenster) { f ->
+        return bloecke(fenster, aktive.flatten()) { f ->
             !f.ende!!.isAfter(bis) && aktive.all { s -> s.none { belegt(it, f) } }
         }
     }
@@ -95,9 +112,7 @@ object Freizeit {
      * keinen hat. Vor der ersten stattfindenden Stunde ist man "noch nicht da", nicht frei.
      */
     fun jetztFrei(plan: TagesPlan, raster: List<Zeitfenster>, jetzt: LocalTime): Freiblock? {
-        val erste = plan.stunden.filter { !it.entfaellt }.mapNotNull { it.beginn }.minOrNull() ?: return null
-        return freiBloecke(plan, raster, ausfallIstFrei = true)
-            .filter { !it.beginn.isBefore(erste) }
+        return freiBloecke(plan, raster, ausfallIstFrei = true, abErsterStunde = true)
             .firstOrNull { !jetzt.isBefore(it.beginn) && jetzt.isBefore(it.ende) }
     }
 
@@ -155,16 +170,26 @@ object Freizeit {
      * Fasst aufeinanderfolgende freie Fenster zu Blöcken zusammen. Die Pausen davor und danach
      * gehören mit zur freien Zeit (frei ab Ende der Stunde davor bis Beginn der danach).
      */
-    private fun bloecke(fenster: List<Zeitfenster>, frei: (Zeitfenster) -> Boolean): List<Freiblock> {
+    /**
+     * Fasst aufeinanderfolgende freie Fenster zu Blöcken zusammen. Die Pausen davor und danach
+     * gehören mit zur freien Zeit. Wo vorhanden, zählen die echten Zeiten der [stunden]: frei
+     * ab Ende der Stunde davor bis Beginn der Stunde danach – das Raster ist der Mehrheitswert
+     * der Schule, einzelne Klassen weichen davon ab.
+     */
+    private fun bloecke(fenster: List<Zeitfenster>, stunden: List<Lesson>, frei: (Zeitfenster) -> Boolean): List<Freiblock> {
         val out = ArrayList<Freiblock>()
         var i = 0
         while (i < fenster.size) {
             if (!frei(fenster[i])) { i++; continue }
             var j = i
             while (j + 1 < fenster.size && frei(fenster[j + 1])) j++
-            val beginn = if (i > 0) fenster[i - 1].ende!! else fenster[i].beginn!!
-            val ende = if (j + 1 < fenster.size) fenster[j + 1].beginn!! else fenster[j].ende!!
-            out += Freiblock(fenster[i].stunde, fenster[j].stunde, minOf(beginn, fenster[i].beginn!!), maxOf(ende, fenster[j].ende!!))
+            val erstesFrei = fenster[i].beginn!!
+            val letztesFrei = fenster[j].ende!!
+            val rasterBeginn = minOf(if (i > 0) fenster[i - 1].ende!! else erstesFrei, erstesFrei)
+            val rasterEnde = maxOf(if (j + 1 < fenster.size) fenster[j + 1].beginn!! else letztesFrei, letztesFrei)
+            val stundeDavor = stunden.mapNotNull { it.ende }.filter { !it.isAfter(erstesFrei) }.maxOrNull()
+            val stundeDanach = stunden.mapNotNull { it.beginn }.filter { !it.isBefore(letztesFrei) }.minOrNull()
+            out += Freiblock(fenster[i].stunde, fenster[j].stunde, stundeDavor ?: rasterBeginn, stundeDanach ?: rasterEnde)
             i = j + 1
         }
         return out

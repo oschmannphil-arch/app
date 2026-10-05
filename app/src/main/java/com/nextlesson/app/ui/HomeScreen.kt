@@ -164,12 +164,7 @@ fun HomeScreen(
     val dunkel = istDunkel()
     // Freistunden im Zeitraster der Schule (auch vor der ersten Stunde), je an der Stelle der
     // Stunde, die danach kommt.
-    val freiVor = remember(persoenlich) {
-        Freizeit.freiBloecke(plan, persoenlich.gesamt.zeitraster).mapNotNull { block ->
-            val danach = plan.stunden.indexOfFirst { l -> l.beginn?.let { !it.isBefore(block.ende) } == true }
-            if (danach >= 0) danach to block else null
-        }.toMap()
-    }
+    val freiVor = remember(persoenlich) { Freizeit.freiVor(plan, persoenlich.gesamt.zeitraster) }
 
     val eintraege = remember(plan, blockAnsicht) { plan.stunden.alsEintraege(blockAnsicht) }
 

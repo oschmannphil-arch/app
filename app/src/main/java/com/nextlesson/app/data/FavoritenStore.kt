@@ -15,12 +15,16 @@ class FavoritenStore(context: Context) {
 
     fun umschalten(t: Treffer) {
         val liste = _favoriten.value
-        val neu = if (t in liste) liste - t else liste + t
+        val neu = sortiert(if (t in liste) liste - t else liste + t)
         _favoriten.value = neu
-        prefs.edit().putStringSet(KEY, neu.map(::schluessel).toSet()).apply()
+        prefs.edit().putStringSet(KEY, neu.map { it.schluessel }.toSet()).apply()
     }
 
-    private fun lesen(): List<Treffer> =
+    /** Immer gleiche Reihenfolge – auch nach einem Neustart: erst Lehrkräfte, dann Räume, je nach Name. */
+    private fun sortiert(liste: List<Treffer>) =
+        liste.sortedWith(compareBy({ it is Treffer.Raum }, { it.name.lowercase() }))
+
+    private fun lesen(): List<Treffer> = sortiert(
         (prefs.getStringSet(KEY, emptySet()) ?: emptySet())
             .mapNotNull { s ->
                 val name = s.drop(2)
@@ -31,9 +35,7 @@ class FavoritenStore(context: Context) {
                     else -> null
                 }
             }
-            .sortedWith(compareBy({ it is Treffer.Raum }, { it.name.lowercase() }))
-
-    private fun schluessel(t: Treffer) = (if (t is Treffer.Lehrer) "L:" else "R:") + t.name
+    )
 
     private companion object {
         const val KEY = "favoriten"

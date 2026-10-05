@@ -96,6 +96,9 @@ private val WORT = Regex("[\\p{L}\\p{N}]+")
 /** Sieht aus wie ein Kurskürzel ("DEU3", "MAT2"), auch wenn es in keiner Kursliste steht. */
 private val KURS_MUSTER = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
 
+/** Grenze zwischen zwei Aussagen in einem Hinweis: ";" oder ein freistehender Strich. */
+private val SATZ_GRENZE = Regex(";|\\s+[–—-]\\s+")
+
 private fun nurStriche(s: String) = s.isNotEmpty() && s.all { !it.isLetterOrDigit() }
 
 /**
@@ -200,8 +203,10 @@ data class GesamtPlan(
         // damit ein anderes, wirklich ausgefallenes Fach nicht zur Klausur wird.
         // Quellen: Tageshinweise der Schule UND die Info-Texte der eigenen Stunden (die Schule
         // hängt "Klausur!; BIO3 … fällt aus; …" teils direkt an die Stunden).
+        // Sätze trennen: an ";" und an Gedankenstrichen ("Klausur DEU1, DEU2 – BIO3 fällt aus"),
+        // damit Klausur- und Ausfall-Teil desselben Hinweises getrennt bewertet werden.
         val segmente = (kopf.zusatzInfo + rohStunden.map { it.info })
-            .flatMap { it.split(';') }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+            .flatMap { it.split(SATZ_GRENZE) }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
         fun istAusfallText(s: String) = listOf("fällt aus", "faellt aus", "entfällt", "entfaellt")
             .any { s.contains(it, ignoreCase = true) }
         // Ein Satz mit "fällt aus" meldet einen Ausfall – auch wenn er die Klausur als Grund

@@ -236,4 +236,25 @@ class FreizeitTest {
         assertEquals("12", Freizeit.jahrgang("12a"))
         assertEquals("Q1", Freizeit.jahrgang("Q1/2"))
     }
+
+    @Test
+    fun abweichendeKlassenzeiten_echteStundenZaehlenStattRaster() {
+        // Raster: 4. 09:50–10:35, 5. 11:00–11:45. Die Klasse hat die 5. Stunde aber 10:40–11:25.
+        val p = plan(stunde(3, "09:05", "09:50", "A"), stunde(5, "10:40", "11:25", "A"))
+        val block = Freizeit.freiBloecke(p, raster).last()
+        assertEquals("4. Std", block.stundenText)
+        assertEquals(t("09:50") to t("10:40"), block.beginn to block.ende)
+        // Um 10:50 sitzt man im Unterricht – nicht "gerade frei bis 11:00".
+        assertNull(Freizeit.jetztFrei(p, raster, t("10:50")))
+    }
+
+    @Test
+    fun freistundeStehtVorDerRichtigenStunde() {
+        // Raster sagt 3. Stunde ab 09:05, die Klasse beginnt sie schon um 09:00.
+        val p = plan(stunde(3, "09:00", "09:45", "A"), stunde(4, "09:50", "10:35", "A"))
+        val vor = Freizeit.freiVor(p, raster)
+        assertEquals(setOf(0), vor.keys)
+        assertEquals("1.–2. Std", vor.getValue(0).stundenText)
+        assertEquals(t("09:00"), vor.getValue(0).ende)
+    }
 }

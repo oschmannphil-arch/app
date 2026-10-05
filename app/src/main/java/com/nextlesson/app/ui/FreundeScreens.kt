@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Freiblock
 import com.nextlesson.app.data.alsEintraege
+import com.nextlesson.app.data.wochenReferenz
 import com.nextlesson.app.data.FreundTeilen
 import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
@@ -90,6 +91,9 @@ fun FreundeKarte(
     val tage = remember(freunde, persoenlich) {
         freunde.map { f -> f to persoenlich.gesamt.tagesplanFuer(f.kurse) }
     }
+    val texte = remember(tage, persoenlich) {
+        tage.map { (_, plan) -> zusammenfassung(persoenlich.plan, plan, persoenlich.gesamt.zeitraster) }
+    }
     // "Wer ist gerade frei?" – nur für den heutigen Tag sinnvoll.
     val gerade = remember(tage, persoenlich, jetzt) {
         if (!persoenlich.istHeute) emptyList()
@@ -124,7 +128,7 @@ fun FreundeKarte(
                     modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
                 )
             }
-            tage.forEach { (freund, plan) ->
+            tage.forEachIndexed { index, (freund, _) ->
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -134,7 +138,7 @@ fun FreundeKarte(
                 ) {
                     Text(text = freund.name, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        text = zusammenfassung(persoenlich.plan, plan, persoenlich.gesamt.zeitraster),
+                        text = texte[index],
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -162,12 +166,7 @@ fun FreundTagScreen(
         Freizeit.gemeinsamFrei(persoenlich.plan, plan, persoenlich.gesamt.zeitraster)
     }
     // Freistunden des Freundes in seiner Stundenliste, wie im eigenen Plan.
-    val freiVor = remember(plan, persoenlich) {
-        Freizeit.freiBloecke(plan, persoenlich.gesamt.zeitraster).mapNotNull { block ->
-            val danach = plan.stunden.indexOfFirst { l -> l.beginn?.let { !it.isBefore(block.ende) } == true }
-            if (danach >= 0) danach to block else null
-        }.toMap()
-    }
+    val freiVor = remember(plan, persoenlich) { Freizeit.freiVor(plan, persoenlich.gesamt.zeitraster) }
     val eintraege = remember(plan, blockAnsicht) { plan.stunden.alsEintraege(blockAnsicht) }
     val zusammen = remember(plan, persoenlich) {
         Freizeit.gemeinsameStunden(plan, persoenlich.plan).mapTo(HashSet()) { Freizeit.zusammenKey(it) }
@@ -438,7 +437,7 @@ private fun ohneUnterrichtText(namen: List<String>): String {
 fun GemeinsamFreiScreen(
     freunde: List<Freund>,
     startAuswahl: Set<String>,
-    woche: FreundeWoche,
+    woche: WochenDaten<WocheTag>,
     onWocheLaden: (naechste: Boolean) -> Unit
 ) {
     var auswahl by rememberSaveable(stateSaver = KursAuswahlSaver) { mutableStateOf(startAuswahl) }
@@ -446,7 +445,8 @@ fun GemeinsamFreiScreen(
     LaunchedEffect(naechste) { onWocheLaden(naechste) }
 
     val gewaehlte = remember(freunde, auswahl) { freunde.filter { it.id in auswahl } }
-    val tage = (woche as? FreundeWoche.Geladen)?.tage
+    // Nur die gewählte Woche zeigen – nicht kurz noch die zuvor geladene.
+    val tage = woche.tageFuer(wochenReferenz(if (naechste) 1 else 0))
     val ergebnisse = remember(tage, gewaehlte) {
         tage?.map { tag -> tag to gemeinsamAm(tag, gewaehlte) }.orEmpty()
     }
@@ -488,11 +488,11 @@ fun GemeinsamFreiScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            woche is FreundeWoche.Laedt -> item { LadeZeile() }
-            woche is FreundeWoche.Fehler -> item {
+            woche is WochenDaten.Fehler -> item {
                 Text(text = woche.nachricht, style = MaterialTheme.typography.bodyMedium)
                 OutlinedButton(onClick = { onWocheLaden(naechste) }) { Text("Erneut versuchen") }
             }
+            tage == null -> item { LadeZeile() }
             else -> items(ergebnisse, key = { it.first.datum.toString() }) { (tag, ergebnis) ->
                 GemeinsamTagKarte(tag.datum, ergebnis, tag.fehler)
             }

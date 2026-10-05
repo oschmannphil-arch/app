@@ -14,6 +14,9 @@ data class Zeitfenster(val stunde: Int, val beginn: LocalTime?, val ende: LocalT
 sealed class Treffer : java.io.Serializable {
     abstract val name: String
 
+    /** Eindeutig über Lehrer und Räume ("L:Weis", "R:204") – zum Speichern und als Listen-Key. */
+    val schluessel: String get() = (if (this is Lehrer) "L:" else "R:") + name
+
     data class Lehrer(override val name: String) : Treffer()
     data class Raum(override val name: String) : Treffer()
 }
@@ -149,12 +152,11 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
      * Lücken im Tag einer Lehrkraft bzw. eines Raums: Zeiten im Zeitraster ohne Unterricht
      * zwischen der ersten und der letzten Stunde. Ausgefallene Stunden zählen als frei.
      */
-    fun luecken(t: Treffer): List<Freiblock> {
-        val erste = unterrichtsStunden(t).firstOrNull() ?: return emptyList()
-        val plan = TagesPlan(PlanKopf("", "", ""), "", stundenVon(t))
-        return Freizeit.freiBloecke(plan, raster, ausfallIstFrei = true)
-            .filter { (it.von ?: Int.MAX_VALUE) > erste }
-    }
+    fun luecken(t: Treffer): List<Freiblock> =
+        Freizeit.freiBloecke(
+            TagesPlan(PlanKopf("", "", ""), "", stundenVon(t)), raster,
+            ausfallIstFrei = true, abErsterStunde = true
+        )
 
     companion object {
         /** Lehrerkürzel eines Eintrags; mehrere (Team-Teaching) stehen durch Leerzeichen o.ä. getrennt. */
@@ -225,7 +227,8 @@ fun ersterSchultag(heute: LocalDate): LocalDate =
  */
 fun raumGruppe(raum: String): String {
     val r = raum.trim()
-    val haus = r.takeWhile { it.isLetter() }
+    // Nur Buchstaben vor einer Nummer sind ein Haus ("A101", "SH 1") – "Aula" oder "Mensa" nicht.
+    val haus = r.takeWhile { it.isLetter() }.takeIf { r.drop(it.length).trimStart().firstOrNull()?.isDigit() == true }.orEmpty()
     val ziffern = r.drop(haus.length).trimStart().takeWhile { it.isDigit() }
     val etage = if (ziffern.length >= 3) ziffern.first() else null
     val teile = listOfNotNull(

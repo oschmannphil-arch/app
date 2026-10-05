@@ -137,6 +137,10 @@ ${std(1, "07:15", "08:00", "DEU3", "Mei", "031", liste)}
         assertEquals("SH", raumGruppe("SH 1"))
         assertEquals("A · Etage 1", raumGruppe("A101"))
         assertEquals("Sonstige", raumGruppe("12"))
+        assertEquals("Sonstige", raumGruppe("Aula"))
+        assertEquals("Sonstige", raumGruppe("Turnhalle"))
+        assertEquals("L:Weis", Treffer.Lehrer("Weis").schluessel)
+        assertEquals("R:204", Treffer.Raum("204").schluessel)
     }
 
     @Test

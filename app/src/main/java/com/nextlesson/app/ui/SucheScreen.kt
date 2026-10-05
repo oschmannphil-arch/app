@@ -61,6 +61,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.LaunchedEffect
 import com.nextlesson.app.data.raumGruppe
 import com.nextlesson.app.data.stundenListe
+import com.nextlesson.app.data.wochenReferenz
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -82,7 +83,7 @@ fun SucheScreen(
     onNeuLaden: () -> Unit,
     favoriten: List<Treffer> = emptyList(),
     onFavorit: (Treffer) -> Unit = {},
-    woche: SucheWoche = SucheWoche.Laedt,
+    woche: WochenDaten<SucheWochenTag> = WochenDaten.Laedt,
     onWocheLaden: (naechste: Boolean) -> Unit = {}
 ) {
     var anfrage by rememberSaveable { mutableStateOf("") }
@@ -198,6 +199,8 @@ private fun Startansicht(
     onWahl: (Treffer) -> Unit
 ) {
     val frei = remember(tag, istHeute, jetzt) { if (istHeute) tag.freieRaeume(jetzt) else null }
+    // Raum → Gruppe (Haus/Etage) einmal berechnen; daraus Filter-Chips und gefilterte Liste.
+    val mitGruppe = remember(frei) { frei?.map { it to raumGruppe(it.first) } }
     var gruppe by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(
         modifier = Modifier
@@ -212,7 +215,7 @@ private fun Startansicht(
             item {
                 Text(text = "Favoriten", style = MaterialTheme.typography.titleSmall)
             }
-            items(favoriten, key = { "F:" + (if (it is Treffer.Lehrer) "L:" else "R:") + it.name }) { t ->
+            items(favoriten, key = { "F:" + it.schluessel }) { t ->
                 TrefferZeile(tag, t, istHeute, jetzt, onWahl)
             }
         }
@@ -230,9 +233,10 @@ private fun Startansicht(
                     Hinweistext("Gerade ist kein Unterricht – freie Räume gibt es hier während der Schulzeit.")
                 } else {
                     // Filter nach Haus bzw. Etage – nur, wenn es überhaupt etwas zu unterscheiden gibt.
-                    val gruppen = frei.map { raumGruppe(it.first) }.distinct().sorted()
+                    val paare = mitGruppe.orEmpty()
+                    val gruppen = paare.map { it.second }.distinct().sorted()
                     val aktiv = gruppe?.takeIf { it in gruppen }
-                    val sichtbar = if (aktiv == null) frei else frei.filter { raumGruppe(it.first) == aktiv }
+                    val sichtbar = paare.filter { aktiv == null || it.second == aktiv }.map { it.first }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = "Jetzt frei (${sichtbar.size})",
@@ -289,7 +293,7 @@ private fun Trefferliste(
                 Hinweistext("Nichts gefunden. An diesem Tag steht dieses Kürzel bzw. dieser Raum nicht im Plan.")
             }
         }
-        items(treffer, key = { (if (it is Treffer.Lehrer) "L:" else "R:") + it.name }) { t ->
+        items(treffer, key = { it.schluessel }) { t ->
             TrefferZeile(tag, t, istHeute, jetzt, onWahl)
         }
         item { QuellenHinweis() }
@@ -328,7 +332,7 @@ private fun Detail(
     jetzt: LocalTime,
     istFavorit: Boolean,
     onFavorit: () -> Unit,
-    woche: SucheWoche,
+    woche: WochenDaten<SucheWochenTag>,
     onWocheLaden: (naechste: Boolean) -> Unit
 ) {
     val zeilen = remember(tag, t) { tag.tagesablauf(t) }
@@ -383,12 +387,12 @@ private fun Detail(
                     FilterChip(selected = naechste, onClick = { naechste = true }, label = { Text("Nächste Woche") })
                 }
             }
-            when (woche) {
-                is SucheWoche.Laedt -> item { LadeZeile() }
-                is SucheWoche.Fehler -> item { Hinweistext(woche.nachricht) }
-                is SucheWoche.Geladen -> items(woche.tage, key = { it.datum.toString() }) { wt ->
-                    LehrerWochenKarte(wt, t)
-                }
+            // Nur die gewählte Woche zeigen – nicht kurz noch die zuvor geladene.
+            val tage = woche.tageFuer(wochenReferenz(if (naechste) 1 else 0))
+            when {
+                woche is WochenDaten.Fehler -> item { Hinweistext(woche.nachricht) }
+                tage == null -> item { LadeZeile() }
+                else -> items(tage, key = { it.datum.toString() }) { wt -> LehrerWochenKarte(wt, t) }
             }
         } else {
             if (zeilen.isEmpty()) {

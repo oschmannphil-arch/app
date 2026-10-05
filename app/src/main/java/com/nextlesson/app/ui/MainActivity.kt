@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -40,7 +41,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
                 DesignModus.DUNKEL -> true
             }
             // Symbole in Status- und Navigationsleiste müssen zum gewählten Design passen.
-            DisposableEffect(dunkel) {
+            LaunchedEffect(dunkel) {
                 enableEdgeToEdge(
                     statusBarStyle = SystemBarStyle.auto(
                         android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT
@@ -111,7 +111,6 @@ class MainActivity : ComponentActivity() {
                     // Navigation lägen die Tasten sonst direkt über dem Inhalt.
                     navigationBarStyle = SystemBarStyle.auto(NAVI_SCHLEIER_HELL, NAVI_SCHLEIER_DUNKEL) { dunkel }
                 )
-                onDispose { }
             }
             NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben) {
                 Surface {
@@ -217,8 +216,12 @@ private fun AppInhalt(
         }
     }
 
-    // Ein angetippter Freund-Link öffnet direkt das Formular mit den Kursen des Freundes.
-    LaunchedEffect(importVorschlag) {
+    // Ein angetippter Freund-Link öffnet das Formular mit den Kursen des Freundes – aber erst,
+    // wenn gerade nichts anderes bearbeitet wird (anderer Freund, Kurswahl), sonst gingen
+    // ungespeicherte Eingaben verloren. Danach öffnet es sich von selbst.
+    val bearbeitetGerade = entwurfId != null || zeigeKurse || zustand is UiZustand.KurseWaehlen
+    LaunchedEffect(importVorschlag, bearbeitetGerade) {
+        if (bearbeitetGerade) return@LaunchedEffect
         importVorschlag?.let {
             zeigeEinstellungen = false
             zeigeKurse = false
@@ -248,6 +251,15 @@ private fun AppInhalt(
     fun widgetAktualisieren() {
         RefreshScheduler.sofortAktualisieren(context)
         scope.launch { NextLessonWidgetReceiver.alleWidgetsAktualisieren(context) }
+    }
+
+    // Meldungen wie "Anna ist schon gespeichert".
+    val hinweis by freundeViewModel.hinweis.collectAsState()
+    LaunchedEffect(hinweis) {
+        hinweis?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            freundeViewModel.hinweisGezeigt()
+        }
     }
 
     // Einrichtung geht immer vor: erst Zugang, dann Kurse.
@@ -438,9 +450,9 @@ private fun AppInhalt(
                         freunde = freunde,
                         onFreundBearbeiten = { f -> entwurfId = f?.id ?: UUID.randomUUID().toString() },
                         onLinkImportieren = { freundeViewModel.importVorschlagen(it.copy(id = UUID.randomUUID().toString())) },
-                        onKurseTeilen = {
-                            val kurse = planViewModel.aktuelleKursAuswahl()
-                            if (kurse.isNotEmpty()) teilen(context, FreundTeilen.nachricht("", kurse), "Kurse teilen")
+                        // Ohne gespeicherte Kurse gibt es nichts zu teilen – dann kein Knopf.
+                        onKurseTeilen = planViewModel.aktuelleKursAuswahl().takeIf { it.isNotEmpty() }?.let { kurse ->
+                            { teilen(context, FreundTeilen.nachricht("", kurse), "Kurse teilen") }
                         },
                         modus = design.modus,
                         onModus = design::modusSetzen,

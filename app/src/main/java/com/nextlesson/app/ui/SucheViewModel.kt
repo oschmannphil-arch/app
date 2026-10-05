@@ -32,12 +32,6 @@ sealed class SucheZustand {
 /** Ein Schultag der Wochenübersicht einer Lehrkraft (null + [fehler], wenn der Plan fehlt). */
 data class SucheWochenTag(val datum: LocalDate, val tag: SchulTag?, val fehler: String? = null)
 
-sealed class SucheWoche {
-    object Laedt : SucheWoche()
-    data class Geladen(val tage: List<SucheWochenTag>) : SucheWoche()
-    data class Fehler(val nachricht: String) : SucheWoche()
-}
-
 /** Lädt den Plan der ganzen Schule für einen Tag und bereitet ihn für die Lehrer-/Raumsuche auf. */
 class SucheViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -49,48 +43,17 @@ class SucheViewModel(app: Application) : AndroidViewModel(app) {
 
     fun favoritUmschalten(t: Treffer) = favoritenStore.umschalten(t)
 
-    private val _woche = MutableStateFlow<SucheWoche>(SucheWoche.Laedt)
-    val woche: StateFlow<SucheWoche> = _woche.asStateFlow()
-    private var wochenJob: Job? = null
-    private var wocheLaedtFuer: LocalDate? = null
-    /** Geladene Wochen (Montag-Referenz → Zeitpunkt, Tage) – gilt für jede Lehrkraft. */
-    private val wochen = HashMap<LocalDate, Pair<Long, List<SucheWochenTag>>>()
+    private val wochenLader = WochenLader<SucheWochenTag>(viewModelScope, repository) { credentialsStore.laden() }
+    val woche: StateFlow<WochenDaten<SucheWochenTag>> = wochenLader.zustand
 
     /**
      * Plan der ganzen Schule für Montag–Freitag – Grundlage für "Wann ist Herr X frei?".
-     * Eine schon geladene Woche (höchstens 5 Minuten alt) wird für jede Lehrkraft wiederverwendet.
+     * Eine geladene Woche gilt für jede Lehrkraft.
      */
     fun wocheLaden(naechste: Boolean) {
-        val referenz = wochenReferenz(if (naechste) 1 else 0)
-        wochen[referenz]?.let { (um, tage) ->
-            if (System.currentTimeMillis() - um < NEU_LADEN_NACH_MILLIS) {
-                wochenJob?.cancel()
-                _woche.value = SucheWoche.Geladen(tage)
-                return
-            }
-        }
-        if (wochenJob?.isActive == true && wocheLaedtFuer == referenz) return
-
-        wochenJob?.cancel()
-        wocheLaedtFuer = referenz
-        _woche.value = SucheWoche.Laedt
-        wochenJob = viewModelScope.launch {
-            val creds = withContext(Dispatchers.IO) { credentialsStore.laden() }
-            if (creds == null) {
-                _woche.value = SucheWoche.Fehler("Bitte zuerst in den Einstellungen die Zugangsdaten eintragen.")
-                return@launch
-            }
-            val ergebnisse = repository.holeWoche(creds, referenz)
-            val tage = withContext(Dispatchers.Default) {
-                ergebnisse.map { (datum, ergebnis) ->
-                    if (ergebnis is PlanResult.Success) SucheWochenTag(datum, SchulTag(datum, ergebnis.plan))
-                    else SucheWochenTag(datum, null, ergebnis.tagesFehler())
-                }
-            }
-            if (ergebnisse.none { it.second is PlanResult.NetzwerkFehler }) {
-                wochen[referenz] = System.currentTimeMillis() to tage
-            }
-            _woche.value = SucheWoche.Geladen(tage)
+        wochenLader.laden(wochenReferenz(if (naechste) 1 else 0), null) { datum, ergebnis ->
+            if (ergebnis is PlanResult.Success) SucheWochenTag(datum, SchulTag(datum, ergebnis.plan))
+            else SucheWochenTag(datum, null, ergebnis.tagesFehler())
         }
     }
 
@@ -127,7 +90,7 @@ class SucheViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun aktualisieren() {
-        wochen.clear()
+        wochenLader.vergessen()
         laden(erzwingen = true)
     }
 

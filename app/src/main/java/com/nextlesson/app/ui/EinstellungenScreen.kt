@@ -58,6 +58,7 @@ import java.time.ZoneId
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,14 +84,14 @@ fun EinstellungenScreen(
     freunde: List<Freund> = emptyList(),
     onFreundBearbeiten: (Freund?) -> Unit = {},
     onLinkImportieren: (Freund) -> Unit = {},
-    onKurseTeilen: () -> Unit = {},
+    onKurseTeilen: (() -> Unit)? = null,
     modus: DesignModus = DesignModus.SYSTEM,
     onModus: (DesignModus) -> Unit = {},
     fachNamen: List<String> = emptyList(),
     fachFarben: Map<String, Int> = emptyMap(),
     onFachFarbe: (String, Int?) -> Unit = { _, _ -> }
 ) {
-    var farbDialog by remember { mutableStateOf(false) }
+    var farbDialog by rememberSaveable { mutableStateOf(false) }
     var schulnummer by remember { mutableStateOf(credentials?.schulnummer.orEmpty()) }
     var benutzer by remember { mutableStateOf(credentials?.benutzername.orEmpty()) }
     var passwort by remember { mutableStateOf(credentials?.passwort.orEmpty()) }
@@ -180,8 +181,10 @@ fun EinstellungenScreen(
                     }
                     OutlinedButton(onClick = onKurseAendern) { Text("Ändern") }
                 }
-                OutlinedButton(onClick = onKurseTeilen, modifier = Modifier.fillMaxWidth()) {
-                    Text("Meine Kurse als Link teilen")
+                if (onKurseTeilen != null) {
+                    OutlinedButton(onClick = onKurseTeilen, modifier = Modifier.fillMaxWidth()) {
+                        Text("Meine Kurse als Link teilen")
+                    }
                 }
             }
         }

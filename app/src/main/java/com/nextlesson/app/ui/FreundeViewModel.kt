@@ -2,6 +2,7 @@ package com.nextlesson.app.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.nextlesson.app.data.CredentialsStore
 import com.nextlesson.app.data.Freund
@@ -13,13 +14,9 @@ import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.Zeitfenster
 import com.nextlesson.app.data.tagesFehler
 import com.nextlesson.app.data.wochenReferenz
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 /**
@@ -34,13 +31,7 @@ data class WocheTag(
     val fehler: String? = null
 )
 
-sealed class FreundeWoche {
-    object Laedt : FreundeWoche()
-    data class Geladen(val tage: List<WocheTag>) : FreundeWoche()
-    data class Fehler(val nachricht: String) : FreundeWoche()
-}
-
-class FreundeViewModel(app: Application) : AndroidViewModel(app) {
+class FreundeViewModel(app: Application, private val zustand: SavedStateHandle) : AndroidViewModel(app) {
 
     private val store = FreundeStore(app)
     private val credentialsStore by lazy { CredentialsStore(app) }
@@ -53,90 +44,73 @@ class FreundeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loeschen(id: String) = store.loeschen(id)
 
-    /** Freund aus einem geteilten Link, der noch bestätigt (und ggf. benannt) werden muss. */
-    private val _importVorschlag = MutableStateFlow<Freund?>(null)
+    /**
+     * Freund aus einem geteilten Link, der noch bestätigt (und ggf. benannt) werden muss.
+     * Im SavedStateHandle, damit er auch übersteht, dass Android die App im Hintergrund beendet.
+     */
+    private val _importVorschlag = MutableStateFlow(gespeicherterVorschlag())
     val importVorschlag: StateFlow<Freund?> = _importVorschlag.asStateFlow()
+
+    /** Kurze Meldung für den Nutzer (z.B. "Anna ist schon gespeichert"); null = keine. */
+    private val _hinweis = MutableStateFlow<String?>(null)
+    val hinweis: StateFlow<String?> = _hinweis.asStateFlow()
+
+    fun hinweisGezeigt() {
+        _hinweis.value = null
+    }
 
     /** Schlägt [freund] zum Speichern vor – außer, genau diesen Freund gibt es schon. */
     fun importVorschlagen(freund: Freund) {
-        val schonDa = store.freunde.value.any {
+        val vorhanden = store.freunde.value.firstOrNull {
             it.kurse == freund.kurse && it.name.trim().equals(freund.name.trim(), ignoreCase = true)
         }
-        if (!schonDa) _importVorschlag.value = freund
-    }
-
-    fun importVerwerfen() {
-        _importVorschlag.value = null
-    }
-
-    private val _woche = MutableStateFlow<FreundeWoche>(FreundeWoche.Laedt)
-    val woche: StateFlow<FreundeWoche> = _woche.asStateFlow()
-
-    private class WochenStand(
-        val referenz: LocalDate,
-        val geladenUm: Long,
-        val freunde: List<Freund>,
-        val kurse: Set<String>,
-        val tage: List<WocheTag>
-    )
-
-    private var wochenJob: Job? = null
-    private var laedtFuer: LocalDate? = null
-    private var stand: WochenStand? = null
-
-    /**
-     * Lädt Montag–Freitag der aktuellen bzw. nächsten Woche. Ein frischer Stand (gleiche Woche,
-     * gleiche Freunde und Kurse, höchstens 5 Minuten alt) wird wiederverwendet – Drehen des
-     * Handys oder erneutes Öffnen lädt dann nicht alles neu.
-     */
-    fun wocheLaden(naechste: Boolean) {
-        val referenz = wochenReferenz(if (naechste) 1 else 0)
-        val freunde = store.freunde.value
-        val kurse = kursStore.laden()
-        val s = stand
-        if (s != null && s.referenz == referenz && s.freunde == freunde && s.kurse == kurse &&
-            System.currentTimeMillis() - s.geladenUm < NEU_LADEN_NACH_MILLIS
-        ) {
-            wochenJob?.cancel()
-            _woche.value = FreundeWoche.Geladen(s.tage)
+        if (vorhanden != null) {
+            _hinweis.value = "${vorhanden.name.ifBlank { "Dieser Freund" }} ist schon gespeichert."
             return
         }
-        if (wochenJob?.isActive == true && laedtFuer == referenz) return
+        vorschlagSetzen(freund)
+    }
 
-        wochenJob?.cancel()
-        laedtFuer = referenz
-        _woche.value = FreundeWoche.Laedt
-        wochenJob = viewModelScope.launch {
-            val creds = withContext(Dispatchers.IO) { credentialsStore.laden() }
-            if (creds == null) {
-                _woche.value = FreundeWoche.Fehler("Bitte zuerst in den Einstellungen die Zugangsdaten eintragen.")
-                return@launch
+    fun importVerwerfen() = vorschlagSetzen(null)
+
+    private fun vorschlagSetzen(freund: Freund?) {
+        _importVorschlag.value = freund
+        zustand[KEY_ID] = freund?.id
+        zustand[KEY_NAME] = freund?.name
+        zustand[KEY_KURSE] = freund?.kurse?.let { ArrayList(it) }
+    }
+
+    private fun gespeicherterVorschlag(): Freund? {
+        val id = zustand.get<String>(KEY_ID) ?: return null
+        val kurse = zustand.get<ArrayList<String>>(KEY_KURSE) ?: return null
+        return Freund(id = id, name = zustand.get<String>(KEY_NAME).orEmpty(), kurse = kurse.toSet())
+    }
+
+    private val lader = WochenLader<WocheTag>(viewModelScope, repository) { credentialsStore.laden() }
+    val woche: StateFlow<WochenDaten<WocheTag>> = lader.zustand
+
+    /** Lädt Montag–Freitag der aktuellen bzw. nächsten Woche, mit deinem Plan und denen deiner Freunde. */
+    fun wocheLaden(naechste: Boolean) {
+        val freunde = store.freunde.value
+        val kurse = kursStore.laden()
+        lader.laden(wochenReferenz(if (naechste) 1 else 0), freunde to kurse) { datum, ergebnis ->
+            if (ergebnis is PlanResult.Success) {
+                val gesamt = ergebnis.plan
+                WocheTag(
+                    datum = datum,
+                    raster = gesamt.zeitraster,
+                    eigen = gesamt.tagesplanFuer(kurse),
+                    freunde = freunde.associate { it.id to gesamt.tagesplanFuer(it.kurse) }
+                )
+            } else {
+                WocheTag(datum, fehler = ergebnis.tagesFehler())
             }
-            val ergebnisse = repository.holeWoche(creds, referenz)
-            val tage = withContext(Dispatchers.Default) {
-                ergebnisse.map { (datum, ergebnis) ->
-                    if (ergebnis is PlanResult.Success) {
-                        val gesamt = ergebnis.plan
-                        WocheTag(
-                            datum = datum,
-                            raster = gesamt.zeitraster,
-                            eigen = gesamt.tagesplanFuer(kurse),
-                            freunde = freunde.associate { it.id to gesamt.tagesplanFuer(it.kurse) }
-                        )
-                    } else {
-                        WocheTag(datum, fehler = ergebnis.tagesFehler())
-                    }
-                }
-            }
-            // Ohne Verbindung nicht merken – sonst bliebe der Fehler 5 Minuten stehen.
-            if (ergebnisse.none { it.second is PlanResult.NetzwerkFehler }) {
-                stand = WochenStand(referenz, System.currentTimeMillis(), freunde, kurse, tage)
-            }
-            _woche.value = FreundeWoche.Geladen(tage)
         }
     }
 
     private companion object {
-        const val NEU_LADEN_NACH_MILLIS = 5 * 60_000L
+        const val KEY_ID = "import_id"
+        const val KEY_NAME = "import_name"
+        const val KEY_KURSE = "import_kurse"
     }
 }

@@ -45,7 +45,7 @@ fun PlanResult.tagesFehler(): String? = when (this) {
     is PlanResult.Success -> null
     is PlanResult.AuthFehler -> "Login fehlgeschlagen"
     is PlanResult.KeinPlanFuerTag -> "Kein Plan veröffentlicht"
-    is PlanResult.NetzwerkFehler -> "Keine Verbindung"
+    is PlanResult.NetzwerkFehler -> "Laden fehlgeschlagen"
 }
 
 /**
