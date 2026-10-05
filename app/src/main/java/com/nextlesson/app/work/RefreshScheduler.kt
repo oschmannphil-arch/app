@@ -2,6 +2,7 @@ package com.nextlesson.app.work
 
 import android.content.Context
 import androidx.work.Constraints
+import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -70,6 +71,9 @@ object RefreshScheduler {
         val request = OneTimeWorkRequestBuilder<RefreshWorker>()
             .setInitialDelay(verzoegerungMillis, TimeUnit.MILLISECONDS)
             .setConstraints(constraintsWidget)
+            // Beim Stundenwechsel muss das Widget nur neu zeichnen: aus dem gespeicherten Plan,
+            // ohne 7 Abrufe und Parsen der ganzen Schule.
+            .setInputData(Data.Builder().putBoolean(RefreshWorker.NUR_GESPEICHERT, true).build())
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(

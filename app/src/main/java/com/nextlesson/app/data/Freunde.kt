@@ -168,10 +168,6 @@ object Freizeit {
 
     /**
      * Fasst aufeinanderfolgende freie Fenster zu Blöcken zusammen. Die Pausen davor und danach
-     * gehören mit zur freien Zeit (frei ab Ende der Stunde davor bis Beginn der danach).
-     */
-    /**
-     * Fasst aufeinanderfolgende freie Fenster zu Blöcken zusammen. Die Pausen davor und danach
      * gehören mit zur freien Zeit. Wo vorhanden, zählen die echten Zeiten der [stunden]: frei
      * ab Ende der Stunde davor bis Beginn der Stunde danach – das Raster ist der Mehrheitswert
      * der Schule, einzelne Klassen weichen davon ab.

@@ -59,6 +59,7 @@ import com.nextlesson.app.data.DesignStore
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.FreundTeilen
 import com.nextlesson.app.data.Lesson
+import com.nextlesson.app.data.anzeigeName
 import com.nextlesson.app.ui.theme.NaechsteStundeTheme
 import com.nextlesson.app.widget.NextLessonWidgetReceiver
 import com.nextlesson.app.work.EntfallNotifier
@@ -93,7 +94,8 @@ class MainActivity : ComponentActivity() {
         EntfallNotifier.kanalAnlegen(applicationContext)
         LernErinnerung.kanalAnlegen(applicationContext)
         RefreshScheduler.periodischePruefungEinplanen(applicationContext)
-        benachrichtigungErlaubnisAnfragen()
+        // Nur beim echten Start fragen – nicht bei jedem Drehen erneut (Android zählt Ablehnungen).
+        if (savedInstanceState == null) benachrichtigungErlaubnisAnfragen()
 
         setContent {
             val dunkel = when (design.modus) {
@@ -613,8 +615,7 @@ private fun AppInhalt(
     }
     aufgabeAusStunde?.let { (lesson, _) ->
         HausaufgabeDialog(
-            vorschlagFach = lesson.fach.takeIf { f -> f.any { it.isLetterOrDigit() } }
-                ?: lesson.kursKuerzel.orEmpty(),
+            vorschlagFach = lesson.anzeigeName().orEmpty(),
             naechsteStunde = naechsteStunde,
             onAbbrechen = { aufgabeAusStunde = null },
             onSpeichern = { fach, text, faellig ->

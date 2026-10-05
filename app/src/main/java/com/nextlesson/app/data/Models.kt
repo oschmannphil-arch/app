@@ -125,7 +125,7 @@ data class GesamtPlan(
 
     /** Alle Kurse der ganzen Schule, für die Auswahlliste ("ganze Klasse" jeweils zuerst). */
     val alleKurse: List<KursInfo>
-        get() = klassen.flatMap { it.kurse }.sortedWith(
+        get() = klassen.flatMap { it.kurse }.distinctBy { it.id }.sortedWith(
             compareBy({ it.klasse }, { !it.istGanzeKlasse }, { it.kuerzel })
         )
 
@@ -158,13 +158,16 @@ data class GesamtPlan(
             return kuerzel.filter { it.equals(fach, ignoreCase = true) }.singleOrNull()
         }
 
+        // Nur ganze Klassen gewählt (Suche nach Lehrern/Räumen): die Stunden der anderen
+        // Klassen müssen nicht durchsucht werden – sonst wäre es Klassen × alle Stunden.
+        val nurGanzeKlassen = gewaehlteKursIds.all { it.endsWith("::${KursInfo.GANZE_KLASSE}") }
         val betroffene = klassen.filter { kp ->
-            ganzeKlasseGewaehlt(kp.klasse) ||
+            ganzeKlasseGewaehlt(kp.klasse) || (!nurGanzeKlassen && (
                 kp.kurse.any { it.id in gewaehlteKursIds } ||
                 kp.stunden.any { l ->
                     val kurs = kursVon(kp, l)
                     kurs != null && "${kp.klasse}::$kurs" in gewaehlteKursIds
-                }
+                }))
         }
 
         val rohStunden = betroffene.flatMap { kp ->
@@ -207,8 +210,7 @@ data class GesamtPlan(
         // damit Klausur- und Ausfall-Teil desselben Hinweises getrennt bewertet werden.
         val segmente = (kopf.zusatzInfo + rohStunden.map { it.info })
             .flatMap { it.split(SATZ_GRENZE) }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
-        fun istAusfallText(s: String) = listOf("fällt aus", "faellt aus", "entfällt", "entfaellt")
-            .any { s.contains(it, ignoreCase = true) }
+        fun istAusfallText(s: String) = nenntAusfall(s)
         // Ein Satz mit "fällt aus" meldet einen Ausfall – auch wenn er die Klausur als Grund
         // nennt ("SPO1 fällt aus wegen Klausur"). Sonst würde der genannte Kurs zur Klausur.
         val klausurSegmente = segmente.filter {

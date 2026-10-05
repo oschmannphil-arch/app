@@ -125,7 +125,9 @@ object EntfallNotifier {
 
     private fun oeffnenIntent(context: Context): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            // Die laufende App nach vorn holen statt sie zu beenden und neu zu starten
+            // (das verwarf offene Eingaben und das Aufräumen der Hausaufgaben lief erneut).
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         return PendingIntent.getActivity(
             context, 0, intent,

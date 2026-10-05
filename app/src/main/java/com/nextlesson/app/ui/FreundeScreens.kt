@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
@@ -51,6 +52,8 @@ import com.nextlesson.app.data.PersoenlicherPlan
 import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.Zeitfenster
 import com.nextlesson.app.ui.theme.istDunkel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -89,9 +92,13 @@ fun FreundeKarte(
     onWoche: () -> Unit = {}
 ) {
     val jetzt by rememberJetzt()
-    val tage = remember(freunde, persoenlich) {
-        freunde.map { f -> f to persoenlich.gesamt.tagesplanFuer(f.kurse) }
+    // Das Filtern des Schulplans je Freund ist teuer – nicht beim Zeichnen auf dem UI-Thread.
+    val tageGeladen by produceState<List<Pair<Freund, TagesPlan>>?>(null, freunde, persoenlich) {
+        value = withContext(Dispatchers.Default) {
+            freunde.map { f -> f to persoenlich.gesamt.tagesplanFuer(f.kurse) }
+        }
     }
+    val tage = tageGeladen ?: return
     val heute = remember(tage, persoenlich) {
         tage.map { (_, plan) -> freundHeute(persoenlich.plan, plan, persoenlich.gesamt.zeitraster) }
     }

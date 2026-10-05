@@ -1,7 +1,10 @@
 package com.nextlesson.app.data
 
-private fun nenntAusfall(s: String) =
-    listOf("fällt aus", "faellt aus", "entfällt", "entfaellt").any { s.contains(it, ignoreCase = true) }
+/** Wendungen, mit denen die Schule einen Ausfall meldet – eine Liste für Parser, Klausur-Logik und Hinweise. */
+internal val AUSFALL_PHRASEN = listOf("fällt aus", "faellt aus", "entfällt", "entfaellt")
+
+/** Meldet dieser Satz einen Ausfall ("BIO3 Herr X fällt aus")? */
+internal fun nenntAusfall(satz: String) = AUSFALL_PHRASEN.any { satz.contains(it, ignoreCase = true) }
 
 /**
  * Der Hinweis der Schule zu dieser Stunde, aufs Wesentliche gekürzt. An Klausurtagen hängt
@@ -19,3 +22,7 @@ fun Lesson.hinweisKurz(): String {
         !nenntAusfall(satz) || woerter.any { it in eigene } || !KURS_MUSTER.containsMatchIn(satz)
     }.distinct().joinToString("; ")
 }
+
+/** Name zum Anzeigen: das Fach, sonst das Kurskürzel; null, wenn der Plan beides leer lässt ("---"). */
+fun Lesson.anzeigeName(): String? =
+    fach.takeIf { f -> f.any { it.isLetterOrDigit() } } ?: kursKuerzel?.takeIf { it.isNotBlank() }

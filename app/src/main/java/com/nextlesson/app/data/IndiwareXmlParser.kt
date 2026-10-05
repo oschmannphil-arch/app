@@ -51,19 +51,33 @@ object IndiwareXmlParser {
      * sonst träfen sie "Freitag", "Evangelisch" oder Namen wie "Evers". "Hausaufgaben"
      * zählt nicht, weil "aufgab" nur am Wortanfang gesucht wird.
      */
-    private val ENTFALL_WOERTER = Regex(
+    private const val STICHWOERTER_AM_WORTANFANG =
         """(?<![\p{L}\p{N}])(selbst|eigenv|aufgab|moodle|online|distanz|zuhause|homeoffice|""" +
-            """stillarbeit|freiarbeit|lernzeit)|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
+            """stillarbeit|freiarbeit|lernzeit)"""
+    private val ENTFALL_WOERTER = Regex(
+        STICHWOERTER_AM_WORTANFANG + """|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
     )
+
+    /**
+     * Fürs Lehrer-Feld nur die langen Stichwörter: "Frei" oder "Eva" sind dort Nachnamen bzw.
+     * Vornamen, keine Ausfall-Meldung.
+     */
+    private val ENTFALL_WOERTER_LEHRER = Regex(STICHWOERTER_AM_WORTANFANG)
+
+    /** Platzhalter statt echter Namen ("LeAe", "LeÄnderung", "LeGeaendert") – kein Lehrer. */
+    private val LEHRER_PLATZHALTER = Regex("""(?i)^le\s*(ae|änd\w*)$""")
+
+    private fun istPlatzhalter(text: String): Boolean {
+        val t = text.trim()
+        return t.contains("geaendert", ignoreCase = true) || t.contains("geändert", ignoreCase = true) ||
+            LEHRER_PLATZHALTER.matches(t)
+    }
 
     /** Hinweise auf eine Klausur im Infotext der Stunde. */
     private val KLAUSUR_WOERTER = Regex("klausur|klassenarbeit")
 
     /** Eindeutige Wendungen – hier reicht ein Teilstring. */
-    private val ENTFALL_PHRASEN = listOf(
-        "entfällt", "entfaellt", "fällt aus", "faellt aus", "ausfall", "absage", "abgesagt",
-        "zu hause"
-    )
+    private val ENTFALL_PHRASEN = AUSFALL_PHRASEN + listOf("ausfall", "absage", "abgesagt", "zu hause")
 
     fun parse(input: InputStream, schulnummerFallback: String): GesamtPlan? {
         val doc = try {
@@ -154,8 +168,8 @@ object IndiwareXmlParser {
             
             val lehrerRoh = lehrerEl.textOrEmpty()
             // Technische Platzhalter wie "LeGeaendert" ausfiltern, die sehen in der App hässlich aus.
-            val lehrer = if (lehrerRoh.contains("Geaendert", ignoreCase = true) || 
-                            lehrerRoh.contains("Änd", ignoreCase = true)) "" else lehrerRoh
+            // (Nicht über "Änd" suchen: "Händel", "Brändle" … sind echte Lehrernamen.)
+            val lehrer = if (istPlatzhalter(lehrerRoh)) "" else lehrerRoh
 
             if (stText.isBlank() && fach.isBlank() && info.isBlank()) return@mapNotNull null
 
@@ -171,7 +185,7 @@ object IndiwareXmlParser {
             // träfen sie "Freitag", "Evangelisch", Lehrernamen wie "Evers" usw. und markierten
             // normalen Unterricht fälschlich als Entfall.
             val hatEntfallInfo = ENTFALL_WOERTER.containsMatchIn(infoText) ||
-                                 ENTFALL_WOERTER.containsMatchIn(lehrerRoh.lowercase()) ||
+                                 ENTFALL_WOERTER_LEHRER.containsMatchIn(lehrerRoh.lowercase()) ||
                                  ENTFALL_PHRASEN.any { infoText.contains(it) || gesamtText.contains(it) } ||
                                  (gesamtText.contains("kein") && gesamtText.contains("unterricht")) ||
                                  (gesamtText.contains("fällt") && gesamtText.contains("aus")) ||

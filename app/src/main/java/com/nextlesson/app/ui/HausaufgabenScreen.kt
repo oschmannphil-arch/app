@@ -259,7 +259,10 @@ internal fun HausaufgabeDialog(
 ) {
     var fach by remember { mutableStateOf(bestehendeAufgabe?.fach ?: vorschlagFach ?: "") }
     var text by remember { mutableStateOf(bestehendeAufgabe?.text ?: "") }
-    var faellig by remember { mutableStateOf<LocalDate?>(bestehendeAufgabe?.faellig ?: LocalDate.now().plusDays(1)) }
+    // Neue Aufgabe: ab morgen; bestehende behält ihr Datum – auch "ohne Datum".
+    var faellig by remember {
+        mutableStateOf<LocalDate?>(if (bestehendeAufgabe != null) bestehendeAufgabe.faellig else LocalDate.now().plusDays(1))
+    }
     var datumSelbstGewaehlt by remember { mutableStateOf(bestehendeAufgabe != null) }
     var datumsDialog by remember { mutableStateOf(false) }
     val heute = LocalDate.now()
@@ -307,6 +310,10 @@ internal fun HausaufgabeDialog(
                     AssistChip(
                         onClick = { datumsDialog = true },
                         label = { Text("Datum") }
+                    )
+                    AssistChip(
+                        onClick = { faellig = null; datumSelbstGewaehlt = true },
+                        label = { Text("Ohne") }
                     )
                 }
                 Text(

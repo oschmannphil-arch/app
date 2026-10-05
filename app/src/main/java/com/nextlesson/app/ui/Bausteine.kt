@@ -141,28 +141,8 @@ fun rememberJetzt(neuStart: Any? = null): State<LocalTime> {
 fun countdownText(lesson: Lesson, jetzt: LocalTime, istHeute: Boolean): String? {
     if (!istHeute) return null
     val beginn = lesson.beginn ?: return null
-    val ende = lesson.ende
-
-    // Aufgerundet auf volle Minuten: bei 8:20 Restzeit steht "9 Min" statt "8 Min", und die
-    // Anzeige springt genau zur vollen Minute – wie die Uhr.
-    if (ende != null && !jetzt.isBefore(beginn) && jetzt.isBefore(ende)) {
-        val rest = (Duration.between(jetzt, ende).seconds + 59) / 60
-        return if (rest <= 0) "endet gleich" else "läuft noch ${dauer(rest)}"
-    }
-
-    val bisSekunden = Duration.between(jetzt, beginn).seconds
-    val bis = (bisSekunden + 59) / 60
-    return when {
-        bisSekunden < 0 -> null
-        bis == 0L -> "jetzt"
-        bis > 600 -> null // mehr als 10 Stunden: Uhrzeit sagt mehr als ein Countdown
-        else -> "in ${dauer(bis)}"
-    }
-}
-
-private fun dauer(minuten: Long): String {
-    if (minuten < 60) return "$minuten Min"
-    val std = minuten / 60
-    val min = minuten % 60
-    return if (min == 0L) "$std Std" else "$std Std $min Min"
+    return com.nextlesson.app.data.countdownText(
+        bisBeginnMs = Duration.between(jetzt, beginn).toMillis(),
+        bisEndeMs = lesson.ende?.let { Duration.between(jetzt, it).toMillis() }
+    )
 }

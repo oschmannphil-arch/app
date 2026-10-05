@@ -65,7 +65,18 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
 
         // Heute + die nächsten Tage – anzahl = 7 stellt sicher, dass man am Wochenende
         // (Freitagabend) bereits den Entfall für Montagmorgen sieht.
-        val tage = repository.holeTage(creds, heute, anzahl = 7)
+        // Stundenwechsel-Läufe (NUR_GESPEICHERT) zeichnen nur das Widget neu – ohne Netz. Fehlt
+        // der gespeicherte Plan, wird doch normal geladen.
+        val gespeichert = if (inputData.getBoolean(NUR_GESPEICHERT, false)) {
+            repository.holeTageAusCache(creds, heute, anzahl = 7)
+        } else {
+            null
+        }
+        val tage = if (gespeichert != null && gespeichert.any { it.second is PlanResult.Success }) {
+            gespeichert
+        } else {
+            repository.holeTage(creds, heute, anzahl = 7)
+        }
 
         if (tage.any { it.second is PlanResult.AuthFehler }) {
             hinweisSchreiben("Login fehlgeschlagen")
@@ -172,5 +183,10 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         }
 
         return Result.success()
+    }
+
+    companion object {
+        /** Eingabe: nur aus dem gespeicherten Plan arbeiten (Stundenwechsel), nicht ins Netz. */
+        const val NUR_GESPEICHERT = "nur_gespeichert"
     }
 }

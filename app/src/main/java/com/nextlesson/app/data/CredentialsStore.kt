@@ -18,12 +18,20 @@ class CredentialsStore(context: Context) {
         prefs = try {
             oeffnen(context)
         } catch (e: Exception) {
-            // Die Datei lässt sich mit dem Schlüssel im Keystore nicht mehr entschlüsseln –
-            // typisch nach einem Geräteumzug (Android 12+ überträgt die Datei trotz
-            // allowBackup=false, den Keystore-Schlüssel aber nicht). Ohne diesen Weg stürzte
-            // die App bei jedem Start ab. Die Zugangsdaten müssen dann neu eingegeben werden.
-            context.deleteSharedPreferences(DATEI)
-            oeffnen(context)
+            // Der Keystore macht auf manchen Geräten kurzzeitig Fehler – dann nicht gleich
+            // die Zugangsdaten löschen, sondern einmal kurz warten und es erneut versuchen.
+            try {
+                Thread.sleep(300)
+                oeffnen(context)
+            } catch (e2: Exception) {
+                // Die Datei lässt sich mit dem Schlüssel im Keystore dauerhaft nicht mehr
+                // entschlüsseln – typisch nach einem Geräteumzug (Android 12+ überträgt die
+                // Datei trotz allowBackup=false, den Keystore-Schlüssel aber nicht). Ohne
+                // diesen Weg stürzte die App bei jedem Start ab. Die Zugangsdaten müssen dann
+                // neu eingegeben werden.
+                context.deleteSharedPreferences(DATEI)
+                oeffnen(context)
+            }
         }
     }
 

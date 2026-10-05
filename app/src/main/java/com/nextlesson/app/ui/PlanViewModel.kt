@@ -114,8 +114,15 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun anmelden(creds: IndiwareCredentials) {
+        val alteSchule = credentialsStore.laden()?.schulnummer
         credentialsStore.speichern(creds)
         aenderungsTracker.zuruecksetzen()
+        // Die Kurswahl gehört zur Schule: Kurs-IDs einer anderen Schule passen auf nichts und
+        // ließen den Plan leer ("kein Plan gefunden") – dann lieber gleich neu wählen lassen.
+        if (alteSchule != null && alteSchule != creds.schulnummer) {
+            kursSelectionStore.speichern(emptySet())
+            _wochenZustand.value = WochenZustand.NichtGeladen
+        }
         aktualisiere(creds, erzwingen = true)
     }
 
@@ -200,12 +207,15 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                     WochenAuswahl.NAECHSTE -> 1
                 }
             )
-            val tage = repository.holeWoche(creds, referenz, erzwingen).map { (datum, ergebnis) ->
-                WochenTag(
-                    datum = datum,
-                    plan = (ergebnis as? PlanResult.Success)?.plan?.tagesplanFuer(kurse),
-                    fehlermeldung = ergebnis.tagesFehler()
-                )
+            val ergebnisse = repository.holeWoche(creds, referenz, erzwingen)
+            val tage = withContext(Dispatchers.Default) {
+                ergebnisse.map { (datum, ergebnis) ->
+                    WochenTag(
+                        datum = datum,
+                        plan = (ergebnis as? PlanResult.Success)?.plan?.tagesplanFuer(kurse),
+                        fehlermeldung = ergebnis.tagesFehler()
+                    )
+                }
             }
             _wochenZustand.value = WochenZustand.Geladen(tage)
         }

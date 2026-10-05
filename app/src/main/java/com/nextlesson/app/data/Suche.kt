@@ -161,7 +161,7 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
     companion object {
         /** Lehrerkürzel eines Eintrags; mehrere (Team-Teaching) stehen durch Leerzeichen o.ä. getrennt. */
         internal fun lehrerVon(feld: String): List<String> =
-            feld.split(Regex("[\\s,;/+]+"))
+            feld.split(LEHRER_TRENNER)
                 .map { it.trim { c -> !c.isLetterOrDigit() } }
                 .filter { k -> k.any { it.isLetter() } }
 
@@ -173,10 +173,13 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
             feld.split(',', ';', '/')
                 .flatMap { teil ->
                     val t = teil.trim()
-                    val woerter = t.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    val woerter = t.split(WHITESPACE).filter { it.isNotEmpty() }
                     if (woerter.size > 1 && woerter.all { w -> w.any { it.isDigit() } }) woerter else listOf(t)
                 }
                 .filter { r -> r.any { it.isLetterOrDigit() } }
+
+        private val LEHRER_TRENNER = Regex("[\\s,;/+]+")
+        private val WHITESPACE = Regex("\\s+")
 
         private val RAUM_REIHENFOLGE =
             compareBy<String>({ it.takeWhile(Char::isDigit).toIntOrNull() ?: Int.MAX_VALUE }, { it })

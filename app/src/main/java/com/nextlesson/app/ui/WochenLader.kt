@@ -38,12 +38,15 @@ class WochenLader<T>(
     private val _zustand = MutableStateFlow<WochenDaten<T>>(WochenDaten.Laedt)
     val zustand: StateFlow<WochenDaten<T>> = _zustand.asStateFlow()
 
-    private val staende = HashMap<Pair<LocalDate, Any?>, Pair<Long, List<T>>>()
+    private val staende = HashMap<Triple<LocalDate, Any?, IndiwareCredentials?>, Pair<Long, List<T>>>()
     private var job: Job? = null
-    private var laedtFuer: Pair<LocalDate, Any?>? = null
+    private var laedtFuer: Triple<LocalDate, Any?, IndiwareCredentials?>? = null
+    private var frischLaden = false
 
     fun laden(referenz: LocalDate, extra: Any?, umwandeln: (LocalDate, PlanResult) -> T) {
-        val schluessel = referenz to extra
+        // Der Zugang gehört zum Schlüssel: Nach einem Wechsel der Zugangsdaten oder der Schule
+        // darf kein Stand (oder Fehler) des alten Zugangs übrig bleiben.
+        val schluessel = Triple(referenz, extra, zugang())
         val jetzt = System.currentTimeMillis()
         staende.entries.removeAll { jetzt - it.value.first >= FRISCH_MILLIS }
         staende[schluessel]?.let { (_, tage) ->
@@ -63,12 +66,15 @@ class WochenLader<T>(
                 _zustand.value = WochenDaten.Fehler("Bitte zuerst in den Einstellungen die Zugangsdaten eintragen.")
                 return@launch
             }
-            val ergebnisse = repository.holeWoche(creds, referenz)
+            val erzwingen = frischLaden
+            frischLaden = false
+            val ergebnisse = repository.holeWoche(creds, referenz, erzwingen)
             val tage = withContext(Dispatchers.Default) { ergebnisse.map { (datum, e) -> umwandeln(datum, e) } }
-            // Nur frisch vom Server merken: Ohne Verbindung liefert das Repository den
-            // gespeicherten Stand (Quelle.CACHE) – der soll nicht 5 Minuten "frisch" bleiben.
+            // Nur einwandfreie Stände merken: Weder Netzfehler noch gespeicherter Ersatzstand
+            // (Quelle.CACHE) noch falsche Zugangsdaten sollen 5 Minuten "frisch" bleiben.
             val vomServer = ergebnisse.none { (_, e) ->
-                e is PlanResult.NetzwerkFehler || (e is PlanResult.Success && e.aus == Quelle.CACHE)
+                e is PlanResult.NetzwerkFehler || e is PlanResult.AuthFehler ||
+                    (e is PlanResult.Success && e.aus == Quelle.CACHE)
             }
             if (vomServer) staende[schluessel] = System.currentTimeMillis() to tage
             _zustand.value = WochenDaten.Geladen(referenz, tage)
@@ -78,6 +84,7 @@ class WochenLader<T>(
     /** Nach "Aktualisieren": alles beim nächsten Mal frisch laden. */
     fun vergessen() {
         staende.clear()
+        frischLaden = true
     }
 
     private companion object {

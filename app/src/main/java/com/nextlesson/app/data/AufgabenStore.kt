@@ -79,7 +79,7 @@ class AufgabenStore(context: Context) {
         val aktuell = pruefungenLesen()
         val ergebnis = aenderung(aktuell).sortedBy { it.datumEpochDay }
         _pruefungen.value = ergebnis
-        if (ergebnis != aktuell) pruefungenSchreiben()
+        if (ergebnis != aktuell) pruefungenSchreiben(ergebnis)
     }
 
     // ---------- Hausaufgaben ----------
@@ -243,9 +243,9 @@ class AufgabenStore(context: Context) {
         }.getOrDefault(emptyList()).sortiert()
     }
 
-    private fun pruefungenSchreiben() {
+    private fun pruefungenSchreiben(liste: List<Pruefung>) {
         val array = JSONArray()
-        _pruefungen.value.forEach { p ->
+        liste.forEach { p ->
             array.put(
                 JSONObject().apply {
                     put("id", p.id)

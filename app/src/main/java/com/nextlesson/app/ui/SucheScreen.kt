@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.LaunchedEffect
+import com.nextlesson.app.data.anzeigeName
 import com.nextlesson.app.data.raumGruppe
 import com.nextlesson.app.data.stundenListe
 import com.nextlesson.app.data.wochenReferenz
@@ -489,7 +490,7 @@ private fun BelegungsZeile(l: Lesson, t: Treffer) {
     }
     Column {
         Text(
-            text = listOfNotNull(l.klasse, fachName(l), zusatz).joinToString(" · "),
+            text = listOfNotNull(l.klasse, l.anzeigeName(), zusatz).joinToString(" · "),
             style = MaterialTheme.typography.bodyMedium,
             textDecoration = if (l.entfaellt) TextDecoration.LineThrough else null,
             color = if (l.entfaellt) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
@@ -577,10 +578,7 @@ private fun statusText(tag: SchulTag, t: Treffer, istHeute: Boolean, jetzt: Loca
 private fun ort(l: Lesson): String =
     (l.raum.takeIf { it.isNotBlank() }?.let { "Raum $it, " } ?: "") + klasseUndFach(l)
 
-private fun klasseUndFach(l: Lesson): String = listOfNotNull(l.klasse, fachName(l)).joinToString(" ")
-
-private fun fachName(l: Lesson): String? =
-    l.fach.takeIf { f -> f.any { it.isLetterOrDigit() } } ?: l.kursKuerzel?.takeIf { it.isNotBlank() }
+private fun klasseUndFach(l: Lesson): String = listOfNotNull(l.klasse, l.anzeigeName()).joinToString(" ")
 
 private fun laeuftIn(fenster: Zeitfenster, jetzt: LocalTime): Boolean {
     val beginn = fenster.beginn ?: return false

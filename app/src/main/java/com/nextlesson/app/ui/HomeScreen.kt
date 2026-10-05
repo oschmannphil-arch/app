@@ -161,7 +161,14 @@ fun HomeScreen(
     val plan = persoenlich.plan
     // Heute wird "nächste Stunde" mit der tickenden Uhr neu bestimmt. Sonst bliebe bei
     // geöffneter App die beim Laden ermittelte Stunde stehen, obwohl sie längst vorbei ist.
-    val naechste = if (persoenlich.istHeute) plan.naechsteStunde(jetzt) else persoenlich.naechste
+    // "Heute" nur, solange der geladene Tag wirklich der heutige ist: Bleibt die App über
+    // Mitternacht offen, wäre sonst um 00:30 die erste Stunde von gestern "als Nächstes".
+    val heuteDatum = remember(jetzt) { LocalDate.now() }
+    val istHeute = persoenlich.istHeute && persoenlich.datum == heuteDatum
+    LaunchedEffect(heuteDatum, persoenlich.datum) {
+        if (persoenlich.istHeute && persoenlich.datum != heuteDatum) onTagVorbei()
+    }
+    val naechste = if (istHeute) plan.naechsteStunde(jetzt) else persoenlich.naechste
     val dunkel = istDunkel()
     // Freistunden im Zeitraster der Schule (auch vor der ersten Stunde), je an der Stelle der
     // Stunde, die danach kommt.
@@ -172,7 +179,7 @@ fun HomeScreen(
     // Endet die letzte Stunde, während die App offen ist, einmal neu laden: Dann springt die
     // Ansicht auf den nächsten Schultag, statt "kein Unterricht in den nächsten Tagen" zu zeigen.
     // Höchstens einmal je Tag, damit es keine Endlosschleife gibt, falls wirklich nichts kommt.
-    val tagVorbei = persoenlich.istHeute && naechste == null
+    val tagVorbei = istHeute && naechste == null
     var nachgeladenFuer by remember { mutableStateOf<LocalDate?>(null) }
     LaunchedEffect(tagVorbei, persoenlich.datum) {
         if (tagVorbei && nachgeladenFuer != persoenlich.datum) {
@@ -197,7 +204,7 @@ fun HomeScreen(
         item {
             Spacer(Modifier.height(4.dp))
             if (naechste != null) {
-                HeroKarte(naechste, persoenlich.istHeute, persoenlich.datum, jetzt, dunkel)
+                HeroKarte(naechste, istHeute, persoenlich.datum, jetzt, dunkel)
             } else {
                 LeerKarte(tagVorbei = tagVorbei, laedt = aktualisiertGerade)
             }
@@ -206,7 +213,7 @@ fun HomeScreen(
         if (plan.hinweise.isNotEmpty()) {
             item {
                 UebersichtKarte(
-                    titel = "Hinweise für ${if (persoenlich.istHeute) "heute" else "diesen Tag"}",
+                    titel = "Hinweise für ${if (istHeute) "heute" else "diesen Tag"}",
                     text = plan.hinweise.joinToString("\n"),
                     hervorgehoben = plan.hinweise.any { it.contains("klausur", ignoreCase = true) },
                     onClick = null
@@ -250,7 +257,7 @@ fun HomeScreen(
                 Text(
                     text = buildString {
                         append(
-                            if (persoenlich.istHeute) "Heute" else
+                            if (istHeute) "Heute" else
                                 persoenlich.datum.format(kurzTagFormat).replaceFirstChar { it.uppercase() }
                         )
                         plan.schluss()?.let { append(" · Schluss ${it.format(zeitFormat)}") }
@@ -276,7 +283,7 @@ fun HomeScreen(
                 StundenZeile(
                     lesson = lesson,
                     istNaechste = block.stunden.any { it.stunde == naechste?.lesson?.stunde },
-                    laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                    laeuftGerade = istHeute && laeuft(lesson, jetzt),
                     dunkel = dunkel,
                     onClick = { onStundeAntippen(block.erste) },
                     stundenText = if (blockAnsicht) block.stundenText else null

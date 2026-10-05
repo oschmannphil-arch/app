@@ -104,11 +104,15 @@ class IndiwareRepository(context: Context) {
         erzwingen: Boolean = false
     ): PlanResult = withContext(Dispatchers.IO) {
         val key = "${creds.schulnummer}|${creds.benutzername}|${creds.passwort.hashCode()}|$datum"
+        val angefragtUm = System.currentTimeMillis()
         if (!erzwingen) frischerTreffer(key)?.let { return@withContext it }
 
         // Pro Tag nur ein Abruf gleichzeitig; wer wartet, bekommt danach das frische Ergebnis.
+        // Auch ein erzwungener Abruf nimmt, was ein anderer erzwungener Abruf in der Wartezeit
+        // gerade geholt hat – sonst würde dieselbe Datei gleich noch einmal geladen.
         sperren.getOrPut(key) { Mutex() }.withLock {
             if (!erzwingen) frischerTreffer(key)?.let { return@withLock it }
+            frisch[key]?.takeIf { erzwingen && it.zeit >= angefragtUm }?.let { return@withLock it.ergebnis }
             val ergebnis = ladeVomServer(creds, datum)
             if (ergebnis is PlanResult.Success && ergebnis.aus == Quelle.NETZ) {
                 merken(key, ergebnis)
@@ -151,9 +155,9 @@ class IndiwareRepository(context: Context) {
                                 IndiwareXmlParser.parse(stream, creds.schulnummer)
                             }
                             if (plan == null) {
-                                // Kein gültiger Plan (z.B. HTML-Fehlerseite): den guten Cache
-                                // auf keinen Fall damit überschreiben.
-                                PlanResult.KeinPlanFuerTag
+                                // Kein gültiger Plan (HTML-Fehlerseite, Anmeldeseite im WLAN …): wie
+                                // ein Netzfehler behandeln und den guten Cache NICHT überschreiben.
+                                ladeAusCacheOderFehler(creds.schulnummer, datum, "Ungültige Antwort")
                             } else {
                                 cache.speichern(creds.schulnummer, datum, bodyBytes)
                                 PlanResult.Success(plan)
@@ -193,6 +197,18 @@ class IndiwareRepository(context: Context) {
         frisch[key] = Eintrag(ergebnis, jetzt)
     }
 
+    /** Wie [holeTage], aber nur aus dem lokalen Speicher – ohne Netz und ohne Warten. */
+    suspend fun holeTageAusCache(
+        creds: IndiwareCredentials,
+        ab: LocalDate = LocalDate.now(),
+        anzahl: Int = 3
+    ): List<Pair<LocalDate, PlanResult>> = coroutineScope {
+        (0 until anzahl).map { offset ->
+            val tag = ab.plusDays(offset.toLong())
+            async { tag to (holePlanAusCache(creds, tag) ?: PlanResult.NetzwerkFehler("Nicht gespeichert")) }
+        }.awaitAll()
+    }
+
     /**
      * Holt [anzahl] aufeinanderfolgende Tage ab [ab] parallel. Wird sowohl für die
      * Entfall-Überwachung als auch für die Suche nach der nächsten Stunde genutzt,
@@ -228,7 +244,7 @@ class IndiwareRepository(context: Context) {
         maxTage: Int = 8,
         nurCache: Boolean = false,
         erzwingen: Boolean = false
-    ): PersoenlicherResult {
+    ): PersoenlicherResult = withContext(Dispatchers.Default) {
         var heuteFallback: PersoenlicherPlan? = null
 
         suspend fun tag(datum: LocalDate): PlanResult =
@@ -288,18 +304,18 @@ class IndiwareRepository(context: Context) {
             }
         }
 
-        auswerten(0, tag(ab))?.let { return it }
+        auswerten(0, tag(ab))?.let { return@withContext it }
 
         if (maxTage > 1) {
             val weitere = coroutineScope {
                 (1 until maxTage).map { offset -> async { tag(ab.plusDays(offset.toLong())) } }.awaitAll()
             }
             weitere.forEachIndexed { index, ergebnis ->
-                auswerten(index + 1, ergebnis)?.let { return it }
+                auswerten(index + 1, ergebnis)?.let { return@withContext it }
             }
         }
 
-        return heuteFallback?.let { PersoenlicherResult.Erfolg(it) } ?: PersoenlicherResult.KeinPlan
+        heuteFallback?.let { PersoenlicherResult.Erfolg(it) } ?: PersoenlicherResult.KeinPlan
     }
 
     /** Erster erreichbarer Plan – für die Kursauswahl beim Einrichten. */
