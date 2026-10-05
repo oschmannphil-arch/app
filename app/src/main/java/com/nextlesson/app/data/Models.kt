@@ -91,13 +91,13 @@ data class KlassenPlan(
 )
 
 /** Ganze Wörter (Buchstaben/Ziffern) – dient dem Erkennen von Kurskürzeln in Hinweistexten. */
-private val WORT = Regex("[\\p{L}\\p{N}]+")
+internal val WORT = Regex("[\\p{L}\\p{N}]+")
 
 /** Sieht aus wie ein Kurskürzel ("DEU3", "MAT2"), auch wenn es in keiner Kursliste steht. */
-private val KURS_MUSTER = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
+internal val KURS_MUSTER = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
 
 /** Grenze zwischen zwei Aussagen in einem Hinweis: ";" oder ein freistehender Strich. */
-private val SATZ_GRENZE = Regex(";|\\s+[–—-]\\s+")
+internal val SATZ_GRENZE = Regex(";|\\s+[–—-]\\s+")
 
 private fun nurStriche(s: String) = s.isNotEmpty() && s.all { !it.isLetterOrDigit() }
 

@@ -8,6 +8,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import com.nextlesson.app.data.Freiblock
 import com.nextlesson.app.data.alsEintraege
+import com.nextlesson.app.data.hinweisKurz
 import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.Hausaufgabe
@@ -416,14 +417,20 @@ private fun HeroKarte(
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
     val istVertretung = status == LessonStatus.VERTRETUNG
-    val gestoert = status != LessonStatus.NORMAL
+    val klausur = lesson.istKlausur && !istEntfall
+    // Bei einer Klausur ist ein anderer Name unter "Lehrer" die Aufsicht, keine Vertretung.
+    val aufsicht = klausur && istVertretung
+    val gestoert = status != LessonStatus.NORMAL && !aufsicht
+    // Rot und beschriftet: Ausfall, Änderung oder Klausur – alles, was man nicht übersehen soll.
+    val warnung = gestoert || klausur
 
-    val akzent = when (status) {
-        LessonStatus.ENTFALL -> MaterialTheme.colorScheme.outline
-        LessonStatus.VERTRETUNG -> Color(0xFFFF9800)
-        LessonStatus.RAUMAENDERUNG -> Color(0xFFFF9800)
+    val akzent = when {
+        klausur -> MaterialTheme.colorScheme.error
+        status == LessonStatus.ENTFALL -> MaterialTheme.colorScheme.outline
+        status == LessonStatus.VERTRETUNG || status == LessonStatus.RAUMAENDERUNG -> Color(0xFFFF9800)
         else -> fachFarbe(lesson.fach, dunkel)
     }
+    val hinweis = lesson.hinweisKurz().ifBlank { if (gestoert) "Änderung zum Regelplan" else "" }
 
     val kopf = when {
         !istHeute -> {
@@ -440,7 +447,7 @@ private fun HeroKarte(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (gestoert) MaterialTheme.colorScheme.errorContainer
+            containerColor = if (warnung) MaterialTheme.colorScheme.errorContainer
             else MaterialTheme.colorScheme.primaryContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -467,7 +474,7 @@ private fun HeroKarte(
                     Text(
                         text = kopf,
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (gestoert) MaterialTheme.colorScheme.onErrorContainer
+                        color = if (warnung) MaterialTheme.colorScheme.onErrorContainer
                         else MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     if (countdown != null) {
@@ -486,11 +493,19 @@ private fun HeroKarte(
                 Text(
                     text = lesson.fach.ifBlank { "—" },
                     style = MaterialTheme.typography.displaySmall,
-                    color = if (gestoert) MaterialTheme.colorScheme.onErrorContainer
+                    color = if (warnung) MaterialTheme.colorScheme.onErrorContainer
                     else MaterialTheme.colorScheme.onPrimaryContainer,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (klausur || istEntfall) {
+                    Spacer(Modifier.height(6.dp))
+                    StatusBadge(
+                        text = if (klausur) "Klausur" else "Fällt aus",
+                        hintergrund = MaterialTheme.colorScheme.error,
+                        vordergrund = MaterialTheme.colorScheme.onError
+                    )
+                }
 
                 Spacer(Modifier.height(10.dp))
 
@@ -502,7 +517,7 @@ private fun HeroKarte(
                     InfoBlock(
                         titel = "Raum",
                         wert = if (istEntfall) "—" else lesson.raum.ifBlank { "—" },
-                        gestoert = gestoert,
+                        gestoert = warnung,
                         originalWert = if (lesson.raumGeaendert) lesson.originalRoom else null,
                         modifier = Modifier.weight(1f)
                     )
@@ -516,16 +531,16 @@ private fun HeroKarte(
                             } else {
                                 beginn.format(zeitFormat)
                             },
-                            gestoert = gestoert,
+                            gestoert = warnung,
                             modifier = Modifier.weight(1.2f) // Etwas mehr Platz für die Zeitspanne
                         )
                     }
                     if (lesson.lehrer.isNotBlank()) {
                         InfoBlock(
-                            titel = "Lehrer",
+                            titel = if (aufsicht) "Aufsicht" else "Lehrer",
                             wert = lesson.lehrer,
-                            gestoert = gestoert,
-                            originalWert = if (istVertretung) lesson.originalTeacher else null,
+                            gestoert = warnung,
+                            originalWert = if (istVertretung && !aufsicht) lesson.originalTeacher else null,
                             modifier = Modifier.weight(1f)
                         )
                     } else {
@@ -534,10 +549,10 @@ private fun HeroKarte(
                     }
                 }
 
-                if (gestoert) {
+                if (hinweis.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = lesson.info.ifBlank { "Änderung zum Regelplan" },
+                        text = hinweis,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onErrorContainer
@@ -770,9 +785,10 @@ internal fun StundenZeile(
                 }
             }
             // Hinweis des Plans (z.B. "Klausur!", "Aufgaben in Moodle") – so sieht man, warum.
-            if (lesson.info.isNotBlank()) {
+            val hinweisText = lesson.hinweisKurz()
+            if (hinweisText.isNotBlank()) {
                 Text(
-                    text = lesson.info,
+                    text = hinweisText,
                     style = MaterialTheme.typography.labelSmall,
                     color = textNeben,
                     maxLines = 2,

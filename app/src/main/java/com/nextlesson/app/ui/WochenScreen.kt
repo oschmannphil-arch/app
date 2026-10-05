@@ -48,6 +48,7 @@ import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
 import com.nextlesson.app.data.alsEintraege
+import com.nextlesson.app.data.hinweisKurz
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -332,9 +333,10 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean, stundenKurz: Str
                         maxLines = 1
                     )
                 }
-                if (lesson.info.isNotBlank()) {
+                val hinweisText = lesson.hinweisKurz()
+                if (hinweisText.isNotBlank()) {
                     Text(
-                        text = lesson.info,
+                        text = hinweisText,
                         style = MaterialTheme.typography.labelSmall,
                         color = neben,
                         maxLines = 2,

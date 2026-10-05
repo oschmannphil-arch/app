@@ -68,15 +68,16 @@ private fun tagLabel(persoenlich: PersoenlicherPlan): String =
 internal fun blockText(b: Freiblock): String =
     b.stundenText?.let { "$it (${zeitraum(b.beginn, b.ende)})" } ?: zeitraum(b.beginn, b.ende)
 
-/** Kurzfassung für die Karte auf der Startseite: Unterrichtszeit und gemeinsame Freistunden. */
-private fun zusammenfassung(eigen: TagesPlan, freund: TagesPlan, raster: List<Zeitfenster>): String {
+/** Was an einem Tag über einen Freund zu sagen ist: wann er in der Schule ist, wann ihr beide frei seid. */
+private class FreundHeute(val unterricht: String?, val frei: List<Freiblock>)
+
+private fun freundHeute(eigen: TagesPlan, freund: TagesPlan, raster: List<Zeitfenster>): FreundHeute {
     val belegt = Freizeit.belegt(freund)
-    if (belegt.isEmpty()) return "hat an diesem Tag keinen Unterricht"
-    val frei = Freizeit.gemeinsamFrei(eigen, freund, raster)
-    val unterricht = zeitraum(belegt.first().first, belegt.last().second)
-    val gemeinsam = if (frei.isEmpty()) "keine gemeinsame Freistunde"
-    else "gemeinsam frei: " + frei.joinToString(", ") { blockText(it) }
-    return "$unterricht · $gemeinsam"
+    if (belegt.isEmpty()) return FreundHeute(null, emptyList())
+    return FreundHeute(
+        unterricht = zeitraum(belegt.first().first, belegt.last().second),
+        frei = Freizeit.gemeinsamFrei(eigen, freund, raster)
+    )
 }
 
 /** Karte auf der Startseite: je Freund die Unterrichtszeit und gemeinsame Freistunden. */
@@ -91,8 +92,8 @@ fun FreundeKarte(
     val tage = remember(freunde, persoenlich) {
         freunde.map { f -> f to persoenlich.gesamt.tagesplanFuer(f.kurse) }
     }
-    val texte = remember(tage, persoenlich) {
-        tage.map { (_, plan) -> zusammenfassung(persoenlich.plan, plan, persoenlich.gesamt.zeitraster) }
+    val heute = remember(tage, persoenlich) {
+        tage.map { (_, plan) -> freundHeute(persoenlich.plan, plan, persoenlich.gesamt.zeitraster) }
     }
     // "Wer ist gerade frei?" – nur für den heutigen Tag sinnvoll.
     val gerade = remember(tage, persoenlich, jetzt) {
@@ -129,22 +130,59 @@ fun FreundeKarte(
                 )
             }
             tage.forEachIndexed { index, (freund, _) ->
+                val h = heute[index]
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .clickable { onFreund(freund) }
-                        .padding(vertical = 6.dp)
+                        .padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Text(text = freund.name, style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        text = texte[index],
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = freund.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (h.unterricht != null) {
+                            Text(
+                                text = "in der Schule ${h.unterricht}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    when {
+                        h.unterricht == null -> Text(
+                            text = "Kein Unterricht an diesem Tag",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        h.frei.isEmpty() -> Text(
+                            text = "Keine gemeinsame Freistunde",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        else -> {
+                            Text(
+                                text = "Gemeinsam frei",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            h.frei.forEach { b ->
+                                Text(
+                                    text = blockText(b),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
                 }
             }
-            TextButton(onClick = onWoche) { Text("Gemeinsam frei – ganze Woche") }
+            TextButton(onClick = onWoche) { Text("Wann haben wir diese Woche frei?") }
         }
     }
 }
@@ -217,7 +255,7 @@ fun FreundTagScreen(
         }
         item {
             Button(onClick = onWoche, modifier = Modifier.fillMaxWidth()) {
-                Text("Gemeinsam frei – ganze Woche")
+                Text("Wann haben wir diese Woche frei?")
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onBearbeiten, modifier = Modifier.fillMaxWidth()) {
@@ -465,7 +503,8 @@ fun GemeinsamFreiScreen(
                     FilterChip(selected = naechste, onClick = { naechste = true }, label = { Text("Nächste Woche") })
                 }
                 Text(
-                    text = "Mit wem? Es zählen nur Zeiten, in denen alle Gewählten frei haben.",
+                    text = "Mit wem willst du dich treffen? Pro Tag siehst du, welche Stunden ihr alle " +
+                        "gleichzeitig frei habt.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -493,8 +532,23 @@ fun GemeinsamFreiScreen(
                 OutlinedButton(onClick = { onWocheLaden(naechste) }) { Text("Erneut versuchen") }
             }
             tage == null -> item { LadeZeile() }
-            else -> items(ergebnisse, key = { it.first.datum.toString() }) { (tag, ergebnis) ->
-                GemeinsamTagKarte(tag.datum, ergebnis, tag.fehler)
+            else -> {
+                item {
+                    val mit = ergebnisse.count { (_, e) -> e != null && e.frei.isNotEmpty() }
+                    val moeglich = ergebnisse.count { (_, e) -> e != null }
+                    val wer = if (gewaehlte.size == 1) "ihr" else "ihr alle"
+                    Text(
+                        text = when {
+                            moeglich == 0 -> "Für diese Woche gibt es noch keine Pläne."
+                            mit == 0 -> "In dieser Woche habt $wer keine gemeinsame Freistunde."
+                            else -> "An $mit von $moeglich Tagen habt $wer gemeinsam frei."
+                        },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                items(ergebnisse, key = { it.first.datum.toString() }) { (tag, ergebnis) ->
+                    GemeinsamTagKarte(tag.datum, ergebnis, tag.fehler)
+                }
             }
         }
         item { Spacer(Modifier.height(12.dp)) }
@@ -515,7 +569,7 @@ private fun GemeinsamTagKarte(datum: LocalDate, ergebnis: TagErgebnis?, fehler: 
             ergebnis.frei.isEmpty() -> Text("Keine gemeinsame Freistunde", style = MaterialTheme.typography.bodyMedium, color = grau)
             else -> ergebnis.frei.forEach { b ->
                 Text(
-                    text = blockText(b),
+                    text = "Frei: " + blockText(b),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
