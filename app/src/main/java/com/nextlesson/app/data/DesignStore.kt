@@ -22,6 +22,15 @@ class DesignStore(context: Context) {
     )
         private set
 
+    /** Stundenliste als Blöcke (Doppelstunden zusammengefasst) statt Stunde für Stunde. */
+    var blockAnsicht by mutableStateOf(prefs.getBoolean(KEY_BLOECKE, false))
+        private set
+
+    fun blockAnsichtSetzen(an: Boolean) {
+        blockAnsicht = an
+        prefs.edit().putBoolean(KEY_BLOECKE, an).apply()
+    }
+
     /** Fach (klein geschrieben) → Farbe als ARGB-Int. */
     var fachFarben by mutableStateOf(lesen())
         private set
@@ -51,6 +60,7 @@ class DesignStore(context: Context) {
         var aktuell: DesignStore? = null
 
         private const val KEY_MODUS = "modus"
+        private const val KEY_BLOECKE = "block_ansicht"
         private const val KEY_FARBEN = "fach_farben"
     }
 }

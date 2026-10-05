@@ -500,7 +500,9 @@ private fun AppInhalt(
                                 gruppeStart = setOf(angezeigterFreund.id)
                                 gruppeOffen = true
                             },
-                            onBearbeiten = { entwurfId = angezeigterFreund.id }
+                            onBearbeiten = { entwurfId = angezeigterFreund.id },
+                            blockAnsicht = design.blockAnsicht,
+                            onBlockAnsicht = design::blockAnsichtSetzen
                         )
                     } else {
                         LadeScreen()
@@ -531,6 +533,8 @@ private fun AppInhalt(
                                     gruppeStart = freunde.map { it.id }.toSet()
                                     gruppeOffen = true
                                 },
+                                blockAnsicht = design.blockAnsicht,
+                                onBlockAnsicht = design::blockAnsichtSetzen,
                                 onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
                             )
                             is UiZustand.Fehler -> FehlerScreen(
@@ -556,7 +560,9 @@ private fun AppInhalt(
                             WochenScreen(
                                 zustand = wochenZustand,
                                 auswahl = auswahl,
-                                onAuswahlChange = planViewModel::setWochenAuswahl
+                                onAuswahlChange = planViewModel::setWochenAuswahl,
+                                blockAnsicht = design.blockAnsicht,
+                                onBlockAnsicht = design::blockAnsichtSetzen
                             )
                         }
                     }

@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Freiblock
+import com.nextlesson.app.data.alsBloecke
 import com.nextlesson.app.data.FreundTeilen
 import com.nextlesson.app.data.GesamtPlan
 import com.nextlesson.app.data.Freizeit
@@ -148,7 +149,9 @@ fun FreundTagScreen(
     freund: Freund,
     persoenlich: PersoenlicherPlan,
     onWoche: () -> Unit,
-    onBearbeiten: () -> Unit
+    onBearbeiten: () -> Unit,
+    blockAnsicht: Boolean = false,
+    onBlockAnsicht: (Boolean) -> Unit = {}
 ) {
     val jetzt by rememberJetzt()
     val dunkel = istDunkel()
@@ -163,6 +166,7 @@ fun FreundTagScreen(
             if (danach >= 0) danach to block else null
         }.toMap()
     }
+    val bloecke = remember(plan) { plan.stunden.alsBloecke() }
     val zusammen = remember(plan, persoenlich) {
         Freizeit.gemeinsameStunden(plan, persoenlich.plan).mapTo(HashSet()) { Freizeit.zusammenKey(it) }
     }
@@ -192,24 +196,38 @@ fun FreundTagScreen(
                 )
             }
         }
-        itemsIndexed(plan.stunden) { index, lesson ->
-            Column {
-                freiVor[index]?.let { FreistundenZeile(it) }
-                if (Freizeit.zusammenKey(lesson) in zusammen) {
-                    Text(
-                        text = "zusammen mit dir",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+        if (plan.stunden.isNotEmpty()) {
+            item { AnsichtUmschalter(blockAnsicht, onBlockAnsicht) }
+        }
+        if (blockAnsicht) {
+            itemsIndexed(bloecke) { _, block ->
+                val lesson = block.zusammengefasst
+                Column {
+                    freiVor[block.ersteIndex]?.let { FreistundenZeile(it) }
+                    if (block.stunden.any { Freizeit.zusammenKey(it) in zusammen }) ZusammenHinweis()
+                    StundenZeile(
+                        lesson = lesson,
+                        istNaechste = false,
+                        laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                        dunkel = dunkel,
+                        onClick = null,
+                        stundenText = block.stundenText
                     )
                 }
-                StundenZeile(
-                    lesson = lesson,
-                    istNaechste = false,
-                    laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
-                    dunkel = dunkel,
-                    onClick = null
-                )
+            }
+        } else {
+            itemsIndexed(plan.stunden) { index, lesson ->
+                Column {
+                    freiVor[index]?.let { FreistundenZeile(it) }
+                    if (Freizeit.zusammenKey(lesson) in zusammen) ZusammenHinweis()
+                    StundenZeile(
+                        lesson = lesson,
+                        istNaechste = false,
+                        laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                        dunkel = dunkel,
+                        onClick = null
+                    )
+                }
             }
         }
         item {
@@ -223,6 +241,16 @@ fun FreundTagScreen(
             Spacer(Modifier.height(12.dp))
         }
     }
+}
+
+@Composable
+private fun ZusammenHinweis() {
+    Text(
+        text = "zusammen mit dir",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+    )
 }
 
 /** Freund anlegen oder bearbeiten: Name und Kurse. */

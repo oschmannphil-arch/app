@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import com.nextlesson.app.data.Freiblock
+import com.nextlesson.app.data.alsBloecke
 import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.Hausaufgabe
@@ -151,6 +152,8 @@ fun HomeScreen(
     freunde: List<Freund> = emptyList(),
     onFreund: (Freund) -> Unit = {},
     onFreundeWoche: () -> Unit = {},
+    blockAnsicht: Boolean = false,
+    onBlockAnsicht: (Boolean) -> Unit = {},
     onTagVorbei: () -> Unit = {}
 ) {
     val jetzt by rememberJetzt(aktualisiertGerade)
@@ -167,6 +170,8 @@ fun HomeScreen(
             if (danach >= 0) danach to block else null
         }.toMap()
     }
+
+    val bloecke = remember(plan) { plan.stunden.alsBloecke() }
 
     // Endet die letzte Stunde, während die App offen ist, einmal neu laden: Dann springt die
     // Ansicht auf den nächsten Schultag, statt "kein Unterricht in den nächsten Tagen" zu zeigen.
@@ -264,18 +269,37 @@ fun HomeScreen(
             }
         }
 
+        item { AnsichtUmschalter(blockAnsicht, onBlockAnsicht) }
+
         // Bewusst ohne key: bei mehreren gewählten Kursblöcken können zwei Stunden
         // dieselbe Nummer und dasselbe Fach haben, und doppelte Keys lassen LazyColumn abstürzen.
-        itemsIndexed(plan.stunden) { index, lesson ->
-            Column {
-                freiVor[index]?.let { FreistundenZeile(it) }
-                StundenZeile(
-                    lesson = lesson,
-                    istNaechste = lesson.stunde == naechste?.lesson?.stunde,
-                    laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
-                    dunkel = dunkel,
-                    onClick = { onStundeAntippen(lesson) }
-                )
+        if (blockAnsicht) {
+            itemsIndexed(bloecke) { _, block ->
+                val lesson = block.zusammengefasst
+                Column {
+                    freiVor[block.ersteIndex]?.let { FreistundenZeile(it) }
+                    StundenZeile(
+                        lesson = lesson,
+                        istNaechste = block.stunden.any { it.stunde == naechste?.lesson?.stunde },
+                        laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                        dunkel = dunkel,
+                        onClick = { onStundeAntippen(block.erste) },
+                        stundenText = block.stundenText
+                    )
+                }
+            }
+        } else {
+            itemsIndexed(plan.stunden) { index, lesson ->
+                Column {
+                    freiVor[index]?.let { FreistundenZeile(it) }
+                    StundenZeile(
+                        lesson = lesson,
+                        istNaechste = lesson.stunde == naechste?.lesson?.stunde,
+                        laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                        dunkel = dunkel,
+                        onClick = { onStundeAntippen(lesson) }
+                    )
+                }
             }
         }
 
@@ -623,7 +647,8 @@ internal fun StundenZeile(
     istNaechste: Boolean,
     laeuftGerade: Boolean,
     dunkel: Boolean,
-    onClick: (() -> Unit)?
+    onClick: (() -> Unit)?,
+    stundenText: String? = null
 ) {
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
@@ -649,7 +674,7 @@ internal fun StundenZeile(
     val alpha = if (istEntfall) 0.4f else 1.0f
 
     val desc = buildString {
-        append("${lesson.stunde}. Stunde: ${lesson.fach.ifBlank { "Unbekannt" }}")
+        append("${stundenText ?: "${lesson.stunde}. Stunde"}: ${lesson.fach.ifBlank { "Unbekannt" }}")
         when (status) {
             LessonStatus.ENTFALL -> append(", fällt aus")
             LessonStatus.VERTRETUNG -> append(", Vertretung durch ${lesson.lehrer}")
@@ -704,6 +729,13 @@ internal fun StundenZeile(
                 style = MaterialTheme.typography.labelSmall,
                 color = textNeben
             )
+            if (stundenText != null) {
+                Text(
+                    text = stundenText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = textNeben
+                )
+            }
         }
 
         // Farbpunkt als Fachkennung

@@ -1,6 +1,9 @@
 package com.nextlesson.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,6 +27,15 @@ import com.nextlesson.app.data.Lesson
 import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.LocalTime
+
+/** Umschalter "Stunden | Blöcke" für die Stundenlisten. */
+@Composable
+fun AnsichtUmschalter(blockAnsicht: Boolean, onBlockAnsicht: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = !blockAnsicht, onClick = { onBlockAnsicht(false) }, label = { Text("Stunden") })
+        FilterChip(selected = blockAnsicht, onClick = { onBlockAnsicht(true) }, label = { Text("Blöcke") })
+    }
+}
 
 /** Ladekreis für innerhalb einer scrollenden Liste (dort darf nichts "fillMaxSize" sein). */
 @Composable
