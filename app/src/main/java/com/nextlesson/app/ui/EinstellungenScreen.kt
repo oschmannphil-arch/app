@@ -296,6 +296,7 @@ fun EinstellungenScreen(
             Text("Zugang speichern")
         }
 
+        VersionsZeile()
         Spacer(Modifier.height(24.dp))
     }
 
@@ -538,5 +539,27 @@ private fun FachFarbenDialog(
             }
         },
         confirmButton = { TextButton(onClick = onFertig) { Text("Fertig") } }
+    )
+}
+
+/** Zeigt, welcher Build installiert ist – so sieht man, ob ein Update angekommen ist. */
+@Composable
+private fun VersionsZeile() {
+    val context = LocalContext.current
+    val info = remember {
+        runCatching {
+            val p = context.packageManager.getPackageInfo(context.packageName, 0)
+            val build = if (android.os.Build.VERSION.SDK_INT >= 28) p.longVersionCode else @Suppress("DEPRECATION") p.versionCode.toLong()
+            "Build $build · Version ${p.versionName}"
+        }.getOrDefault("Build unbekannt")
+    }
+    Text(
+        text = info,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center
     )
 }
