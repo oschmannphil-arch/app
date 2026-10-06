@@ -46,6 +46,7 @@ import com.nextlesson.app.data.PruefungsArt
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -63,9 +64,11 @@ fun PruefungenScreen(
     var bearbeitungsPruefung by remember { mutableStateOf<Pruefung?>(null) }
     val dunkel = istDunkel()
     val heute = LocalDate.now()
+    // Jede Minute neu bewerten: Eine Klausur ist mit dem Ende ihrer Stunde "vorbei".
+    val jetzt by rememberJetzt()
 
-    val kommend = pruefungen.filterNot { it.istVorbei(heute) }
-    val vorbei = pruefungen.filter { it.istVorbei(heute) }
+    val kommend = pruefungen.filterNot { it.istVorbei(heute, jetzt) }
+    val vorbei = pruefungen.filter { it.istVorbei(heute, jetzt) }
 
     Scaffold(
         floatingActionButton = {
@@ -108,7 +111,7 @@ fun PruefungenScreen(
             }
 
             items(kommend, key = { it.id }) { pruefung ->
-                PruefungsKarte(pruefung, heute, dunkel, onLoeschen, onBearbeitenClick = { bearbeitungsPruefung = pruefung })
+                PruefungsKarte(pruefung, heute, jetzt, dunkel, onLoeschen, onBearbeitenClick = { bearbeitungsPruefung = pruefung })
             }
 
             if (vorbei.isNotEmpty()) {
@@ -126,7 +129,7 @@ fun PruefungenScreen(
                     )
                 }
                 items(vorbei, key = { it.id }) { pruefung ->
-                    PruefungsKarte(pruefung, heute, dunkel, onLoeschen, onBearbeitenClick = { bearbeitungsPruefung = pruefung })
+                    PruefungsKarte(pruefung, heute, jetzt, dunkel, onLoeschen, onBearbeitenClick = { bearbeitungsPruefung = pruefung })
                 }
             }
 
@@ -160,12 +163,13 @@ fun PruefungenScreen(
 private fun PruefungsKarte(
     pruefung: Pruefung,
     heute: LocalDate,
+    jetzt: LocalTime,
     dunkel: Boolean,
     onLoeschen: (String) -> Unit,
     onBearbeitenClick: () -> Unit
 ) {
     val tage = pruefung.tageBis(heute)
-    val vorbei = pruefung.istVorbei(heute)
+    val vorbei = pruefung.istVorbei(heute, jetzt)
     val dringend = !vorbei && tage <= 3
     val akzent = when {
         vorbei -> MaterialTheme.colorScheme.outline

@@ -61,11 +61,19 @@ class AufgabenStore(context: Context) {
                     tage.keys.any { p.id.startsWith("${PlanKlausur.PLAN_PREFIX}$it|") } &&
                     tage.values.flatten().none { it.id == p.id }
             }
+            val frisch = tage.values.flatten().associateBy { it.id }
+            // Bestehende Plan-Klausuren bekommen das (ggf. neue) Ende, sonst bliebe eine schon
+            // geschriebene Klausur bis Mitternacht "heute".
+            val aktualisiert = behalten.map { p ->
+                val f = frisch[p.id] ?: return@map p
+                val ende = f.ende?.toSecondOfDay() ?: Pruefung.KEIN_ENDE
+                if (p.endeSekunden == ende) p else p.copy(endeSekunden = ende)
+            }
             val vorhandeneIds = behalten.map { it.id }.toSet()
-            val neu = tage.values.flatten()
+            val neu = frisch.values
                 .filter { it.id !in geloescht && it.id !in vorhandeneIds }
                 .map { it.alsPruefung() }
-            behalten + neu
+            aktualisiert + neu
         }
     }
 
@@ -254,6 +262,7 @@ class AufgabenStore(context: Context) {
                     put("datum", p.datumEpochDay)
                     put("art", p.art.name)
                     put("notiz", p.notiz)
+                    put("ende", p.endeSekunden)
                 }
             )
         }
@@ -276,7 +285,8 @@ class AufgabenStore(context: Context) {
                     titel = o.optString("titel"),
                     datumEpochDay = tag,
                     art = PruefungsArt.ausName(o.optString("art")),
-                    notiz = o.optString("notiz")
+                    notiz = o.optString("notiz"),
+                    endeSekunden = o.optInt("ende", Pruefung.KEIN_ENDE)
                 )
             }
         }.getOrDefault(emptyList()).sortedBy { it.datumEpochDay }

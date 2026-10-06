@@ -123,7 +123,8 @@ data class Uebersicht(
         fun berechne(
             hausaufgaben: List<Hausaufgabe>,
             pruefungen: List<Pruefung>,
-            heute: LocalDate = LocalDate.now()
+            heute: LocalDate = LocalDate.now(),
+            jetzt: LocalTime = LocalTime.now()
         ): Uebersicht {
             val offen = hausaufgaben.filter { !it.erledigt }
             return Uebersicht(
@@ -135,7 +136,7 @@ data class Uebersicht(
                 },
                 // Nur was in den nächsten zwei Wochen ansteht – alles Weitere wäre Rauschen.
                 naechstePruefung = pruefungen
-                    .filter { !it.istVorbei(heute) && it.tageBis(heute) <= 14 }
+                    .filter { !it.istVorbei(heute, jetzt) && it.tageBis(heute) <= 14 }
                     .minByOrNull { it.datumEpochDay }
             )
         }

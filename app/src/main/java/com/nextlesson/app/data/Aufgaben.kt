@@ -1,6 +1,7 @@
 package com.nextlesson.app.data
 
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.UUID
 
 /**
@@ -42,7 +43,9 @@ data class PlanKlausur(
     val fach: String,
     val kurs: String,
     val klasse: String,
-    val stundenText: String
+    val stundenText: String,
+    /** Ende der letzten Klausur-Stunde – danach ist die Klausur vorbei, auch am selben Tag. */
+    val ende: LocalTime? = null
 ) {
     /** Stabile Kennung: derselbe Plan-Eintrag ergibt bei jedem Abruf dieselbe ID. */
     val id: String get() = "$PLAN_PREFIX$datum|$klasse|$kurs|$fach"
@@ -53,7 +56,8 @@ data class PlanKlausur(
         titel = if (kurs.isNotBlank() && !kurs.equals(fach, ignoreCase = true)) kurs else "",
         datumEpochDay = datum.toEpochDay(),
         art = PruefungsArt.KLAUSUR,
-        notiz = "Aus dem Plan · $stundenText"
+        notiz = "Aus dem Plan · $stundenText",
+        endeSekunden = ende?.toSecondOfDay() ?: Pruefung.KEIN_ENDE
     )
 
     companion object {
@@ -70,7 +74,7 @@ data class PlanKlausur(
                     val std = if (erste.stunde == letzte.stunde) "${erste.stunde}. Std"
                     else "${erste.stunde}.–${letzte.stunde}. Std"
                     val zeit = if (erste.beginn != null && letzte.ende != null) " · ${erste.beginn}–${letzte.ende}" else ""
-                    PlanKlausur(datum, schluessel.third, schluessel.second, schluessel.first, std + zeit)
+                    PlanKlausur(datum, schluessel.third, schluessel.second, schluessel.first, std + zeit, letzte.ende)
                 }
     }
 }
@@ -95,12 +99,24 @@ data class Pruefung(
     val titel: String,
     val datumEpochDay: Long,
     val art: PruefungsArt = PruefungsArt.KLAUSUR,
-    val notiz: String = ""
+    val notiz: String = "",
+    /** Uhrzeit (Sekunden seit Mitternacht), zu der der Termin endet; [KEIN_ENDE] = ganztägig. */
+    val endeSekunden: Int = KEIN_ENDE
 ) {
     val datum: LocalDate get() = LocalDate.ofEpochDay(datumEpochDay)
 
     fun tageBis(heute: LocalDate = LocalDate.now()): Long =
         java.time.temporal.ChronoUnit.DAYS.between(heute, datum)
 
-    fun istVorbei(heute: LocalDate = LocalDate.now()): Boolean = datum.isBefore(heute)
+    /**
+     * Vorbei ist ein Termin ab dem nächsten Tag – und am selben Tag, sobald er zu Ende ist
+     * (eine Klausur um 07:15 ist um 16:00 nicht mehr "heute", sondern geschrieben).
+     */
+    fun istVorbei(heute: LocalDate = LocalDate.now(), jetzt: LocalTime = LocalTime.now()): Boolean =
+        datum.isBefore(heute) ||
+            (datum == heute && endeSekunden != KEIN_ENDE && jetzt.toSecondOfDay() >= endeSekunden)
+
+    companion object {
+        const val KEIN_ENDE = -1
+    }
 }

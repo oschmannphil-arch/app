@@ -188,8 +188,10 @@ private fun AppInhalt(
     val sucheWoche by sucheViewModel.woche.collectAsState()
     val importVorschlag by freundeViewModel.importVorschlag.collectAsState()
     val freundeWoche by freundeViewModel.woche.collectAsState()
-    val uebersicht = remember(hausaufgaben, pruefungen) {
-        Uebersicht.berechne(hausaufgaben, pruefungen)
+    // Mit der Uhrzeit neu rechnen: Eine geschriebene Klausur soll nicht bis Mitternacht "heute" bleiben.
+    val minute by rememberJetzt()
+    val uebersicht = remember(hausaufgaben, pruefungen, minute) {
+        Uebersicht.berechne(hausaufgaben, pruefungen, jetzt = minute)
     }
 
     // Saveable: Beim Drehen des Handys bleibt man im gewählten Reiter bzw. Dialog.

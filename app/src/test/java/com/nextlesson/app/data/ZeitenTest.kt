@@ -45,3 +45,37 @@ class ZeitenTest {
         assertEquals(8 * 3600L, verzoegerungBis(LocalTime.of(17, 0), frueh).seconds)
     }
 }
+
+class PruefungVorbeiTest {
+
+    private val heute = LocalDate.of(2026, 10, 5)
+    private fun klausur(tag: LocalDate, ende: LocalTime?) = Pruefung(
+        fach = "DEU1", titel = "", datumEpochDay = tag.toEpochDay(),
+        endeSekunden = ende?.toSecondOfDay() ?: Pruefung.KEIN_ENDE
+    )
+
+    @Test
+    fun klausurIstNachIhremEndeVorbei() {
+        val k = klausur(heute, LocalTime.of(8, 45))
+        assertEquals(false, k.istVorbei(heute, LocalTime.of(8, 0)))
+        assertEquals(true, k.istVorbei(heute, LocalTime.of(16, 6)))
+        assertEquals(false, klausur(heute.plusDays(1), LocalTime.of(8, 45)).istVorbei(heute, LocalTime.of(23, 0)))
+        assertEquals(true, klausur(heute.minusDays(1), null).istVorbei(heute, LocalTime.of(0, 1)))
+    }
+
+    @Test
+    fun ohneEndeBleibtDerTagBisMitternacht() {
+        assertEquals(false, klausur(heute, null).istVorbei(heute, LocalTime.of(23, 59)))
+    }
+
+    @Test
+    fun planKlausurMerktSichDasEnde() {
+        val l = Lesson(
+            stunde = 1, beginn = LocalTime.of(7, 15), ende = LocalTime.of(8, 45), fach = "DEU1", fachGeaendert = false,
+            raum = "", raumGeaendert = false, lehrer = "", lehrerGeaendert = false, info = "Klausur!",
+            entfaellt = false, kursKuerzel = "DEU1", klasse = "12/5", istKlausur = true
+        )
+        val p = PlanKlausur.ausStunden(heute, listOf(l)).single().alsPruefung()
+        assertEquals(LocalTime.of(8, 45).toSecondOfDay(), p.endeSekunden)
+    }
+}
