@@ -4,11 +4,17 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.data.UpdateInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,7 +36,8 @@ sealed class UpdateZustand {
     data class Verfuegbar(val build: Int, val url: String, val groesse: Long) : UpdateZustand()
     data class Laedt(val build: Int, val prozent: Int) : UpdateZustand()
     data class Bereit(val build: Int, val datei: File) : UpdateZustand()
-    data class Fehler(val nachricht: String) : UpdateZustand()
+    /** [wiederholbar]: der Download, der sich erneut versuchen lässt (null bei einer fehlgeschlagenen Suche). */
+    data class Fehler(val nachricht: String, val wiederholbar: Verfuegbar? = null) : UpdateZustand()
 }
 
 /**
@@ -41,9 +48,12 @@ sealed class UpdateZustand {
 class UpdateViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("update", Context.MODE_PRIVATE)
-    private val client = OkHttpClient.Builder()
+    // Von dem Client des Repositorys abgeleitet: teilt Verbindungen und Threads, nur mit
+    // eigenen Zeitlimits (der Download der APK dauert länger als ein Planabruf).
+    private val client: OkHttpClient = IndiwareRepository.httpClient.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(0, TimeUnit.SECONDS) // kein Gesamtlimit: die APK ist ~10 MB groß
         .build()
 
     private val _zustand = MutableStateFlow<UpdateZustand>(UpdateZustand.Unbekannt)
@@ -65,19 +75,30 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun pruefen(still: Boolean = false) {
-        if (job?.isActive == true) return
         val vorher = _zustand.value
         if (vorher is UpdateZustand.Laedt || vorher is UpdateZustand.Bereit) return
+        if (job?.isActive == true) {
+            // Läuft schon eine (stille) Suche: bei Tipp auf "Suchen" das auch zeigen.
+            if (!still) _zustand.value = UpdateZustand.Sucht
+            return
+        }
         if (!still) _zustand.value = UpdateZustand.Sucht
         job = viewModelScope.launch {
             val ergebnis = runCatching { withContext(Dispatchers.IO) { neuesteSuchen() } }
             ergebnis.onSuccess { neu ->
                 prefs.edit().putLong(KEY_ZULETZT, System.currentTimeMillis()).apply()
                 _zustand.value = if (neu != null && UpdateInfo.istNeuer(installiert, neu.build)) neu else UpdateZustand.Aktuell
-            }.onFailure {
-                // Ein stiller Check, der scheitert (kein Netz), soll nicht stören.
-                _zustand.value = if (still) UpdateZustand.Unbekannt
-                else UpdateZustand.Fehler("Konnte nicht nach Updates suchen. Bist du online?")
+            }.onFailure { fehler ->
+                // Auch nach einem Fehlschlag nicht bei jedem Öffnen neu anfragen: erst in 30 Minuten wieder.
+                prefs.edit().putLong(KEY_ZULETZT, System.currentTimeMillis() - ABSTAND_MILLIS + WIEDER_NACH_FEHLER_MILLIS).apply()
+                _zustand.value = when {
+                    // Eine schon bekannte Aktualisierung bleibt bekannt, auch wenn die Nachfrage scheitert.
+                    vorher is UpdateZustand.Verfuegbar -> vorher
+                    still -> UpdateZustand.Unbekannt
+                    fehler.message?.contains("403") == true ->
+                        UpdateZustand.Fehler("GitHub erlaubt gerade keine weiteren Abfragen. Versuch es in einer Stunde noch einmal.")
+                    else -> UpdateZustand.Fehler("Konnte nicht nach Updates suchen. Bist du online?")
+                }
             }
         }
     }
@@ -112,21 +133,38 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun herunterladen() {
-        val ziel = _zustand.value as? UpdateZustand.Verfuegbar ?: return
+        val zustand = _zustand.value
+        val ziel = zustand as? UpdateZustand.Verfuegbar ?: (zustand as? UpdateZustand.Fehler)?.wiederholbar ?: return
         if (job?.isActive == true) return
         _zustand.value = UpdateZustand.Laedt(ziel.build, 0)
         job = viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { laden(ziel) } }
                 .onSuccess { _zustand.value = UpdateZustand.Bereit(ziel.build, it) }
-                .onFailure { _zustand.value = UpdateZustand.Fehler("Download fehlgeschlagen. Versuch es später noch einmal.") }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    _zustand.value = UpdateZustand.Fehler("Download fehlgeschlagen. Versuch es noch einmal.", ziel)
+                }
         }
     }
 
-    private fun laden(ziel: UpdateZustand.Verfuegbar): File {
+    private suspend fun laden(ziel: UpdateZustand.Verfuegbar): File {
         val ordner = File(getApplication<Application>().cacheDir, "updates").apply { mkdirs() }
         ordner.listFiles()?.forEach { it.delete() }
+        // Erst unter anderem Namen schreiben: Eine halbe Datei soll nie wie eine fertige APK aussehen.
+        val teil = File(ordner, "$APK_NAME.teil")
         val datei = File(ordner, APK_NAME)
-        client.newCall(Request.Builder().url(ziel.url).build()).execute().use { antwort ->
+        val call = client.newCall(Request.Builder().url(ziel.url).build())
+        try {
+            herunterladenNach(call, teil, ziel)
+            check(teil.renameTo(datei)) { "umbenennen" }
+        } finally {
+            if (teil.exists()) teil.delete()
+        }
+        return datei
+    }
+
+    private suspend fun herunterladenNach(call: okhttp3.Call, datei: File, ziel: UpdateZustand.Verfuegbar) {
+        call.execute().use { antwort ->
             check(antwort.isSuccessful) { "HTTP ${antwort.code}" }
             val body = checkNotNull(antwort.body)
             val gesamt = body.contentLength().takeIf { it > 0 } ?: ziel.groesse
@@ -136,6 +174,9 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
                 datei.outputStream().use { aus ->
                     val puffer = ByteArray(64 * 1024)
                     while (true) {
+                        // Abbrechen, wenn die Ansicht weg ist – sonst lädt der Download unsichtbar weiter.
+                        if (!currentCoroutineContext().isActive) call.cancel()
+                        currentCoroutineContext().ensureActive()
                         val n = eingang.read(puffer)
                         if (n < 0) break
                         aus.write(puffer, 0, n)
@@ -152,23 +193,49 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
             }
             check(gesamt <= 0 || gelesen == gesamt) { "unvollständig" }
         }
-        return datei
     }
 
-    /** Startet die Installation. Erst muss "Aus dieser Quelle installieren" erlaubt sein. */
-    fun installieren(context: Context): Boolean {
-        val bereit = _zustand.value as? UpdateZustand.Bereit ?: return false
+    /** Prüft die heruntergeladene Datei: eine Version dieser App, neuer, mit derselben Signatur. */
+    private fun pruefeDatei(context: Context, datei: File): String? {
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else 0
+        val archiv = pm.getPackageArchiveInfo(datei.path, flags)
+            ?: return "Die heruntergeladene Datei ist kein gültiges Update."
+        if (archiv.packageName != context.packageName) return "Die Datei gehört nicht zu dieser App."
+        if (Build.VERSION.SDK_INT >= 28) {
+            val eigene = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                .signingInfo?.apkContentsSigners?.map { it.toCharsString() }?.toSet().orEmpty()
+            val neue = archiv.signingInfo?.apkContentsSigners?.map { it.toCharsString() }?.toSet().orEmpty()
+            if (eigene.isNotEmpty() && neue.isNotEmpty() && eigene != neue) {
+                return "Das Update ist anders signiert und lässt sich nicht über die installierte App legen."
+            }
+        }
+        return null
+    }
+
+    /**
+     * Startet die Installation und meldet bei Problemen selbst, woran es liegt. Erst muss
+     * "Aus dieser Quelle installieren" erlaubt sein.
+     */
+    fun installieren(context: Context) {
+        val bereit = _zustand.value as? UpdateZustand.Bereit ?: return
+        fun melden(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+
         if (!context.packageManager.canRequestPackageInstalls()) {
             val einstellungen = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             runCatching { context.startActivity(einstellungen) }
-            return false
+            melden("Erlaube die Installation für diese App und tippe dann erneut auf Installieren.")
+            return
         }
+        pruefeDatei(context, bereit.datei)?.let { melden(it); return }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", bereit.datei)
         val installieren = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        return runCatching { context.startActivity(installieren) }.isSuccess
+        if (runCatching { context.startActivity(installieren) }.isFailure) {
+            melden("Die Installation konnte nicht gestartet werden.")
+        }
     }
 
     private companion object {
@@ -176,5 +243,6 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
         const val APK_NAME = "NaechsteStunde.apk"
         const val KEY_ZULETZT = "zuletzt_geprueft"
         const val ABSTAND_MILLIS = 6 * 60 * 60_000L
+        const val WIEDER_NACH_FEHLER_MILLIS = 30 * 60_000L
     }
 }

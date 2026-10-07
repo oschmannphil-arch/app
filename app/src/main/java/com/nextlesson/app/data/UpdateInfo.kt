@@ -8,8 +8,5 @@ object UpdateInfo {
     /** "build-31" → 31; alles andere → null. */
     fun buildAusTag(tag: String): Int? = TAG.find(tag.trim())?.groupValues?.get(1)?.toIntOrNull()
 
-    /** Der höchste Build unter den Tags (Releases sind als "prerelease" markiert, "latest" greift nicht). */
-    fun neuester(tags: List<String>): Int? = tags.mapNotNull(::buildAusTag).maxOrNull()
-
     fun istNeuer(installiert: Int, verfuegbar: Int): Boolean = verfuegbar > installiert
 }

@@ -281,8 +281,15 @@ data class GesamtPlan(
 
         // Die Klausurliste des Plans geht vor: Stunden eines Kurses im Klausurzeitraum sind
         // Klausur, auch wenn der Plan denselben Kurs zugleich unter "fällt aus" nennt.
-        val stunden = if (klausuren.isEmpty()) vermutet else vermutet.map { l ->
-            if (klausuren.any { it.betrifft(l) } && (l.entfaellt || !l.istKlausur)) l.findetStatt(klausur = true) else l
+        val stunden = if (klausuren.isEmpty()) vermutet else vermutet.mapIndexed { i, l ->
+            when {
+                klausuren.any { it.betrifft(l) } ->
+                    if (l.entfaellt || !l.istKlausur) l.findetStatt(klausur = true) else l
+                // Die Liste kennt diesen Kurs nicht: Eine nur aus dem Hinweistext erratene Klausur
+                // zurücknehmen – der Plan selbst hatte die Stunde als Ausfall geführt.
+                l.istKlausur && !l.entfaellt && rohStunden[i].entfaellt -> rohStunden[i].copy(istKlausur = false)
+                else -> l
+            }
         }
 
         return TagesPlan(

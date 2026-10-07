@@ -234,4 +234,18 @@ ${std(3, "09:05", "09:50", "ENG2", liste)}
         assertEquals("12/5", g.klausuren.single().jahrgang)
         assertTrue(g.tagesplanFuer(setOf("12/5::ENG2")).stunden.single().istKlausur)
     }
+
+    @Test
+    fun kursOhneEintragInDerListeBleibtAusfall() {
+        // Die Liste kennt nur ENG2; DEU1 wird nur aus dem Hinweistext als Klausur erraten.
+        val deu = "Klausur!; DEU2 Frau Gladow fällt aus; ENG2 Frau Däumer fällt aus"
+        val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf><Klassen>
+<Kl><Kurz>12/5</Kurz><Kurse><Ku><KKz>DEU1</KKz></Ku><Ku><KKz>DEU2</KKz></Ku></Kurse><Pl>
+${std(3, "09:05", "09:50", "DEU1", deu)}
+${std(3, "09:05", "09:50", "DEU2", deu)}
+</Pl></Kl></Klassen><Klausuren><Klausur><KlJahrgang>12</KlJahrgang><KlKurs>ENG2</KlKurs>
+<KlBeginn>09:05</KlBeginn><KlDauer>180</KlDauer></Klausur></Klausuren></WplanVp>"""
+        val tp = IndiwareXmlParser.parse(xml.byteInputStream(), "1")!!.tagesplanFuer(setOf("12/5::DEU1", "12/5::DEU2"))
+        assertTrue(tp.stunden.none { it.istKlausur })
+    }
 }

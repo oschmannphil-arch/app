@@ -164,6 +164,23 @@ class MainActivity : ComponentActivity() {
 private val NAVI_SCHLEIER_HELL = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
 private val NAVI_SCHLEIER_DUNKEL = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)
 
+private const val PATCH_GESEHEN = "gesehen"
+
+/**
+ * Bis zu welchem Patchnotes-Eintrag der Nutzer schon alles kennt. Eine frische Installation
+ * (nie aktualisiert) soll keine "Neu in dieser Version"-Hinweise bekommen – sie kennt ja nichts Altes.
+ */
+private fun patchGesehenStart(context: Context, prefs: android.content.SharedPreferences): Int {
+    if (prefs.contains(PATCH_GESEHEN)) return prefs.getInt(PATCH_GESEHEN, 0)
+    val frisch = runCatching {
+        val p = context.packageManager.getPackageInfo(context.packageName, 0)
+        p.firstInstallTime == p.lastUpdateTime
+    }.getOrDefault(false)
+    if (!frisch) return 0
+    prefs.edit().putInt(PATCH_GESEHEN, Patchnotes.neuesteId).apply()
+    return Patchnotes.neuesteId
+}
+
 private enum class Tab(val titel: String, val symbol: ImageVector) {
     HEUTE("Heute", Icons.Filled.CheckCircle),
     WOCHE("Woche", Icons.Filled.DateRange),
@@ -482,15 +499,7 @@ private fun AppInhalt(
                         installierterBuild = updateViewModel.installiert,
                         onUpdatePruefen = { updateViewModel.pruefen() },
                         onUpdateLaden = updateViewModel::herunterladen,
-                        onUpdateInstallieren = {
-                            if (!updateViewModel.installieren(context)) {
-                                Toast.makeText(
-                                    context,
-                                    "Erlaube die Installation für diese App und tippe dann erneut auf Installieren.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
+                        onUpdateInstallieren = { updateViewModel.installieren(context) }
                     )
                 }
 
@@ -645,7 +654,7 @@ private fun AppInhalt(
     }
     // Patchnotes: einmalig nach einem Update. "Gesehen" wird erst beim Schließen gemerkt.
     val patchPrefs = remember { context.getSharedPreferences("patchnotes", Context.MODE_PRIVATE) }
-    var patchGesehen by rememberSaveable { mutableStateOf(patchPrefs.getInt("gesehen", 0)) }
+    var patchGesehen by rememberSaveable { mutableStateOf(patchGesehenStart(context, patchPrefs)) }
     val patchEintraege = remember(patchGesehen) { Patchnotes.ungesehen(patchGesehen) }
 
     // Hinweis auf einen neuen Build – nicht mitten in der Einrichtung und nur einmal pro Start.
@@ -653,15 +662,17 @@ private fun AppInhalt(
         is UpdateZustand.Verfuegbar -> u.build
         is UpdateZustand.Laedt -> u.build
         is UpdateZustand.Bereit -> u.build
+        is UpdateZustand.Fehler -> u.wiederholbar?.build ?: 0
         else -> 0
     }
     val updateDialogOffen = gefundenerBuild != 0 && gefundenerBuild != spaeterBuild && !einrichtung
+    fun patchGesehenMerken() {
+        patchPrefs.edit().putInt(PATCH_GESEHEN, Patchnotes.neuesteId).apply()
+        patchGesehen = Patchnotes.neuesteId
+    }
     if (patchEintraege.isNotEmpty() && !einrichtung && !updateDialogOffen) {
         AlertDialog(
-            onDismissRequest = {
-                patchPrefs.edit().putInt("gesehen", Patchnotes.neuesteId).apply()
-                patchGesehen = Patchnotes.neuesteId
-            },
+            onDismissRequest = { patchGesehenMerken() },
             title = { Text(patchEintraege.first().titel) },
             text = {
                 Column(
@@ -675,12 +686,7 @@ private fun AppInhalt(
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    patchPrefs.edit().putInt("gesehen", Patchnotes.neuesteId).apply()
-                    patchGesehen = Patchnotes.neuesteId
-                }) { Text("Verstanden") }
-            }
+            confirmButton = { TextButton(onClick = { patchGesehenMerken() }) { Text("Verstanden") } }
         )
     }
     if (updateDialogOffen) {
@@ -692,6 +698,7 @@ private fun AppInhalt(
                     when (val u = update) {
                         is UpdateZustand.Laedt -> "Lade Build ${u.build} … ${u.prozent} %"
                         is UpdateZustand.Bereit -> "Build ${u.build} ist heruntergeladen und bereit zum Installieren."
+                        is UpdateZustand.Fehler -> u.nachricht
                         else -> "Build $gefundenerBuild ist verfügbar (du hast ${updateViewModel.installiert})."
                     }
                 )
@@ -700,15 +707,10 @@ private fun AppInhalt(
                 when (update) {
                     is UpdateZustand.Verfuegbar ->
                         TextButton(onClick = { updateViewModel.herunterladen() }) { Text("Herunterladen") }
-                    is UpdateZustand.Bereit -> TextButton(onClick = {
-                        if (!updateViewModel.installieren(context)) {
-                            Toast.makeText(
-                                context,
-                                "Erlaube die Installation für diese App und tippe dann erneut auf Installieren.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }) { Text("Installieren") }
+                    is UpdateZustand.Fehler ->
+                        TextButton(onClick = { updateViewModel.herunterladen() }) { Text("Erneut versuchen") }
+                    is UpdateZustand.Bereit ->
+                        TextButton(onClick = { updateViewModel.installieren(context) }) { Text("Installieren") }
                     else -> Unit
                 }
             },

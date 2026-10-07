@@ -97,8 +97,10 @@ fun EinstellungenScreen(
     onUpdateInstallieren: () -> Unit = {}
 ) {
     var farbDialog by rememberSaveable { mutableStateOf(false) }
-    var schulnummer by remember { mutableStateOf(credentials?.schulnummer.orEmpty()) }
-    var benutzer by remember { mutableStateOf(credentials?.benutzername.orEmpty()) }
+    // Schulnummer und Benutzername überstehen Drehen und App-Wechsel; das Passwort bewusst nicht,
+    // damit es nicht im gespeicherten Bildschirmzustand landet.
+    var schulnummer by rememberSaveable { mutableStateOf(credentials?.schulnummer.orEmpty()) }
+    var benutzer by rememberSaveable { mutableStateOf(credentials?.benutzername.orEmpty()) }
     var passwort by remember { mutableStateOf(credentials?.passwort.orEmpty()) }
     var zeitDialog by remember { mutableStateOf(false) }
 

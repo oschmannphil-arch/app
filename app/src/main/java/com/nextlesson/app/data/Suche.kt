@@ -45,7 +45,8 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
      */
     val stunden: List<Lesson> = gesamt.klassen.flatMap { kp ->
         gesamt.tagesplanFuer(setOf("${kp.klasse}::${KursInfo.GANZE_KLASSE}")).stunden
-    }
+        // Ein Kurs, der in mehreren Klassenblöcken steht, kommt je Block vor – nur einmal zählen.
+    }.distinctBy { Freizeit.zusammenKey(it) + "|" + it.raum + "|" + it.entfaellt }
 
     /** Zeitraster: je Stundennummer die häufigste Beginn/Ende-Kombination. */
     val raster: List<Zeitfenster> = zeitraster(stunden)

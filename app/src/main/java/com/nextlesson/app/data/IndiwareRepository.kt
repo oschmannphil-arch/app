@@ -379,6 +379,9 @@ class IndiwareRepository(context: Context) {
                 .build()
         }
 
+        /** Derselbe Client (Pool, Threads) auch für andere Abrufe, z.B. das App-Update. */
+        internal val httpClient: OkHttpClient get() = client
+
         private val frisch = ConcurrentHashMap<String, Eintrag>()
         private val sperren = ConcurrentHashMap<String, Mutex>()
     }

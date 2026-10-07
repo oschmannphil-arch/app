@@ -40,32 +40,33 @@ class WochenLader<T>(
 
     private val staende = HashMap<Triple<LocalDate, Any?, IndiwareCredentials?>, Pair<Long, List<T>>>()
     private var job: Job? = null
-    private var laedtFuer: Triple<LocalDate, Any?, IndiwareCredentials?>? = null
+    private var laedtFuer: Pair<LocalDate, Any?>? = null
     private var frischLaden = false
 
     fun laden(referenz: LocalDate, extra: Any?, umwandeln: (LocalDate, PlanResult) -> T) {
-        // Der Zugang gehört zum Schlüssel: Nach einem Wechsel der Zugangsdaten oder der Schule
-        // darf kein Stand (oder Fehler) des alten Zugangs übrig bleiben.
-        val schluessel = Triple(referenz, extra, zugang())
-        val jetzt = System.currentTimeMillis()
-        staende.entries.removeAll { jetzt - it.value.first >= FRISCH_MILLIS }
-        staende[schluessel]?.let { (_, tage) ->
-            job?.cancel()
-            laedtFuer = null
-            _zustand.value = WochenDaten.Geladen(referenz, tage)
-            return
-        }
-        if (job?.isActive == true && laedtFuer == schluessel) return
+        val anfrage = referenz to extra
+        if (job?.isActive == true && laedtFuer == anfrage) return
 
         job?.cancel()
-        laedtFuer = schluessel
-        _zustand.value = WochenDaten.Laedt
+        laedtFuer = anfrage
         job = scope.launch {
+            // Die Zugangsdaten gehören zum Schlüssel: Nach einem Wechsel von Zugang oder Schule darf
+            // kein Stand (oder Fehler) des alten Zugangs übrig bleiben. Das Auslesen (verschlüsselter
+            // Speicher) läuft nicht auf dem UI-Thread.
             val creds = withContext(Dispatchers.IO) { zugang() }
             if (creds == null) {
                 _zustand.value = WochenDaten.Fehler("Bitte zuerst in den Einstellungen die Zugangsdaten eintragen.")
                 return@launch
             }
+            val schluessel = Triple(referenz, extra, creds)
+            val jetzt = System.currentTimeMillis()
+            staende.entries.removeAll { jetzt - it.value.first >= FRISCH_MILLIS }
+            staende[schluessel]?.let { (_, tage) ->
+                _zustand.value = WochenDaten.Geladen(referenz, tage)
+                return@launch
+            }
+
+            _zustand.value = WochenDaten.Laedt
             val erzwingen = frischLaden
             frischLaden = false
             val ergebnisse = repository.holeWoche(creds, referenz, erzwingen)

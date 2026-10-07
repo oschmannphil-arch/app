@@ -69,8 +69,9 @@ class WidgetTickReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                // Zeichnet neu und plant dabei den nächsten Tick.
-                NextLessonWidgetReceiver.alleWidgetsAktualisieren(app)
+                // Zeichnet neu und plant dabei den nächsten Tick. Ein Fehler im Widget (z.B. ein
+                // ungültiges Widget) darf die App nicht aus dem Hintergrund heraus abstürzen lassen.
+                runCatching { NextLessonWidgetReceiver.alleWidgetsAktualisieren(app) }
             } finally {
                 pending.finish()
             }

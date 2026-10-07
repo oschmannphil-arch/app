@@ -139,12 +139,18 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun naechsteStundeVon(lesson: Lesson, nach: LocalDate): LocalDate? {
         val creds = withContext(Dispatchers.IO) { credentialsStore.laden() } ?: return null
         val kurse = kursSelectionStore.laden()
-        val tage = repository.holeTage(creds, nach.plusDays(1), anzahl = 14)
-        return withContext(Dispatchers.Default) {
-            tage.firstOrNull { (_, ergebnis) ->
-                ergebnis is PlanResult.Success && ergebnis.plan.tagesplanFuer(kurse).hatStundeVon(lesson)
-            }?.first
+        // Woche für Woche statt 14 Tage auf einmal: Meist liegt die nächste Stunde in den ersten
+        // Tagen – dann spart das Dutzende Abrufe und das Parsen ganzer Schulpläne.
+        for (versatz in 0 until 14 step 4) {
+            val tage = repository.holeTage(creds, nach.plusDays(1L + versatz), anzahl = minOf(4, 14 - versatz))
+            val treffer = withContext(Dispatchers.Default) {
+                tage.firstOrNull { (_, ergebnis) ->
+                    ergebnis is PlanResult.Success && ergebnis.plan.tagesplanFuer(kurse).hatStundeVon(lesson)
+                }?.first
+            }
+            if (treffer != null) return treffer
         }
+        return null
     }
 
     /** Speichert die Kurswahl und lädt den persönlichen Plan neu. */

@@ -16,9 +16,8 @@ class PatchnotesTest {
 
     @Test
     fun nurUngeseheneNeuesteZuerst() {
-        val e = { id: Int -> PatchEintrag(id, "t", listOf("p")) }
-        val alle = (1..5).map(e)
-        fun ungesehen(bis: Int, max: Int) = alle.filter { it.id > bis }.sortedByDescending { it.id }.take(max).map { it.id }
+        val alle = (1..5).map { PatchEintrag(it, "t", listOf("p")) }
+        fun ungesehen(bis: Int, max: Int) = Patchnotes.ungesehen(bis, max, alle).map { it.id }
         assertEquals(listOf(5, 4), ungesehen(3, 3))
         assertEquals(listOf(5, 4, 3), ungesehen(0, 3))
         assertEquals(emptyList<Int>(), ungesehen(5, 3))

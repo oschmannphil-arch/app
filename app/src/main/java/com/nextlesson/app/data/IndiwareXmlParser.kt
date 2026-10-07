@@ -73,6 +73,14 @@ object IndiwareXmlParser {
             LEHRER_PLATZHALTER.matches(t)
     }
 
+    // Kein Wortanfang-Test: gesamtText hängt die Felder einer Stunde ohne Trennzeichen aneinander.
+
+    /** "kein Unterricht", "keinen Unterricht" – nicht "Vertretungsunterricht, keine Pause". */
+    private val KEIN_UNTERRICHT = Regex("""kein(e|en)?\s+unterricht""")
+
+    /** "fällt aus", "fällt heute aus" – aber nicht "fällt … Hausaufgaben". */
+    private val FAELLT_AUS = Regex("""f(ä|ae)llt(?![\p{L}\p{N}]).{0,30}(?<![\p{L}\p{N}])aus(?![\p{L}\p{N}])""")
+
     /** Hinweise auf eine Klausur im Infotext der Stunde. */
     private val KLAUSUR_WOERTER = Regex("klausur|klassenarbeit")
 
@@ -211,9 +219,8 @@ object IndiwareXmlParser {
             val hatEntfallInfo = ENTFALL_WOERTER.containsMatchIn(infoText) ||
                                  ENTFALL_WOERTER_LEHRER.containsMatchIn(lehrerRoh.lowercase()) ||
                                  ENTFALL_PHRASEN.any { infoText.contains(it) || gesamtText.contains(it) } ||
-                                 (gesamtText.contains("kein") && gesamtText.contains("unterricht")) ||
-                                 (gesamtText.contains("fällt") && gesamtText.contains("aus")) ||
-                                 (gesamtText.contains("faellt") && gesamtText.contains("aus"))
+                                 KEIN_UNTERRICHT.containsMatchIn(gesamtText) ||
+                                 FAELLT_AUS.containsMatchIn(gesamtText)
 
             // Priorität 2: "---" in Fach oder Lehrer (ENTFALL)
             val hatStrich = fach == "---" || lehrer == "---"

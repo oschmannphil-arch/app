@@ -34,4 +34,15 @@ class ParserLehrerTest {
     fun stichwortImLehrerFeldBleibtAusfall() {
         assertEquals(true, lesson("<Le>Selbstständiges Arbeiten</Le>").entfaellt)
     }
+
+    @Test
+    fun entfallWendungenNurAlsGanzeWendung() {
+        // Kein Ausfall: "kein" und "unterricht" bzw. "fällt" und "aus" stehen nur zufällig im Text.
+        assertFalse(lesson("<Le>Mei</Le>", "Vertretungsunterricht, keine Pause").entfaellt)
+        assertFalse(lesson("<Le>Mei</Le>", "Treffen fällt in die Pause, Hausaufgaben im Plan").entfaellt)
+        // Echter Ausfall.
+        assertEquals(true, lesson("<Le>Mei</Le>", "fällt heute aus").entfaellt)
+        assertEquals(true, lesson("<Le>Mei</Le>", "Heute kein Unterricht").entfaellt)
+        assertEquals(true, lesson("<Le>Mei</Le>", "entfällt").entfaellt)
+    }
 }

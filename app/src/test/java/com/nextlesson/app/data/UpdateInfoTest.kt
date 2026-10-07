@@ -16,9 +16,9 @@ class UpdateInfoTest {
     }
 
     @Test
-    fun hoechsterBuildGewinnt_nichtDieReihenfolge() {
-        assertEquals(100, UpdateInfo.neuester(listOf("build-9", "build-100", "build-30", "irgendwas")))
-        assertNull(UpdateInfo.neuester(listOf("v1", "x")))
+    fun zahlenWerdenNumerischVerglichen() {
+        // "build-9" ist kleiner als "build-100", auch wenn es als Text größer wäre.
+        assertTrue(UpdateInfo.istNeuer(UpdateInfo.buildAusTag("build-9")!!, UpdateInfo.buildAusTag("build-100")!!))
     }
 
     @Test
