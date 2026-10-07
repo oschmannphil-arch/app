@@ -34,6 +34,19 @@ fun countdownText(bisBeginnMs: Long, bisEndeMs: Long?, laeuftPraefix: String = "
 }
 
 /**
+ * Der nächste der Zeitpunkte [zeiten] (Uhrzeiten, heute oder morgen), mindestens eine Minute in
+ * der Zukunft – damit ein Lauf, der kurz vor "seiner" Zeit startet, nicht gleich wieder dieselbe
+ * Zeit plant. Mit Zeitzone gerechnet (Zeitumstellung).
+ */
+fun naechsterZeitpunkt(zeiten: List<LocalTime>, jetzt: ZonedDateTime = ZonedDateTime.now()): ZonedDateTime {
+    require(zeiten.isNotEmpty())
+    val fruehestens = jetzt.plusMinutes(1)
+    return (0..1).flatMap { tag -> zeiten.map { jetzt.toLocalDate().plusDays(tag.toLong()).atTime(it).atZone(jetzt.zone) } }
+        .filter { it.isAfter(fruehestens) }
+        .minOrNull() ?: jetzt.toLocalDate().plusDays(1).atTime(zeiten.min()).atZone(jetzt.zone)
+}
+
+/**
  * Zeit bis zum nächsten Auftreten der Uhrzeit [ziel] – heute, sonst morgen. Mit Zeitzone
  * gerechnet: Am Tag der Zeitumstellung ist ein Tag 23 oder 25 Stunden lang.
  */

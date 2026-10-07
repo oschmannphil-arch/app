@@ -93,6 +93,13 @@ object UpdatePruefer {
         prefs(context).edit().putInt(KEY_BENACHRICHTIGT, build).apply()
     }
 
-    /** Wie lange ein Ergebnis gilt, bevor die App wieder nachfragt: einmal am Tag reicht. */
-    const val ABSTAND_MILLIS = 24 * 60 * 60_000L
+    /**
+     * So lange gilt ein Ergebnis, bevor die App beim Öffnen selbst wieder nachfragt (still im
+     * Hintergrund). Meist hat der Hintergrund-Check ([PRUEF_UHRZEITEN]) es kürzlich erledigt.
+     */
+    const val ABSTAND_MILLIS = 3 * 60 * 60_000L
+
+    /** Wann der Hintergrund-Check läuft (Ortszeit). */
+    val PRUEF_UHRZEITEN: List<java.time.LocalTime> =
+        listOf(java.time.LocalTime.of(7, 0), java.time.LocalTime.of(15, 0), java.time.LocalTime.of(20, 0))
 }

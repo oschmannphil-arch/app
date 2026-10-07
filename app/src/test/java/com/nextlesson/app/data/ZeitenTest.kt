@@ -46,6 +46,35 @@ class ZeitenTest {
     }
 }
 
+class ZeitSlotsTest {
+    private val berlin = ZoneId.of("Europe/Berlin")
+    private val slots = listOf(LocalTime.of(7, 0), LocalTime.of(15, 0), LocalTime.of(20, 0))
+    private fun um(h: Int, m: Int, s: Int = 0, tag: Int = 7) =
+        ZonedDateTime.of(LocalDate.of(2026, 10, tag), LocalTime.of(h, m, s), berlin)
+
+    @Test
+    fun naechsterSlotImLaufDesTages() {
+        assertEquals(um(7, 0), naechsterZeitpunkt(slots, um(5, 30)))
+        assertEquals(um(15, 0), naechsterZeitpunkt(slots, um(7, 0, 30)))   // Lauf nach 7:00 → 15:00
+        assertEquals(um(20, 0), naechsterZeitpunkt(slots, um(15, 10)))
+        assertEquals(um(7, 0, tag = 8), naechsterZeitpunkt(slots, um(20, 5)))   // nach 20:00 → morgen 7:00
+    }
+
+    @Test
+    fun einLaufKurzVorSeinerZeitPlantNichtDieselbeZeit() {
+        // 06:59:40: "7:00" wäre keine Minute entfernt → der nächste Slot ist 15:00.
+        assertEquals(um(15, 0), naechsterZeitpunkt(slots, um(6, 59, 40)))
+    }
+
+    @Test
+    fun amZeitumstellungstagStimmenDieUhrzeiten() {
+        // So 25.10.2026: Ende der Sommerzeit (3:00 → 2:00). 20:05 am Samstag → 7:00 am Sonntag Ortszeit.
+        val n = naechsterZeitpunkt(slots, um(20, 5, tag = 24))
+        assertEquals(LocalTime.of(7, 0), n.toLocalTime())
+        assertEquals(LocalDate.of(2026, 10, 25), n.toLocalDate())
+    }
+}
+
 class PruefungVorbeiTest {
 
     private val heute = LocalDate.of(2026, 10, 5)

@@ -52,6 +52,14 @@ object Patchnotes {
                 "\"Freund hat auch frei\": keine Meldung mehr, wenn eine bekannte freie Zeit nur kleiner oder geteilt wird; Meldungen verschiedener Freunde überschreiben sich nicht.",
                 "Widget: Der Suche-Knopf steht nur in den breiteren Layouts, nach dem Wählen eines Treffers schließt sich die Tastatur."
             )
+        ),
+        PatchEintrag(
+            id = 5,
+            titel = "Update-Prüfung",
+            punkte = listOf(
+                "Die App sucht jetzt um 7, 15 und 20 Uhr im Hintergrund nach neuen Versionen (statt einmal täglich).",
+                "Gibt es eine neue Version, meldet sie das, und beim Öffnen der App erscheint der Hinweis zum Updaten."
+            )
         )
     )
 
