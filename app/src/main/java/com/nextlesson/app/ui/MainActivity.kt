@@ -2,6 +2,7 @@ package com.nextlesson.app.ui
 
 import android.Manifest
 import android.content.Intent
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -14,6 +15,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -54,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.nextlesson.app.data.DesignModus
@@ -61,6 +67,7 @@ import com.nextlesson.app.data.DesignStore
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.FreundTeilen
 import com.nextlesson.app.data.Lesson
+import com.nextlesson.app.data.Patchnotes
 import com.nextlesson.app.data.anzeigeName
 import com.nextlesson.app.ui.theme.NaechsteStundeTheme
 import com.nextlesson.app.widget.NextLessonWidgetReceiver
@@ -636,6 +643,11 @@ private fun AppInhalt(
             }
         }
     }
+    // Patchnotes: einmalig nach einem Update. "Gesehen" wird erst beim Schließen gemerkt.
+    val patchPrefs = remember { context.getSharedPreferences("patchnotes", Context.MODE_PRIVATE) }
+    var patchGesehen by rememberSaveable { mutableStateOf(patchPrefs.getInt("gesehen", 0)) }
+    val patchEintraege = remember(patchGesehen) { Patchnotes.ungesehen(patchGesehen) }
+
     // Hinweis auf einen neuen Build – nicht mitten in der Einrichtung und nur einmal pro Start.
     val gefundenerBuild = when (val u = update) {
         is UpdateZustand.Verfuegbar -> u.build
@@ -643,7 +655,35 @@ private fun AppInhalt(
         is UpdateZustand.Bereit -> u.build
         else -> 0
     }
-    if (gefundenerBuild != 0 && gefundenerBuild != spaeterBuild && !einrichtung) {
+    val updateDialogOffen = gefundenerBuild != 0 && gefundenerBuild != spaeterBuild && !einrichtung
+    if (patchEintraege.isNotEmpty() && !einrichtung && !updateDialogOffen) {
+        AlertDialog(
+            onDismissRequest = {
+                patchPrefs.edit().putInt("gesehen", Patchnotes.neuesteId).apply()
+                patchGesehen = Patchnotes.neuesteId
+            },
+            title = { Text(patchEintraege.first().titel) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    patchEintraege.forEachIndexed { index, eintrag ->
+                        // Der neueste Eintrag steht im Titel; ältere, noch ungesehene, bekommen eine Überschrift.
+                        if (index > 0) Text(eintrag.titel, style = MaterialTheme.typography.titleSmall)
+                        eintrag.punkte.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    patchPrefs.edit().putInt("gesehen", Patchnotes.neuesteId).apply()
+                    patchGesehen = Patchnotes.neuesteId
+                }) { Text("Verstanden") }
+            }
+        )
+    }
+    if (updateDialogOffen) {
         AlertDialog(
             onDismissRequest = { spaeterBuild = gefundenerBuild },
             title = { Text("Neue Version") },
