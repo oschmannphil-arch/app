@@ -167,3 +167,71 @@ $zusatz
         assertFalse("DEU1 findet statt", tp.lesson("DEU1").entfaellt)
     }
 }
+
+class KlausurListeTest {
+
+    private val liste = "Klausur!; BIO4 Frau Dreier fällt aus; DEU2 Frau Gladow fällt aus; " +
+        "ENG1 Herr Niemietz fällt aus; ENG2 Frau Däumer fällt aus; ENG3 Herr Bretschneider fällt aus"
+
+    private fun std(nr: Int, von: String, bis: String, fach: String, info: String) =
+        "<Std><St>$nr</St><Beginn>$von</Beginn><Ende>$bis</Ende><Fa>$fach</Fa><Le>Däu</Le><Ra>032</Ra><Nr></Nr><If>$info</If></Std>"
+
+    private fun plan(klausuren: String): GesamtPlan {
+        val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf><Klassen>
+<Kl><Kurz>12/5</Kurz><Kurse><Ku><KKz>ENG2</KKz></Ku><Ku><KKz>MAT2</KKz></Ku></Kurse><Pl>
+${std(1, "07:15", "08:00", "MAT2", "")}
+${std(3, "09:05", "09:50", "ENG2", liste)}
+${std(4, "09:50", "10:35", "ENG2", liste)}
+${std(5, "11:00", "11:45", "ENG2", liste)}
+${std(6, "11:45", "12:30", "ENG2", liste)}
+${std(7, "12:55", "13:40", "ENG2", "")}
+</Pl></Kl></Klassen>$klausuren</WplanVp>"""
+        return IndiwareXmlParser.parse(xml.byteInputStream(), "1")!!
+    }
+
+    private val eng2 = setOf("12/5::ENG2", "12/5::MAT2")
+
+    @Test
+    fun klausurListeMachtAusfallZurKlausur() {
+        val g = plan(
+            "<Klausuren><Klausur><KlJahrgang>12</KlJahrgang><KlKurs>ENG2</KlKurs>" +
+                "<KlBeginn>09:05</KlBeginn><KlDauer>180</KlDauer></Klausur></Klausuren>"
+        )
+        assertEquals(listOf(KlausurTermin("12", "ENG2", java.time.LocalTime.of(9, 5), 180)), g.klausuren)
+        val tp = g.tagesplanFuer(eng2)
+        // 3.–6. Stunde liegen im Zeitraum 09:05–12:05: Klausur, nicht Ausfall.
+        listOf(3, 4, 5, 6).forEach { nr ->
+            val l = tp.stunden.first { it.stunde == nr }
+            assertTrue("$nr. Std ist Klausur", l.istKlausur)
+            assertFalse("$nr. Std fällt nicht aus", l.entfaellt)
+        }
+        // Die 7. Stunde liegt danach – nicht Teil der Klausur.
+        assertFalse(tp.stunden.first { it.stunde == 7 }.istKlausur)
+        // Der Hinweis zeigt keine "fällt aus"-Namen mehr.
+        assertEquals("Klausur!", tp.stunden.first { it.stunde == 3 }.hinweisKurz())
+    }
+
+    @Test
+    fun klausurAndererJahrgangOderKursBetrifftMichNicht() {
+        val g = plan(
+            "<Klausuren><Klausur><KlJahrgang>11</KlJahrgang><KlKurs>ENG2</KlKurs>" +
+                "<KlBeginn>09:05</KlBeginn><KlDauer>180</KlDauer></Klausur>" +
+                "<Klausur><KlJahrgang>12</KlJahrgang><KlKurs>ENG3</KlKurs>" +
+                "<KlBeginn>09:05</KlBeginn><KlDauer>180</KlDauer></Klausur></Klausuren>"
+        )
+        val l = g.tagesplanFuer(eng2).stunden.first { it.stunde == 3 }
+        assertFalse(l.istKlausur)   // wie bisher: genannt = Ausfall
+        assertTrue(l.entfaellt)
+    }
+
+    @Test
+    fun klausurListeInDerKlasseNimmtJahrgangVonDort() {
+        val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf><Klassen>
+<Kl><Kurz>12/5</Kurz><Kurse><Ku><KKz>ENG2</KKz></Ku></Kurse><Pl>
+${std(3, "09:05", "09:50", "ENG2", liste)}
+</Pl><Klausuren><Klausur><Kurs>ENG2</Kurs><Beginn>9:05</Beginn><Dauer>90</Dauer></Klausur></Klausuren></Kl></Klassen></WplanVp>"""
+        val g = IndiwareXmlParser.parse(xml.byteInputStream(), "1")!!
+        assertEquals("12/5", g.klausuren.single().jahrgang)
+        assertTrue(g.tagesplanFuer(setOf("12/5::ENG2")).stunden.single().istKlausur)
+    }
+}

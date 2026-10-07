@@ -19,7 +19,9 @@ fun Lesson.hinweisKurz(): String {
         .toSet()
     return info.split(SATZ_GRENZE).map { it.trim() }.filter { it.isNotBlank() }.filter { satz ->
         val woerter = WORT.findAll(satz).map { it.value.lowercase() }.toSet()
-        !nenntAusfall(satz) || woerter.any { it in eigene } || !KURS_MUSTER.containsMatchIn(satz)
+        // Eine Klausurstunde "fällt" nicht aus – Ausfall-Zeilen zu Kursen (auch dem eigenen,
+        // dessen Unterricht der Klausur weicht) wären dort nur verwirrend.
+        !nenntAusfall(satz) || (!istKlausur && woerter.any { it in eigene }) || !KURS_MUSTER.containsMatchIn(satz)
     }.distinct().joinToString("; ")
 }
 

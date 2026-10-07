@@ -112,8 +112,32 @@ object IndiwareXmlParser {
 
         if (kopf.zeitstempel.isBlank() && klassen.isEmpty()) return null
 
-        return GesamtPlan(kopf = kopf, klassen = klassen)
+        return GesamtPlan(kopf = kopf, klassen = klassen, klausuren = klausurTermine(root))
     }
+
+    /**
+     * Die Klausurliste: <Klausur> mit Kurs, Jahrgang, Beginn und Dauer (Minuten). Die Feldnamen
+     * tragen je nach Schule ein Präfix ("KlKurs", "KlBeginn" …), darum zählt nur das Ende des
+     * Namens. Fehlt der Jahrgang, kommt er aus der umgebenden Klasse.
+     */
+    private fun klausurTermine(root: Element): List<KlausurTermin> =
+        root.nachfahren("Klausur").mapNotNull { el ->
+            fun feld(ende: String) = el.kinder()
+                .firstOrNull { it.tagName.endsWith(ende, ignoreCase = true) }.textOrEmpty()
+
+            val kurs = feld("Kurs")
+            val beginn = parseUhrzeit(feld("Beginn"))
+            val dauer = feld("Dauer").toIntOrNull()
+            if (kurs.isBlank() || beginn == null || dauer == null || dauer <= 0) return@mapNotNull null
+
+            var jahrgang = feld("Jahrgang")
+            if (jahrgang.isBlank()) {
+                var eltern = el.parentNode
+                while (eltern != null && !(eltern is Element && eltern.tagName in KLASSE_TAGS)) eltern = eltern.parentNode
+                jahrgang = (eltern as? Element).kind("Kurz").textOrEmpty()
+            }
+            KlausurTermin(jahrgang, kurs, beginn, dauer)
+        }.distinct()
 
     private fun klasseElement(kl: Element): KlassenPlan? {
         val name = kl.kind("Kurz").textOrEmpty()

@@ -115,10 +115,39 @@ private fun Lesson.findetStatt(klausur: Boolean) = copy(
     }
 )
 
+/**
+ * Eine Klausur laut Klausurliste des Plans ("Klausur 09:05: ENG2, Jg. 12 (180 min.)"). Das ist
+ * die verlässlichste Quelle: Stunden dieses Kurses im Zeitraum sind Klausur – auch wenn der Plan
+ * sie zugleich als "fällt aus" aufführt, weil der normale Unterricht der Klausur weicht.
+ */
+data class KlausurTermin(
+    val jahrgang: String,
+    val kurs: String,
+    val beginn: LocalTime,
+    val dauerMinuten: Int
+) {
+    /** Ende der Klausur; wäre es nach Mitternacht, gilt Mitternacht. */
+    val ende: LocalTime
+        get() = beginn.plusMinutes(dauerMinuten.toLong()).takeIf { !it.isBefore(beginn) } ?: LocalTime.MAX
+
+    /** Gehört [l] zu dieser Klausur: gleicher Kurs und Jahrgang, und die Stunde liegt im Zeitraum. */
+    fun betrifft(l: Lesson): Boolean {
+        val kurs = l.kursKuerzel?.trim().orEmpty()
+        if (!kurs.equals(this.kurs.trim(), ignoreCase = true)) return false
+        if (jahrgang.isNotBlank() && !Freizeit.jahrgang(l.klasse).equals(jahrgang.trim(), ignoreCase = true) &&
+            !l.klasse.equals(jahrgang.trim(), ignoreCase = true)
+        ) return false
+        val b = l.beginn ?: return false
+        val e = l.ende ?: return false
+        return b.isBefore(ende) && e.isAfter(beginn)
+    }
+}
+
 /** Alles, was in einer PlanKl-Datei steht – alle Klassen der Schule für diesen Tag. */
 data class GesamtPlan(
     val kopf: PlanKopf,
-    val klassen: List<KlassenPlan>
+    val klassen: List<KlassenPlan>,
+    val klausuren: List<KlausurTermin> = emptyList()
 ) {
     /** Zeitraster der ganzen Schule an diesem Tag – daraus ergeben sich die Freistunden. */
     val zeitraster: List<Zeitfenster> by lazy { zeitraster(klassen.flatMap { it.stunden }) }
@@ -248,7 +277,13 @@ data class GesamtPlan(
             }
         }
         // Was ausfällt, ist keine Klausur – egal, ob "Klausur" irgendwo im Hinweis stand.
-        val stunden = bewertet.map { if (it.entfaellt && it.istKlausur) it.copy(istKlausur = false) else it }
+        val vermutet = bewertet.map { if (it.entfaellt && it.istKlausur) it.copy(istKlausur = false) else it }
+
+        // Die Klausurliste des Plans geht vor: Stunden eines Kurses im Klausurzeitraum sind
+        // Klausur, auch wenn der Plan denselben Kurs zugleich unter "fällt aus" nennt.
+        val stunden = if (klausuren.isEmpty()) vermutet else vermutet.map { l ->
+            if (klausuren.any { it.betrifft(l) } && (l.entfaellt || !l.istKlausur)) l.findetStatt(klausur = true) else l
+        }
 
         return TagesPlan(
             kopf = kopf,
