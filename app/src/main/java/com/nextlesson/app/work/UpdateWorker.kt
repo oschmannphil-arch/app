@@ -37,27 +37,27 @@ class UpdateWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
 
     override suspend fun doWork(): Result {
         val context = applicationContext
-        try {
-            val installiert = UpdatePruefer.installierterBuild(context)
-            val angebot = try {
-                // Blockierender Netzabruf: auf dem IO-Dispatcher, nicht auf einem der wenigen Default-Threads.
-                withContext(Dispatchers.IO) { UpdatePruefer.suchen(IndiwareRepository.httpClient) }
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                // Kein Netz o. Ä.: nichts merken, der nächste Termin kommt ohnehin.
-                return Result.success()
-            }
-            UpdatePruefer.merken(context, angebot)
-            if (angebot != null && UpdateInfo.istNeuer(installiert, angebot.build) &&
-                !UpdatePruefer.schonBenachrichtigt(context, angebot.build)
-            ) {
-                if (melden(context, angebot.build)) UpdatePruefer.benachrichtigtMerken(context, angebot.build)
-            }
+        val installiert = UpdatePruefer.installierterBuild(context)
+        val angebot = try {
+            // Blockierender Netzabruf: auf dem IO-Dispatcher, nicht auf einem der wenigen Default-Threads.
+            withContext(Dispatchers.IO) { UpdatePruefer.suchen(IndiwareRepository.httpClient) }
+        } catch (e: Exception) {
+            // Wurde der Lauf von WorkManager gestoppt (Netz weg, Akku schwach), NICHT neu planen:
+            // WorkManager startet ihn selbst wieder, sobald es passt.
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            // Sonst (kein Netz, GitHub-Limit): die App soll nicht gleich selbst nachhaken.
+            UpdatePruefer.spaeterNochmal(context, FEHLER_PAUSE_MILLIS)
+            planeNaechstenTermin(context)
             return Result.success()
-        } finally {
-            // Immer den nächsten Termin setzen – auch nach einem Fehler.
-            naechstenPlanen(context, ersetzen = true)
         }
+        UpdatePruefer.merken(context, angebot)
+        if (angebot != null && UpdateInfo.istNeuer(installiert, angebot.build) &&
+            !UpdatePruefer.schonBenachrichtigt(context, angebot.build)
+        ) {
+            if (melden(context, angebot.build)) UpdatePruefer.benachrichtigtMerken(context, angebot.build)
+        }
+        planeNaechstenTermin(context)
+        return Result.success()
     }
 
     /** True nur, wenn die Meldung auch wirklich angezeigt werden darf – sonst später noch einmal. */
@@ -95,10 +95,16 @@ class UpdateWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
         // Außerhalb von 4201–4566 (Änderungs-Meldungen: 4200 + Tag im Jahr) und 5000–5899 (Freunde).
         private const val NOTIFICATION_ID = 4600
 
+        private const val FEHLER_PAUSE_MILLIS = 60 * 60_000L
+
+        /** Am Ende eines Laufs: ersetzt den eigenen (gerade fertigen) Auftrag durch den nächsten Termin. */
+        private fun planeNaechstenTermin(context: Context) {
+            runCatching { naechstenPlanen(context, ersetzen = true) }
+        }
+
         /**
-         * Setzt den nächsten Prüf-Termin (7, 15 und 20 Uhr). Beim Start der App: bleibt ein schon
-         * geplanter Termin bestehen ([ersetzen] = false). Nach einem Lauf: ersetzt (der laufende
-         * ist ja gerade fertig). Android darf Termine im Energiesparmodus etwas verschieben.
+         * Setzt den nächsten Prüf-Termin (7, 15 und 20 Uhr). Android darf Termine im
+         * Energiesparmodus etwas verschieben.
          */
         private fun naechstenPlanen(context: Context, ersetzen: Boolean) {
             val verzoegerung = Duration.between(
@@ -120,10 +126,13 @@ class UpdateWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
             )
         }
 
-        /** Beim Start der App: sorgt dafür, dass ein Termin geplant ist (und entfernt den alten Tages-Auftrag). */
+        /**
+         * Beim Kaltstart der App: Termin neu setzen (so stimmt er auch nach einer Reise in eine andere
+         * Zeitzone oder einer Zeitumstellung) und den früheren Tages-Auftrag beenden.
+         */
         fun einplanen(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(ALTER_TAGES_AUFTRAG)
-            naechstenPlanen(context, ersetzen = false)
+            naechstenPlanen(context, ersetzen = true)
         }
     }
 }

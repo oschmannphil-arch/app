@@ -39,11 +39,12 @@ fun countdownText(bisBeginnMs: Long, bisEndeMs: Long?, laeuftPraefix: String = "
  * Zeit plant. Mit Zeitzone gerechnet (Zeitumstellung).
  */
 fun naechsterZeitpunkt(zeiten: List<LocalTime>, jetzt: ZonedDateTime = ZonedDateTime.now()): ZonedDateTime {
-    require(zeiten.isNotEmpty())
+    require(zeiten.isNotEmpty()) { "keine Uhrzeiten" }
     val fruehestens = jetzt.plusMinutes(1)
-    return (0..1).flatMap { tag -> zeiten.map { jetzt.toLocalDate().plusDays(tag.toLong()).atTime(it).atZone(jetzt.zone) } }
-        .filter { it.isAfter(fruehestens) }
-        .minOrNull() ?: jetzt.toLocalDate().plusDays(1).atTime(zeiten.min()).atZone(jetzt.zone)
+    // Heute und morgen reichen: Spätestens morgen kommt die früheste Uhrzeit wieder.
+    return (0L..1L)
+        .flatMap { tag -> zeiten.sorted().map { jetzt.toLocalDate().plusDays(tag).atTime(it).atZone(jetzt.zone) } }
+        .first { it.isAfter(fruehestens) }
 }
 
 /**

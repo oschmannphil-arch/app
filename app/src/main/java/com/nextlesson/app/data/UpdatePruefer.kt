@@ -10,8 +10,8 @@ data class UpdateAngebot(val build: Int, val url: String, val groesse: Long)
 
 /**
  * Sucht auf der Release-Seite des (öffentlichen) Repos nach dem höchsten Build und merkt sich
- * Ergebnis und Zeitpunkt – so teilen sich der tägliche Hintergrund-Check und die App ein Ergebnis,
- * und die App muss beim Öffnen meist gar nicht erst nachfragen.
+ * Ergebnis und Zeitpunkt – so teilen sich der Hintergrund-Check (7, 15 und 20 Uhr) und die App
+ * ein Ergebnis, und die App muss beim Öffnen meist gar nicht erst nachfragen.
  */
 object UpdatePruefer {
 
@@ -20,6 +20,7 @@ object UpdatePruefer {
 
     private const val PREFS = "update"
     private const val KEY_ZULETZT = "zuletzt_geprueft"
+    private const val KEY_NICHT_VOR = "nicht_vor"
     private const val KEY_BUILD = "gefunden_build"
     private const val KEY_URL = "gefunden_url"
     private const val KEY_GROESSE = "gefunden_groesse"
@@ -59,6 +60,7 @@ object UpdatePruefer {
     fun merken(context: Context, angebot: UpdateAngebot?, jetzt: Long = System.currentTimeMillis()) {
         prefs(context).edit().apply {
             putLong(KEY_ZULETZT, jetzt)
+            remove(KEY_NICHT_VOR)
             if (angebot == null) {
                 remove(KEY_BUILD); remove(KEY_URL); remove(KEY_GROESSE)
             } else {
@@ -67,9 +69,15 @@ object UpdatePruefer {
         }.apply()
     }
 
-    /** Nach einem Fehler: erst in [wartenMillis] wieder prüfen (statt bei jedem Öffnen oder erst morgen). */
+    /** Nach einem Fehler (z.B. GitHub-Limit): die App fragt erst in [wartenMillis] wieder selbst nach. */
     fun spaeterNochmal(context: Context, wartenMillis: Long, jetzt: Long = System.currentTimeMillis()) {
-        prefs(context).edit().putLong(KEY_ZULETZT, jetzt - ABSTAND_MILLIS + wartenMillis).apply()
+        prefs(context).edit().putLong(KEY_NICHT_VOR, jetzt + wartenMillis).apply()
+    }
+
+    /** Soll die App beim Öffnen selbst nachfragen? Nur, wenn die letzte Prüfung länger her ist und keine Wartezeit läuft. */
+    fun darfPruefen(context: Context, jetzt: Long = System.currentTimeMillis()): Boolean {
+        val p = prefs(context)
+        return jetzt - p.getLong(KEY_ZULETZT, 0L) >= ABSTAND_MILLIS && jetzt >= p.getLong(KEY_NICHT_VOR, 0L)
     }
 
     /** Installierter Build (= Versionscode, den die CI aus der Lauf-Nummer setzt). */
@@ -95,9 +103,10 @@ object UpdatePruefer {
 
     /**
      * So lange gilt ein Ergebnis, bevor die App beim Öffnen selbst wieder nachfragt (still im
-     * Hintergrund). Meist hat der Hintergrund-Check ([PRUEF_UHRZEITEN]) es kürzlich erledigt.
+     * Hintergrund). Länger als die größte Lücke der [PRUEF_UHRZEITEN] (20 → 7 Uhr = 11 Stunden):
+     * Normalerweise erledigt der Hintergrund-Check das; die App fragt nur nach, wenn der ausgefallen ist.
      */
-    const val ABSTAND_MILLIS = 3 * 60 * 60_000L
+    const val ABSTAND_MILLIS = 12 * 60 * 60_000L
 
     /** Wann der Hintergrund-Check läuft (Ortszeit). */
     val PRUEF_UHRZEITEN: List<java.time.LocalTime> =

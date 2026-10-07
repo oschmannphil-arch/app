@@ -67,6 +67,19 @@ class ZeitSlotsTest {
     }
 
     @Test
+    fun genauEineMinuteVorherZaehltNochNicht() {
+        assertEquals(um(15, 0), naechsterZeitpunkt(slots, um(6, 59, 0)))   // 7:00 ist genau 60 s weg: zu knapp
+        assertEquals(um(7, 0), naechsterZeitpunkt(slots, um(6, 58, 59)))   // 61 s: ok
+    }
+
+    @Test
+    fun amZeitumstellungstagIstDieVerzoegerungEineStundeLaenger() {
+        // Sa 24.10. 20:05 → So 25.10. 7:00 Ortszeit: 10 h 55 min Uhrzeitdifferenz + 1 h (Ende der Sommerzeit).
+        val jetzt = um(20, 5, tag = 24)
+        assertEquals(11 * 60 + 55L, java.time.Duration.between(jetzt, naechsterZeitpunkt(slots, jetzt)).toMinutes())
+    }
+
+    @Test
     fun amZeitumstellungstagStimmenDieUhrzeiten() {
         // So 25.10.2026: Ende der Sommerzeit (3:00 → 2:00). 20:05 am Samstag → 7:00 am Sonntag Ortszeit.
         val n = naechsterZeitpunkt(slots, um(20, 5, tag = 24))

@@ -108,7 +108,8 @@ class MainActivity : ComponentActivity() {
         EntfallNotifier.kanalAnlegen(applicationContext)
         LernErinnerung.kanalAnlegen(applicationContext)
         RefreshScheduler.periodischePruefungEinplanen(applicationContext)
-        UpdateWorker.einplanen(applicationContext)
+        // Nur beim echten Start, nicht bei jedem Drehen.
+        if (savedInstanceState == null) UpdateWorker.einplanen(applicationContext)
         // Nur beim echten Start fragen – nicht bei jedem Drehen erneut (Android zählt Ablehnungen).
         if (savedInstanceState == null) benachrichtigungErlaubnisAnfragen()
 

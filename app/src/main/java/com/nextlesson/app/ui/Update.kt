@@ -72,8 +72,8 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Beim Öffnen der App: höchstens einmal am Tag nachsehen, still im Hintergrund – und meist
-     * gar nicht, weil der tägliche Hintergrund-Check ([UpdateWorker]) das schon erledigt hat.
+     * Beim Öffnen der App: zeigt ein vom Hintergrund-Check ([UpdateWorker], 7/15/20 Uhr) gefundenes
+     * Update sofort an und fragt selbst nur nach, wenn die letzte Prüfung lange her ist.
      */
     fun automatischPruefen() {
         // Hat der Hintergrund-Check inzwischen etwas gefunden (der Prozess lebte schon), jetzt anzeigen.
@@ -84,8 +84,7 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
                 return
             }
         }
-        val zuletzt = UpdatePruefer.zuletztGeprueft(getApplication())
-        if (System.currentTimeMillis() - zuletzt < UpdatePruefer.ABSTAND_MILLIS) return
+        if (!UpdatePruefer.darfPruefen(getApplication())) return
         pruefen(still = true)
     }
 

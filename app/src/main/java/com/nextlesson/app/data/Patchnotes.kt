@@ -40,7 +40,7 @@ object Patchnotes {
                 "Freunde: Die Karte zeigt, wer in der Schule ist, wer noch kommt und wer schon fertig ist. Neu: Meldung, wenn ein Freund eine gemeinsame Freistunde mit dir bekommt (abschaltbar in den Einstellungen).",
                 "Suche: \"Zuletzt gesucht\", freie Räume zu einer oder mehreren Stunden und der Hinweis, wenn eine Lehrkraft nicht im Plan steht oder alle Stunden ausfallen.",
                 "Widget: Neuer Knopf \"Suche\" öffnet direkt die Suche mit Tastatur.",
-                "Updates: Die App prüft einmal täglich im Hintergrund und meldet neue Versionen – ohne dass der Start länger dauert."
+                "Updates: Die App prüft im Hintergrund auf neue Versionen und meldet sie – ohne dass der Start länger dauert."
             )
         ),
         PatchEintrag(
@@ -58,7 +58,7 @@ object Patchnotes {
             titel = "Update-Prüfung",
             punkte = listOf(
                 "Die App sucht jetzt um 7, 15 und 20 Uhr im Hintergrund nach neuen Versionen (statt einmal täglich).",
-                "Gibt es eine neue Version, meldet sie das, und beim Öffnen der App erscheint der Hinweis zum Updaten."
+                "Gibt es eine neue Version, zeigt die App beim Öffnen sofort den Hinweis zum Updaten."
             )
         )
     )
