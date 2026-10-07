@@ -257,4 +257,28 @@ class FreizeitTest {
         assertEquals("1.–2. Std", vor.getValue(0).stundenText)
         assertEquals(t("09:00"), vor.getValue(0).ende)
     }
+
+    @Test
+    fun anwesenheitVorDannNach() {
+        // ich: 07:15–12:30
+        assertEquals(Anwesend.NOCH_NICHT, Freizeit.anwesenheit(ich, t("07:00")).art)
+        assertEquals("kommt um 07:15", Freizeit.anwesenheit(ich, t("07:00")).text())
+        assertEquals(Anwesend.DA, Freizeit.anwesenheit(ich, t("09:00")).art)
+        assertEquals("in der Schule bis 12:30", Freizeit.anwesenheit(ich, t("09:00")).text())
+        assertEquals(Anwesend.SCHON_WEG, Freizeit.anwesenheit(ich, t("12:30")).art)
+        assertEquals("schon fertig (seit 12:30)", Freizeit.anwesenheit(ich, t("13:00")).text())
+        assertEquals(Anwesend.KEIN_UNTERRICHT, Freizeit.anwesenheit(plan(), t("09:00")).art)
+        // Ausfall der letzten Stunden verkürzt den Tag.
+        val kurz = plan(stunde(1, "07:15", "08:00", "A"), stunde(6, "11:45", "12:30", "A", entfaellt = true))
+        assertEquals(Anwesend.SCHON_WEG, Freizeit.anwesenheit(kurz, t("09:00")).art)
+    }
+
+    @Test
+    fun neueGemeinsameFreistundenWerdenErkannt() {
+        val a = Freiblock(3, 4, t("08:45"), t("11:00"))
+        val b = Freiblock(5, 5, t("11:00"), t("11:45"))
+        assertTrue(FreundFreiLogik.neu(null, listOf(a, b)).isEmpty())            // erster Abruf: nichts melden
+        assertEquals(listOf(b), FreundFreiLogik.neu(setOf(FreundFreiLogik.schluessel(a)), listOf(a, b)))
+        assertTrue(FreundFreiLogik.neu(setOf(FreundFreiLogik.schluessel(a)), listOf(a)).isEmpty())
+    }
 }

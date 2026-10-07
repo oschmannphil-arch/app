@@ -21,8 +21,36 @@ data class Freiblock(val von: Int?, val bis: Int?, val beginn: LocalTime, val en
         get() = if (von == null || bis == null) null else stundenListe((von..bis).toList())
 }
 
+enum class Anwesend { KEIN_UNTERRICHT, NOCH_NICHT, DA, SCHON_WEG }
+
+/** Ob jemand zur Uhrzeit in der Schule ist – mit Beginn der ersten und Ende der letzten Stunde. */
+data class Anwesenheit(val art: Anwesend, val beginn: LocalTime?, val ende: LocalTime?) {
+
+    /** "in der Schule bis 14:25" · "kommt um 09:05" · "schon fertig (seit 12:30)" · "kein Unterricht". */
+    fun text(): String = when (art) {
+        Anwesend.KEIN_UNTERRICHT -> "kein Unterricht"
+        Anwesend.NOCH_NICHT -> "kommt um ${beginn?.toString()}"
+        Anwesend.DA -> "in der Schule bis ${ende?.toString()}"
+        Anwesend.SCHON_WEG -> "schon fertig (seit ${ende?.toString()})"
+    }
+}
+
 /** Wann hat man frei, wann haben zwei Leute gleichzeitig frei, und welche Stunden zusammen? */
 object Freizeit {
+
+    /** Ist [plan] zur Uhrzeit [jetzt] noch nicht, gerade oder nicht mehr in der Schule? Ausfall zählt nicht. */
+    fun anwesenheit(plan: TagesPlan, jetzt: LocalTime): Anwesenheit {
+        val aktiv = plan.stunden.filter { !it.entfaellt }
+        val beginn = aktiv.mapNotNull { it.beginn }.minOrNull()
+        val ende = aktiv.mapNotNull { it.ende }.maxOrNull()
+        if (beginn == null || ende == null) return Anwesenheit(Anwesend.KEIN_UNTERRICHT, null, null)
+        val art = when {
+            jetzt.isBefore(beginn) -> Anwesend.NOCH_NICHT
+            !jetzt.isBefore(ende) -> Anwesend.SCHON_WEG
+            else -> Anwesend.DA
+        }
+        return Anwesenheit(art, beginn, ende)
+    }
 
     /** Belegte Zeiten eines Tagesplans, zusammengelegt. Ausgefallene Stunden sind frei. */
     fun belegt(plan: TagesPlan): List<Pair<LocalTime, LocalTime>> =

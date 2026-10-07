@@ -43,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -85,13 +87,26 @@ fun SucheScreen(
     favoriten: List<Treffer> = emptyList(),
     onFavorit: (Treffer) -> Unit = {},
     woche: WochenDaten<SucheWochenTag> = WochenDaten.Laedt,
-    onWocheLaden: (naechste: Boolean) -> Unit = {}
+    onWocheLaden: (naechste: Boolean) -> Unit = {},
+    verlauf: List<Treffer> = emptyList(),
+    onGewaehlt: (Treffer) -> Unit = {},
+    fokusAnfordern: Boolean = false,
+    onFokusErledigt: () -> Unit = {}
 ) {
     var anfrage by rememberSaveable { mutableStateOf("") }
     var auswahl by rememberSaveable { mutableStateOf<Treffer?>(null) }
     val jetzt by rememberJetzt()
     val istHeute = datum == LocalDate.now()
     val fokus = LocalFocusManager.current
+
+    // Vom Widget geöffnet ("Suche"): gleich in das Suchfeld, Tastatur auf.
+    val fokusAnforderer = remember { FocusRequester() }
+    LaunchedEffect(fokusAnfordern) {
+        if (fokusAnfordern) {
+            runCatching { fokusAnforderer.requestFocus() }
+            onFokusErledigt()
+        }
+    }
 
     // Zurück aus der Detailansicht führt erst zur Trefferliste, nicht aus der App.
     BackHandler(enabled = auswahl != null) { auswahl = null }
@@ -121,6 +136,7 @@ fun SucheScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 16.dp, top = 8.dp)
+                .focusRequester(fokusAnforderer)
         )
 
         TagesLeiste(datum = datum, istHeute = istHeute, onBlaettern = onBlaettern, onHeute = onHeute)
@@ -144,9 +160,13 @@ fun SucheScreen(
                         woche = woche,
                         onWocheLaden = onWocheLaden
                     )
-                    anfrage.isBlank() -> Startansicht(tag, istHeute, jetzt, zustand.ausCache, favoriten) { auswahl = it }
-                    else -> Trefferliste(tag, tag.suche(anfrage), istHeute, jetzt) {
+                    anfrage.isBlank() -> Startansicht(tag, istHeute, jetzt, zustand.ausCache, favoriten, verlauf) {
+                        onGewaehlt(it)
+                        auswahl = it
+                    }
+                    else -> Trefferliste(tag, trefferFuer(tag, anfrage, favoriten), istHeute, jetzt) {
                         fokus.clearFocus()
+                        onGewaehlt(it)
                         auswahl = it
                     }
                 }
@@ -197,9 +217,15 @@ private fun Startansicht(
     jetzt: LocalTime,
     ausCache: Boolean,
     favoriten: List<Treffer>,
+    verlauf: List<Treffer>,
     onWahl: (Treffer) -> Unit
 ) {
     val frei = remember(tag, istHeute, jetzt) { if (istHeute) tag.freieRaeume(jetzt) else null }
+    // Zuletzt gesucht: ohne die Favoriten, die stehen schon oben.
+    val zuletzt = remember(verlauf, favoriten) { verlauf.filter { it !in favoriten } }
+    var gewaehlteStunden by rememberSaveable(stateSaver = StundenSaver) { mutableStateOf(emptySet<Int>()) }
+    val raumnummern = remember(tag) { tag.raster.map { it.stunde }.distinct().sorted() }
+    val freiZuStunden = remember(tag, gewaehlteStunden) { tag.freieRaeumeIn(gewaehlteStunden) }
     // Raum → Gruppe (Haus/Etage) einmal berechnen; daraus Filter-Chips und gefilterte Liste.
     val mitGruppe = remember(frei) { frei?.map { it to raumGruppe(it.first) } }
     var gruppe by rememberSaveable { mutableStateOf<String?>(null) }
@@ -218,6 +244,18 @@ private fun Startansicht(
             }
             items(favoriten, key = { "F:" + it.schluessel }) { t ->
                 TrefferZeile(tag, t, istHeute, jetzt, onWahl)
+            }
+        }
+        if (zuletzt.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(text = "Zuletzt gesucht", style = MaterialTheme.typography.titleSmall)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(zuletzt, key = { it.schluessel }) { t ->
+                            AssistChip(onClick = { onWahl(t) }, label = { Text(t.name) })
+                        }
+                    }
+                }
             }
         }
         item {
@@ -262,6 +300,42 @@ private fun Startansicht(
                                     onClick = { onWahl(Treffer.Raum(raum)) },
                                     label = { Text(if (bis == null) raum else "$raum · bis ${bis.format(uhrzeitFormat)}") }
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (raumnummern.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(text = "Freie Räume zu einer Stunde", style = MaterialTheme.typography.titleSmall)
+                    Hinweistext("Wähle eine oder mehrere Stunden – gezeigt werden Räume, die in allen gewählten frei sind.")
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(raumnummern, key = { it }) { nr ->
+                            FilterChip(
+                                selected = nr in gewaehlteStunden,
+                                onClick = {
+                                    gewaehlteStunden =
+                                        if (nr in gewaehlteStunden) gewaehlteStunden - nr else gewaehlteStunden + nr
+                                },
+                                label = { Text("$nr.") }
+                            )
+                        }
+                    }
+                    if (gewaehlteStunden.isNotEmpty()) {
+                        Text(
+                            text = "Frei in der ${stundenListe(gewaehlteStunden.toList())} (${freiZuStunden.size})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (freiZuStunden.isEmpty()) {
+                            Hinweistext("Dann ist laut Plan jeder Raum belegt.")
+                        } else {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(freiZuStunden, key = { it }) { raum ->
+                                    AssistChip(onClick = { onWahl(Treffer.Raum(raum)) }, label = { Text(raum) })
+                                }
                             }
                         }
                     }
@@ -542,7 +616,25 @@ private fun QuellenHinweis() {
 }
 
 /** Eine Zeile Status: wo die Lehrkraft gerade ist bzw. ob der Raum frei ist. */
+/** Suchtreffer; gemerkte Favoriten, die an diesem Tag nicht im Plan stehen, werden trotzdem gefunden. */
+private fun trefferFuer(tag: SchulTag, anfrage: String, favoriten: List<Treffer>): List<Treffer> {
+    val treffer = tag.suche(anfrage)
+    val q = anfrage.trim().lowercase()
+    val fehlende = favoriten.filter { it !in treffer && q.isNotEmpty() && it.name.lowercase().contains(q) }
+    return treffer + fehlende
+}
+
+/** Gewählte Stunden für rememberSaveable. */
+private val StundenSaver = androidx.compose.runtime.saveable.Saver<Set<Int>, ArrayList<Int>>(
+    save = { ArrayList(it) },
+    restore = { it.toSet() }
+)
+
 private fun statusText(tag: SchulTag, t: Treffer, istHeute: Boolean, jetzt: LocalTime): String {
+    if (t is Treffer.Lehrer) {
+        if (tag.stundenVon(t).isEmpty()) return "an diesem Tag nicht im Plan"
+        if (tag.faelltGanzAus(t)) return "alle Stunden fallen aus"
+    }
     if (!istHeute) {
         val anzahl = tag.stundenVon(t).count { !it.entfaellt }
         return when (anzahl) {

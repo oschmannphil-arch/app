@@ -145,6 +145,18 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
         }
     }
 
+    /** Räume ohne Unterricht in ALLEN der Stunden [stunden] (Ausfall zählt als frei) – z.B. 3. und 4. Stunde. */
+    fun freieRaeumeIn(stunden: Set<Int>): List<String> {
+        if (stunden.isEmpty()) return emptyList()
+        return raeume.filter { r -> stundenVon(Treffer.Raum(r)).none { !it.entfaellt && it.stunde in stunden } }
+    }
+
+    /** Hat die Lehrkraft an diesem Tag Stunden im Plan, aber keine findet statt? */
+    fun faelltGanzAus(t: Treffer): Boolean {
+        val alle = stundenVon(t)
+        return alle.isNotEmpty() && alle.all { it.entfaellt }
+    }
+
     /** Stundennummern, in denen [t] an diesem Tag Unterricht hat (ohne Ausfall). */
     fun unterrichtsStunden(t: Treffer): List<Int> =
         stundenVon(t).filter { !it.entfaellt }.map { it.stunde }.distinct().sorted()

@@ -385,6 +385,28 @@ private fun BenachrichtigungenKarte() {
                 }
             }
 
+            var freundFrei by remember { mutableStateOf(einstellungen.freundFrei) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Freund hat auch frei",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Meldet, wenn du und ein Freund plötzlich gleichzeitig frei habt.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = freundFrei,
+                    onCheckedChange = { an ->
+                        einstellungen.freundFrei = an
+                        freundFrei = an
+                    }
+                )
+            }
+
             StatusZeile(
                 ok = erlaubt,
                 text = if (erlaubt) "Benachrichtigungen erlaubt" else "Benachrichtigungen sind aus",

@@ -31,6 +31,17 @@ object Patchnotes {
                 "Update-Download: Bei einem Fehler kannst du es direkt noch einmal versuchen; die Datei wird vor dem Installieren geprüft.",
                 "Eine Lehrkraft, die in mehreren Klassen steht, wird in der Suche nicht mehr doppelt gezählt."
             )
+        ),
+        PatchEintrag(
+            id = 3,
+            titel = "Neue Funktionen",
+            punkte = listOf(
+                "Ferien: Statt einer Fehlermeldung siehst du, wann der nächste Plan bereitsteht.",
+                "Freunde: Die Karte zeigt, wer in der Schule ist, wer noch kommt und wer schon fertig ist. Neu: Meldung, wenn ein Freund eine gemeinsame Freistunde mit dir bekommt (abschaltbar in den Einstellungen).",
+                "Suche: \"Zuletzt gesucht\", freie Räume zu einer oder mehreren Stunden und der Hinweis, wenn eine Lehrkraft nicht im Plan steht oder alle Stunden ausfallen.",
+                "Widget: Neuer Knopf \"Suche\" öffnet direkt die Suche mit Tastatur.",
+                "Updates: Die App prüft einmal täglich im Hintergrund und meldet neue Versionen – ohne dass der Start länger dauert."
+            )
         )
     )
 

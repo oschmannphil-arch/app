@@ -34,6 +34,11 @@ sealed class UiZustand {
     data class KurseWaehlen(val kurse: List<KursInfo>) : UiZustand()
     data class Angezeigt(val plan: PersoenlicherPlan) : UiZustand()
     data class Fehler(val nachricht: String, val zugangsproblem: Boolean = false) : UiZustand()
+    /**
+     * Für die nächsten Tage gibt es keinen Plan: Ferien oder freie Tage. [naechster] ist der
+     * erste Tag danach mit Plan (null = unbekannt); [gesucht] sagt, ob die Suche schon durch ist.
+     */
+    data class KeinPlan(val naechster: LocalDate?, val gesucht: Boolean) : UiZustand()
 }
 
 /** Ein einzelner Tag der Wochenansicht. */
@@ -256,7 +261,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                     _zustand.value = UiZustand.KurseWaehlen(ergebnis.plan.alleKurse)
                 }
                 is PlanResult.AuthFehler -> _zustand.value = fehlerAuth()
-                is PlanResult.KeinPlanFuerTag -> _zustand.value = fehlerKeinPlan()
+                is PlanResult.KeinPlanFuerTag -> keinPlanZeigen(creds)
                 is PlanResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
             }
             return
@@ -280,7 +285,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                 _zustand.value = UiZustand.Angezeigt(ergebnis.plan)
             }
             is PersoenlicherResult.AuthFehler -> _zustand.value = fehlerAuth()
-            is PersoenlicherResult.KeinPlan -> _zustand.value = fehlerKeinPlan()
+            is PersoenlicherResult.KeinPlan -> keinPlanZeigen(creds)
             is PersoenlicherResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
         }
     }
@@ -291,8 +296,26 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             zugangsproblem = true
         )
 
-    private fun fehlerKeinPlan() =
-        UiZustand.Fehler("Für die nächsten Tage wurde kein Plan gefunden (Ferien?).")
+    /**
+     * Ferien oder freie Tage: zeigt das sofort und sucht dann, wann es weitergeht. Die Suche
+     * (bis zu 4 Wochen voraus) läuft höchstens einmal am Tag; das Ergebnis wird gemerkt.
+     */
+    private suspend fun keinPlanZeigen(creds: IndiwareCredentials) {
+        val prefs = getApplication<Application>().getSharedPreferences("ferien", android.content.Context.MODE_PRIVATE)
+        val heute = LocalDate.now()
+        if (prefs.getLong("geprueft_am", -1L) == heute.toEpochDay()) {
+            val naechster = prefs.getLong("naechster", -1L).takeIf { it >= 0 }?.let(LocalDate::ofEpochDay)
+            _zustand.value = UiZustand.KeinPlan(naechster, gesucht = true)
+            return
+        }
+        _zustand.value = UiZustand.KeinPlan(null, gesucht = false)
+        val naechster = repository.ersterTagMitPlan(creds, heute.plusDays(8))
+        prefs.edit()
+            .putLong("geprueft_am", heute.toEpochDay())
+            .putLong("naechster", naechster?.toEpochDay() ?: -1L)
+            .apply()
+        if (_zustand.value is UiZustand.KeinPlan) _zustand.value = UiZustand.KeinPlan(naechster, gesucht = true)
+    }
 
     private fun fehlerNetz(nachricht: String) =
         UiZustand.Fehler("Keine Verbindung: $nachricht")

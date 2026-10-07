@@ -83,6 +83,14 @@ fun WochenScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item { Spacer(Modifier.height(4.dp)) }
+                    if (zustand.tage.all { it.plan == null && it.fehlermeldung == "Kein Plan veröffentlicht" }) {
+                        item {
+                            Text(
+                                text = "Für diese Woche ist noch kein Plan veröffentlicht – Ferien oder schulfrei?",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
                     items(zustand.tage, key = { it.datum.toString() }) { tag ->
                         TagKarte(tag, dunkel, blockAnsicht)
                     }

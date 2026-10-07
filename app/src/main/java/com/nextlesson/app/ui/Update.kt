@@ -15,7 +15,9 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nextlesson.app.data.IndiwareRepository
+import com.nextlesson.app.data.UpdateAngebot
 import com.nextlesson.app.data.UpdateInfo
+import com.nextlesson.app.data.UpdatePruefer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -47,7 +48,6 @@ sealed class UpdateZustand {
  */
 class UpdateViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val prefs = app.getSharedPreferences("update", Context.MODE_PRIVATE)
     // Von dem Client des Repositorys abgeleitet: teilt Verbindungen und Threads, nur mit
     // eigenen Zeitlimits (der Download der APK dauert länger als ein Planabruf).
     private val client: OkHttpClient = IndiwareRepository.httpClient.newBuilder()
@@ -67,10 +67,20 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
         if (Build.VERSION.SDK_INT >= 28) p.longVersionCode.toInt() else @Suppress("DEPRECATION") p.versionCode
     }.getOrDefault(0)
 
-    /** Beim Öffnen der App: höchstens alle 6 Stunden nachsehen, still im Hintergrund. */
+    init {
+        // Hat der tägliche Hintergrund-Check schon etwas gefunden, ist es sofort da – ohne Netzabruf.
+        UpdatePruefer.gefunden(app, installiert)?.let {
+            _zustand.value = UpdateZustand.Verfuegbar(it.build, it.url, it.groesse)
+        }
+    }
+
+    /**
+     * Beim Öffnen der App: höchstens einmal am Tag nachsehen, still im Hintergrund – und meist
+     * gar nicht, weil der tägliche Hintergrund-Check ([UpdateWorker]) das schon erledigt hat.
+     */
     fun automatischPruefen() {
-        val zuletzt = prefs.getLong(KEY_ZULETZT, 0L)
-        if (System.currentTimeMillis() - zuletzt < ABSTAND_MILLIS) return
+        val zuletzt = UpdatePruefer.zuletztGeprueft(getApplication())
+        if (System.currentTimeMillis() - zuletzt < UpdatePruefer.ABSTAND_MILLIS) return
         pruefen(still = true)
     }
 
@@ -86,11 +96,11 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
         job = viewModelScope.launch {
             val ergebnis = runCatching { withContext(Dispatchers.IO) { neuesteSuchen() } }
             ergebnis.onSuccess { neu ->
-                prefs.edit().putLong(KEY_ZULETZT, System.currentTimeMillis()).apply()
+                UpdatePruefer.merken(getApplication(), neu?.let { UpdateAngebot(it.build, it.url, it.groesse) })
                 _zustand.value = if (neu != null && UpdateInfo.istNeuer(installiert, neu.build)) neu else UpdateZustand.Aktuell
             }.onFailure { fehler ->
                 // Auch nach einem Fehlschlag nicht bei jedem Öffnen neu anfragen: erst in 30 Minuten wieder.
-                prefs.edit().putLong(KEY_ZULETZT, System.currentTimeMillis() - ABSTAND_MILLIS + WIEDER_NACH_FEHLER_MILLIS).apply()
+                UpdatePruefer.spaeterNochmal(getApplication(), UpdatePruefer.ABSTAND_MILLIS, WIEDER_NACH_FEHLER_MILLIS)
                 _zustand.value = when {
                     // Eine schon bekannte Aktualisierung bleibt bekannt, auch wenn die Nachfrage scheitert.
                     vorher is UpdateZustand.Verfuegbar -> vorher
@@ -103,34 +113,8 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun neuesteSuchen(): UpdateZustand.Verfuegbar? {
-        val request = Request.Builder()
-            .url("https://api.github.com/repos/$REPO/releases?per_page=15")
-            .header("Accept", "application/vnd.github+json")
-            .build()
-        client.newCall(request).execute().use { antwort ->
-            check(antwort.isSuccessful) { "HTTP ${antwort.code}" }
-            val liste = JSONArray(antwort.body?.string().orEmpty())
-            var beste: UpdateZustand.Verfuegbar? = null
-            for (i in 0 until liste.length()) {
-                val release = liste.getJSONObject(i)
-                val build = UpdateInfo.buildAusTag(release.optString("tag_name")) ?: continue
-                if (beste != null && build <= beste.build) continue
-                val assets = release.optJSONArray("assets") ?: continue
-                for (j in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(j)
-                    if (asset.optString("name") == APK_NAME) {
-                        beste = UpdateZustand.Verfuegbar(
-                            build = build,
-                            url = asset.getString("browser_download_url"),
-                            groesse = asset.optLong("size", 0L)
-                        )
-                    }
-                }
-            }
-            return beste
-        }
-    }
+    private fun neuesteSuchen(): UpdateZustand.Verfuegbar? =
+        UpdatePruefer.suchen(client)?.let { UpdateZustand.Verfuegbar(it.build, it.url, it.groesse) }
 
     fun herunterladen() {
         val zustand = _zustand.value
@@ -239,10 +223,7 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
-        const val REPO = "oschmannphil-arch/app"
-        const val APK_NAME = "NaechsteStunde.apk"
-        const val KEY_ZULETZT = "zuletzt_geprueft"
-        const val ABSTAND_MILLIS = 6 * 60 * 60_000L
+        const val APK_NAME = UpdatePruefer.APK_NAME
         const val WIEDER_NACH_FEHLER_MILLIS = 30 * 60_000L
     }
 }

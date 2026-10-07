@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nextlesson.app.data.CredentialsStore
 import com.nextlesson.app.data.FavoritenStore
+import com.nextlesson.app.data.SuchVerlauf
 import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.data.PlanResult
 import com.nextlesson.app.data.Quelle
@@ -38,6 +39,15 @@ class SucheViewModel(app: Application) : AndroidViewModel(app) {
     private val credentialsStore by lazy { CredentialsStore(app) }
     private val repository = IndiwareRepository(app)
     private val favoritenStore = FavoritenStore(app)
+    private val verlaufStore = SuchVerlauf(app)
+
+    private val _verlauf = MutableStateFlow<List<Treffer>>(verlaufStore.laden())
+    /** Die zuletzt gewählten Lehrkräfte und Räume, neueste zuerst. */
+    val verlauf: StateFlow<List<Treffer>> = _verlauf.asStateFlow()
+
+    fun gewaehlt(t: Treffer) {
+        _verlauf.value = verlaufStore.merken(t)
+    }
 
     val favoriten: StateFlow<List<Treffer>> = favoritenStore.favoriten
 

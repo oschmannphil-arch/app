@@ -151,4 +151,30 @@ ${std(1, "07:15", "08:00", "DEU3", "Mei", "031", liste)}
         assertEquals(LocalDate.of(2026, 10, 5), wochenReferenz(-1, samstag))
         assertEquals(dienstag, wochenReferenz(0, dienstag))
     }
+
+    @Test
+    fun freieRaeumeZuStunden() {
+        val t = schultag()
+        // 226: Std 1, 2 belegt; 235: nur Std 3; 121: nur Std 4; 204/205: nur Std 5.
+        assertEquals(listOf("121", "204", "205", "226"), t.freieRaeumeIn(setOf(3)).filter { it != "235" })
+        assertTrue("235" !in t.freieRaeumeIn(setOf(3)))
+        assertTrue("226" !in t.freieRaeumeIn(setOf(1, 3)))   // in der 1. belegt
+        assertTrue("226" in t.freieRaeumeIn(setOf(3, 4)))    // 3. und 4. beide frei
+        assertTrue("121" !in t.freieRaeumeIn(setOf(3, 4)))   // in der 4. belegt
+        assertTrue(t.freieRaeumeIn(emptySet()).isEmpty())
+    }
+
+    @Test
+    fun lehrkraftMitNurAusfaellen() {
+        val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf><Klassen>
+<Kl><Kurz>12/5</Kurz><Kurse><Ku><KKz>MAT2</KKz></Ku></Kurse><Pl>
+${std(1, "07:15", "08:00", "MAT2", "Weis", "226", "fällt aus")}
+${std(2, "08:00", "08:45", "MAT2", "Weis", "226", "fällt aus")}
+${std(3, "09:05", "09:50", "MAT2", "Mei", "226")}
+</Pl></Kl></Klassen></WplanVp>"""
+        val t = SchulTag(dienstag, IndiwareXmlParser.parse(xml.byteInputStream(), "1")!!)
+        assertTrue(t.faelltGanzAus(Treffer.Lehrer("Weis")))
+        assertTrue(!t.faelltGanzAus(Treffer.Lehrer("Mei")))
+        assertTrue(!t.faelltGanzAus(Treffer.Lehrer("Unbekannt")))   // nicht im Plan ≠ fällt aus
+    }
 }

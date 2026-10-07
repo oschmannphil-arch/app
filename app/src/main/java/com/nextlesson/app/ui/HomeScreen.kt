@@ -112,6 +112,47 @@ fun FehlerScreen(
     }
 }
 
+/** Ferien oder freie Tage: freundlicher als eine Fehlermeldung, mit dem nächsten Planstand, wenn bekannt. */
+@Composable
+fun KeinPlanScreen(naechster: LocalDate?, gesucht: Boolean, onNeuPruefen: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "Schulfrei?", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Für die nächsten Tage ist kein Plan veröffentlicht – vermutlich Ferien oder ein freier Tag.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+        when {
+            naechster != null -> Text(
+                text = "Der nächste Plan steht für ${naechster.format(tagFormat)} bereit.",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            gesucht -> Text(
+                text = "In den nächsten vier Wochen ist noch keiner eingestellt. Sobald die Schule einen veröffentlicht, erscheint er hier.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            else -> Text(
+                text = "Ich schaue nach, wann es weitergeht …",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = onNeuPruefen) { Text("Erneut prüfen") }
+    }
+}
+
 /** Zusammenfassung von Hausaufgaben und nächster Klausur für die Startseite. */
 data class Uebersicht(
     val offeneAufgaben: Int,

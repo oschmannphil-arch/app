@@ -197,6 +197,21 @@ class IndiwareRepository(context: Context) {
         frisch[key] = Eintrag(ergebnis, jetzt)
     }
 
+    /**
+     * Der erste Tag ab [ab] (höchstens [maxTage] Tage weit), für den ein Plan veröffentlicht ist –
+     * für "Ferien: der nächste Plan steht für … bereit". Null, wenn keiner da ist oder der Abruf scheitert.
+     */
+    suspend fun ersterTagMitPlan(creds: IndiwareCredentials, ab: LocalDate, maxTage: Int = 28): LocalDate? {
+        var versatz = 0
+        while (versatz < maxTage) {
+            val tage = holeTage(creds, ab.plusDays(versatz.toLong()), anzahl = minOf(7, maxTage - versatz))
+            tage.firstOrNull { it.second is PlanResult.Success }?.let { return it.first }
+            if (tage.any { it.second is PlanResult.AuthFehler || it.second is PlanResult.NetzwerkFehler }) return null
+            versatz += 7
+        }
+        return null
+    }
+
     /** Wie [holeTage], aber nur aus dem lokalen Speicher – ohne Netz und ohne Warten. */
     suspend fun holeTageAusCache(
         creds: IndiwareCredentials,

@@ -102,6 +102,8 @@ fun FreundeKarte(
     val heute = remember(tage, persoenlich) {
         tage.map { (_, plan) -> freundHeute(persoenlich.plan, plan, persoenlich.gesamt.zeitraster) }
     }
+    // Wer ist gerade (noch nicht / nicht mehr) in der Schule? Nur für heute.
+    val anwesend = remember(tage, jetzt) { tage.map { (_, plan) -> Freizeit.anwesenheit(plan, jetzt) } }
     // "Wer ist gerade frei?" – nur für den heutigen Tag sinnvoll.
     val gerade = remember(tage, persoenlich, jetzt) {
         if (!persoenlich.istHeute) emptyList()
@@ -154,7 +156,7 @@ fun FreundeKarte(
                         )
                         if (h.unterricht != null) {
                             Text(
-                                text = "in der Schule ${h.unterricht}",
+                                text = if (persoenlich.istHeute) anwesend[index].text() else "in der Schule ${h.unterricht}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

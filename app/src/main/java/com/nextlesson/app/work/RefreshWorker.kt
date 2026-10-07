@@ -7,6 +7,9 @@ import com.nextlesson.app.data.AufgabenStore
 import com.nextlesson.app.data.CredentialsStore
 import com.nextlesson.app.data.PlanKlausur
 import com.nextlesson.app.data.Aenderung
+import com.nextlesson.app.data.Freizeit
+import com.nextlesson.app.data.FreundFreiTracker
+import com.nextlesson.app.data.FreundeStore
 import com.nextlesson.app.data.AenderungsTracker
 import com.nextlesson.app.data.BenachrichtigungsEinstellungen
 import com.nextlesson.app.data.IndiwareRepository
@@ -60,6 +63,10 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         val heute = LocalDate.now()
         val jetzt = LocalTime.now()
         aenderungsTracker.aufraeumen(heute)
+        val freundFreiTracker = FreundFreiTracker(applicationContext)
+        freundFreiTracker.aufraeumen(heute)
+        val freundFreiAn = BenachrichtigungsEinstellungen(applicationContext).freundFrei
+        val freunde = if (freundFreiAn) FreundeStore(applicationContext).freunde.value else emptyList()
         val repository = IndiwareRepository(applicationContext)
         repository.aufraeumen()
 
@@ -122,6 +129,15 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
 
                 // Klausuren aus dem Plan (nur eigene Kurse, da der Plan schon gefiltert ist).
                 klausurenProTag[datum] = PlanKlausur.ausStunden(datum, plan.stunden)
+
+                // Neue gemeinsame Freistunde mit einem Freund (z.B. weil bei ihm etwas ausfällt).
+                freunde.forEach { f ->
+                    val frei = Freizeit.gemeinsamFrei(plan, gesamt.tagesplanFuer(f.kurse), gesamt.zeitraster)
+                    val stand = 31 * kurse.hashCode() + f.kurse.hashCode()
+                    val neu = freundFreiTracker.neueBloecke(datum, f.id, stand, frei)
+                        .filter { datum.isAfter(heute) || it.ende.isAfter(jetzt) }
+                    FreundNotifier.melden(applicationContext, datum, f, neu)
+                }
             }
 
             // 2. Erste passende Stunde für das Widget suchen.

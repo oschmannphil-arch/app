@@ -1,6 +1,7 @@
 package com.nextlesson.app.widget
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -20,6 +21,8 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.LocalContext
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -37,6 +40,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.color.ColorProvider
 import com.nextlesson.app.R
 import com.nextlesson.app.data.WidgetDataStore
+import com.nextlesson.app.ui.MainActivity
 import com.nextlesson.app.work.RefreshScheduler
 
 /**
@@ -155,6 +159,7 @@ class NextLessonWidget : GlanceAppWidget() {
                         maxLines = 1
                     )
                 }
+                SucheKnopf(scaled)
             }
         } else {
             Row(
@@ -181,8 +186,27 @@ class NextLessonWidget : GlanceAppWidget() {
                             .padding(horizontal = 9.dp, vertical = 3.dp)
                     )
                 }
+                SucheKnopf(scaled)
             }
         }
+    }
+
+    /** "Suche": öffnet die App direkt in der Lehrer-/Raumsuche, Tastatur auf. */
+    @Composable
+    private fun SucheKnopf(scaled: (Int) -> TextUnit) {
+        val context = LocalContext.current
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(MainActivity.EXTRA_OEFFNE, MainActivity.OEFFNE_SUCHE)
+        }
+        Text(
+            text = "Suche",
+            style = TextStyle(color = TextStark, fontSize = scaled(11), fontWeight = FontWeight.Bold),
+            maxLines = 1,
+            modifier = GlanceModifier
+                .padding(start = 10.dp, top = 2.dp, bottom = 2.dp)
+                .clickable(actionStartActivity(intent))
+        )
     }
 
     @Composable

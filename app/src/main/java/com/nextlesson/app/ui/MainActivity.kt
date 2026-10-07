@@ -74,7 +74,9 @@ import com.nextlesson.app.widget.NextLessonWidgetReceiver
 import com.nextlesson.app.work.EntfallNotifier
 import com.nextlesson.app.work.LernErinnerung
 import com.nextlesson.app.work.RefreshScheduler
+import com.nextlesson.app.work.UpdateWorker
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
@@ -87,6 +89,8 @@ class MainActivity : ComponentActivity() {
     private val freundeViewModel: FreundeViewModel by viewModels()
     private val updateViewModel: UpdateViewModel by viewModels()
     private lateinit var design: DesignStore
+    /** Vom Widget ("Suche") gesetzt: Suche öffnen. Wird von der Oberfläche verbraucht. */
+    private val sucheOeffnen = MutableStateFlow(false)
 
     private val benachrichtigungAnfrage =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* Ergebnis egal */ }
@@ -99,11 +103,12 @@ class MainActivity : ComponentActivity() {
         // verwendet" (Android liefert dann den ursprünglichen Link erneut) – nur beim echten
         // Start auswerten.
         val ausVerlauf = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        if (savedInstanceState == null && !ausVerlauf) freundLinkAuswerten(intent)
+        if (savedInstanceState == null && !ausVerlauf) intentAuswerten(intent)
 
         EntfallNotifier.kanalAnlegen(applicationContext)
         LernErinnerung.kanalAnlegen(applicationContext)
         RefreshScheduler.periodischePruefungEinplanen(applicationContext)
+        UpdateWorker.einplanen(applicationContext)
         // Nur beim echten Start fragen – nicht bei jedem Drehen erneut (Android zählt Ablehnungen).
         if (savedInstanceState == null) benachrichtigungErlaubnisAnfragen()
 
@@ -126,7 +131,7 @@ class MainActivity : ComponentActivity() {
             }
             NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben) {
                 Surface {
-                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel)
+                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel, sucheOeffnen)
                 }
             }
         }
@@ -134,13 +139,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        freundLinkAuswerten(intent)
+        intentAuswerten(intent)
     }
 
-    /** Ein angetippter Kurs-Link ("nextlesson://freund?…") wird als Freund vorgeschlagen. */
-    private fun freundLinkAuswerten(intent: Intent?) {
+    /** Ein angetippter Kurs-Link ("nextlesson://freund?…") wird als Freund vorgeschlagen; "Suche" vom Widget öffnet die Suche. */
+    private fun intentAuswerten(intent: Intent?) {
+        if (intent?.getStringExtra(EXTRA_OEFFNE) == OEFFNE_SUCHE) sucheOeffnen.value = true
         if (intent?.action != Intent.ACTION_VIEW) return
         FreundTeilen.lesen(intent?.dataString)?.let { freundeViewModel.importVorschlagen(it) }
+    }
+
+    companion object {
+        const val EXTRA_OEFFNE = "oeffne"
+        const val OEFFNE_SUCHE = "suche"
     }
 
     /** Beim Öffnen immer frisch nachsehen – nicht auf den 15-Minuten-Takt warten. */
@@ -200,7 +211,8 @@ private fun AppInhalt(
     sucheViewModel: SucheViewModel,
     freundeViewModel: FreundeViewModel,
     design: DesignStore,
-    updateViewModel: UpdateViewModel
+    updateViewModel: UpdateViewModel,
+    sucheOeffnen: MutableStateFlow<Boolean>
 ) {
     val update by updateViewModel.zustand.collectAsState()
     // Welchen Build der Nutzer im Hinweis auf "Später" gesetzt hat – bis zum nächsten Start Ruhe.
@@ -217,6 +229,9 @@ private fun AppInhalt(
     val sucheZustand by sucheViewModel.zustand.collectAsState()
     val sucheDatum by sucheViewModel.datum.collectAsState()
     val favoriten by sucheViewModel.favoriten.collectAsState()
+    val verlauf by sucheViewModel.verlauf.collectAsState()
+    val sucheVomWidget by sucheOeffnen.collectAsState()
+    var sucheFokus by remember { mutableStateOf(false) }
     val sucheWoche by sucheViewModel.woche.collectAsState()
     val importVorschlag by freundeViewModel.importVorschlag.collectAsState()
     val freundeWoche by freundeViewModel.woche.collectAsState()
@@ -265,6 +280,19 @@ private fun AppInhalt(
             gruppeOffen = false
             entwurfId = it.id
         }
+    }
+
+    // "Suche" im Widget: in die Suche wechseln und ins Suchfeld – außer es wird gerade etwas bearbeitet.
+    LaunchedEffect(sucheVomWidget) {
+        if (!sucheVomWidget) return@LaunchedEffect
+        if (entwurfId == null && !zeigeKurse && zustand !is UiZustand.KurseWaehlen && zustand !is UiZustand.LoginNoetig) {
+            zeigeEinstellungen = false
+            freundAnsicht = null
+            gruppeOffen = false
+            tab = Tab.SUCHE
+            sucheFokus = true
+        }
+        sucheOeffnen.value = false
     }
 
     // Nach einer Kursänderung oder einem Neu-Laden steht die Woche auf "nicht geladen".
@@ -585,6 +613,11 @@ private fun AppInhalt(
                                 onBlockAnsicht = design::blockAnsichtSetzen,
                                 onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
                             )
+                            is UiZustand.KeinPlan -> KeinPlanScreen(
+                                naechster = z.naechster,
+                                gesucht = z.gesucht,
+                                onNeuPruefen = { planViewModel.aktualisieren() }
+                            )
                             is UiZustand.Fehler -> FehlerScreen(
                                 nachricht = z.nachricht,
                                 zugangsproblem = z.zugangsproblem,
@@ -630,7 +663,11 @@ private fun AppInhalt(
                             favoriten = favoriten,
                             onFavorit = sucheViewModel::favoritUmschalten,
                             woche = sucheWoche,
-                            onWocheLaden = sucheViewModel::wocheLaden
+                            onWocheLaden = sucheViewModel::wocheLaden,
+                            verlauf = verlauf,
+                            onGewaehlt = sucheViewModel::gewaehlt,
+                            fokusAnfordern = sucheFokus,
+                            onFokusErledigt = { sucheFokus = false }
                         )
                     }
 
