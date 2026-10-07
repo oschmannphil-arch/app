@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +38,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -76,6 +78,7 @@ class MainActivity : ComponentActivity() {
     private val aufgabenViewModel: AufgabenViewModel by viewModels()
     private val sucheViewModel: SucheViewModel by viewModels()
     private val freundeViewModel: FreundeViewModel by viewModels()
+    private val updateViewModel: UpdateViewModel by viewModels()
     private lateinit var design: DesignStore
 
     private val benachrichtigungAnfrage =
@@ -116,7 +119,7 @@ class MainActivity : ComponentActivity() {
             }
             NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben) {
                 Surface {
-                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel, design)
+                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel)
                 }
             }
         }
@@ -137,6 +140,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         planViewModel.ladeGespeichertUndAktualisiere()
+        updateViewModel.automatischPruefen()
         // Erst nach ein paar Sekunden: Der Worker lädt sieben Tage und würde sonst Netz und
         // CPU mit dem Laden der sichtbaren Seite teilen – die App wirkte dadurch langsam.
         RefreshScheduler.sofortAktualisieren(applicationContext, verzoegerungSekunden = 5)
@@ -171,8 +175,12 @@ private fun AppInhalt(
     aufgabenViewModel: AufgabenViewModel,
     sucheViewModel: SucheViewModel,
     freundeViewModel: FreundeViewModel,
-    design: DesignStore
+    design: DesignStore,
+    updateViewModel: UpdateViewModel
 ) {
+    val update by updateViewModel.zustand.collectAsState()
+    // Welchen Build der Nutzer im Hinweis auf "Später" gesetzt hat – bis zum nächsten Start Ruhe.
+    var spaeterBuild by rememberSaveable { mutableStateOf(0) }
     val zustand by planViewModel.zustand.collectAsState()
     val wochenZustand by planViewModel.wochenZustand.collectAsState()
     val hausaufgaben by aufgabenViewModel.hausaufgaben.collectAsState()
@@ -462,7 +470,20 @@ private fun AppInhalt(
                         onModus = design::modusSetzen,
                         fachNamen = fachNamen,
                         fachFarben = design.fachFarben,
-                        onFachFarbe = design::fachFarbeSetzen
+                        onFachFarbe = design::fachFarbeSetzen,
+                        update = update,
+                        installierterBuild = updateViewModel.installiert,
+                        onUpdatePruefen = { updateViewModel.pruefen() },
+                        onUpdateLaden = updateViewModel::herunterladen,
+                        onUpdateInstallieren = {
+                            if (!updateViewModel.installieren(context)) {
+                                Toast.makeText(
+                                    context,
+                                    "Erlaube die Installation für diese App und tippe dann erneut auf Installieren.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
                     )
                 }
 
@@ -615,6 +636,46 @@ private fun AppInhalt(
             }
         }
     }
+    // Hinweis auf einen neuen Build – nicht mitten in der Einrichtung und nur einmal pro Start.
+    val gefundenerBuild = when (val u = update) {
+        is UpdateZustand.Verfuegbar -> u.build
+        is UpdateZustand.Laedt -> u.build
+        is UpdateZustand.Bereit -> u.build
+        else -> 0
+    }
+    if (gefundenerBuild != 0 && gefundenerBuild != spaeterBuild && !einrichtung) {
+        AlertDialog(
+            onDismissRequest = { spaeterBuild = gefundenerBuild },
+            title = { Text("Neue Version") },
+            text = {
+                Text(
+                    when (val u = update) {
+                        is UpdateZustand.Laedt -> "Lade Build ${u.build} … ${u.prozent} %"
+                        is UpdateZustand.Bereit -> "Build ${u.build} ist heruntergeladen und bereit zum Installieren."
+                        else -> "Build $gefundenerBuild ist verfügbar (du hast ${updateViewModel.installiert})."
+                    }
+                )
+            },
+            confirmButton = {
+                when (update) {
+                    is UpdateZustand.Verfuegbar ->
+                        TextButton(onClick = { updateViewModel.herunterladen() }) { Text("Herunterladen") }
+                    is UpdateZustand.Bereit -> TextButton(onClick = {
+                        if (!updateViewModel.installieren(context)) {
+                            Toast.makeText(
+                                context,
+                                "Erlaube die Installation für diese App und tippe dann erneut auf Installieren.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }) { Text("Installieren") }
+                    else -> Unit
+                }
+            },
+            dismissButton = { TextButton(onClick = { spaeterBuild = gefundenerBuild }) { Text("Später") } }
+        )
+    }
+
     aufgabeAusStunde?.let { (lesson, _) ->
         HausaufgabeDialog(
             vorschlagFach = lesson.anzeigeName().orEmpty(),

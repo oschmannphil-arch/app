@@ -89,7 +89,12 @@ fun EinstellungenScreen(
     onModus: (DesignModus) -> Unit = {},
     fachNamen: List<String> = emptyList(),
     fachFarben: Map<String, Int> = emptyMap(),
-    onFachFarbe: (String, Int?) -> Unit = { _, _ -> }
+    onFachFarbe: (String, Int?) -> Unit = { _, _ -> },
+    update: UpdateZustand = UpdateZustand.Unbekannt,
+    installierterBuild: Int = 0,
+    onUpdatePruefen: () -> Unit = {},
+    onUpdateLaden: () -> Unit = {},
+    onUpdateInstallieren: () -> Unit = {}
 ) {
     var farbDialog by rememberSaveable { mutableStateOf(false) }
     var schulnummer by remember { mutableStateOf(credentials?.schulnummer.orEmpty()) }
@@ -296,6 +301,7 @@ fun EinstellungenScreen(
             Text("Zugang speichern")
         }
 
+        UpdateKarte(update, installierterBuild, onUpdatePruefen, onUpdateLaden, onUpdateInstallieren)
         VersionsZeile()
         Spacer(Modifier.height(24.dp))
     }
@@ -562,4 +568,51 @@ private fun VersionsZeile() {
             .padding(top = 8.dp),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center
     )
+}
+
+/** App-Update: neuen Build suchen, herunterladen und installieren. */
+@Composable
+private fun UpdateKarte(
+    update: UpdateZustand,
+    installiert: Int,
+    onPruefen: () -> Unit,
+    onLaden: () -> Unit,
+    onInstallieren: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("App-Update", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = when (update) {
+                    is UpdateZustand.Unbekannt -> "Du hast Build $installiert."
+                    is UpdateZustand.Sucht -> "Suche nach Updates …"
+                    is UpdateZustand.Aktuell -> "Build $installiert ist der neueste."
+                    is UpdateZustand.Verfuegbar -> "Build ${update.build} ist verfügbar (du hast $installiert)."
+                    is UpdateZustand.Laedt -> "Lade Build ${update.build} … ${update.prozent} %"
+                    is UpdateZustand.Bereit -> "Build ${update.build} ist heruntergeladen."
+                    is UpdateZustand.Fehler -> update.nachricht
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (update is UpdateZustand.Fehler) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            when (update) {
+                is UpdateZustand.Verfuegbar -> Button(onClick = onLaden, modifier = Modifier.fillMaxWidth()) {
+                    Text("Herunterladen")
+                }
+                is UpdateZustand.Bereit -> Button(onClick = onInstallieren, modifier = Modifier.fillMaxWidth()) {
+                    Text("Installieren")
+                }
+                is UpdateZustand.Sucht, is UpdateZustand.Laedt -> Unit
+                else -> OutlinedButton(onClick = onPruefen, modifier = Modifier.fillMaxWidth()) {
+                    Text("Nach Update suchen")
+                }
+            }
+        }
+    }
 }
