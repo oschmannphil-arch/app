@@ -65,6 +65,7 @@ import com.nextlesson.app.data.anzeigeName
 import com.nextlesson.app.data.raumGruppe
 import com.nextlesson.app.data.stundenListe
 import com.nextlesson.app.data.wochenReferenz
+import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -103,7 +104,11 @@ fun SucheScreen(
     val fokusAnforderer = remember { FocusRequester() }
     LaunchedEffect(fokusAnfordern) {
         if (fokusAnfordern) {
-            runCatching { fokusAnforderer.requestFocus() }
+            // Beim Kaltstart ist das Fenster oft noch nicht bereit: ein paar Mal kurz erneut versuchen.
+            for (versuch in 0 until 6) {
+                if (runCatching { fokusAnforderer.requestFocus() }.isSuccess) break
+                delay(100)
+            }
             onFokusErledigt()
         }
     }
@@ -161,6 +166,8 @@ fun SucheScreen(
                         onWocheLaden = onWocheLaden
                     )
                     anfrage.isBlank() -> Startansicht(tag, istHeute, jetzt, zustand.ausCache, favoriten, verlauf) {
+                        // Tastatur zu (auch wenn die Suche vom Widget mit offener Tastatur kam).
+                        fokus.clearFocus()
                         onGewaehlt(it)
                         auswahl = it
                     }
@@ -615,7 +622,6 @@ private fun QuellenHinweis() {
     )
 }
 
-/** Eine Zeile Status: wo die Lehrkraft gerade ist bzw. ob der Raum frei ist. */
 /** Suchtreffer; gemerkte Favoriten, die an diesem Tag nicht im Plan stehen, werden trotzdem gefunden. */
 private fun trefferFuer(tag: SchulTag, anfrage: String, favoriten: List<Treffer>): List<Treffer> {
     val treffer = tag.suche(anfrage)
@@ -630,11 +636,11 @@ private val StundenSaver = androidx.compose.runtime.saveable.Saver<Set<Int>, Arr
     restore = { it.toSet() }
 )
 
+/** Eine Zeile Status: wo die Lehrkraft gerade ist bzw. ob der Raum frei ist. */
 private fun statusText(tag: SchulTag, t: Treffer, istHeute: Boolean, jetzt: LocalTime): String {
-    if (t is Treffer.Lehrer) {
-        if (tag.stundenVon(t).isEmpty()) return "an diesem Tag nicht im Plan"
-        if (tag.faelltGanzAus(t)) return "alle Stunden fallen aus"
-    }
+    // Gemerkte Favoriten können an diesem Tag fehlen – nicht als "frei" ausgeben, was gar nicht im Plan steht.
+    if (tag.stundenVon(t).isEmpty()) return "an diesem Tag nicht im Plan"
+    if (t is Treffer.Lehrer && tag.faelltGanzAus(t)) return "alle Stunden fallen aus"
     if (!istHeute) {
         val anzahl = tag.stundenVon(t).count { !it.entfaellt }
         return when (anzahl) {

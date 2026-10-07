@@ -62,10 +62,7 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     private var job: Job? = null
 
     /** Installierter Build (= Versionscode, den die CI aus der Lauf-Nummer setzt). */
-    val installiert: Int = runCatching {
-        val p = app.packageManager.getPackageInfo(app.packageName, 0)
-        if (Build.VERSION.SDK_INT >= 28) p.longVersionCode.toInt() else @Suppress("DEPRECATION") p.versionCode
-    }.getOrDefault(0)
+    val installiert: Int = UpdatePruefer.installierterBuild(app)
 
     init {
         // Hat der tägliche Hintergrund-Check schon etwas gefunden, ist es sofort da – ohne Netzabruf.
@@ -79,6 +76,14 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
      * gar nicht, weil der tägliche Hintergrund-Check ([UpdateWorker]) das schon erledigt hat.
      */
     fun automatischPruefen() {
+        // Hat der Hintergrund-Check inzwischen etwas gefunden (der Prozess lebte schon), jetzt anzeigen.
+        val vorher = _zustand.value
+        if (vorher !is UpdateZustand.Laedt && vorher !is UpdateZustand.Bereit && vorher !is UpdateZustand.Verfuegbar) {
+            UpdatePruefer.gefunden(getApplication(), installiert)?.let {
+                _zustand.value = UpdateZustand.Verfuegbar(it.build, it.url, it.groesse)
+                return
+            }
+        }
         val zuletzt = UpdatePruefer.zuletztGeprueft(getApplication())
         if (System.currentTimeMillis() - zuletzt < UpdatePruefer.ABSTAND_MILLIS) return
         pruefen(still = true)
@@ -100,7 +105,7 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
                 _zustand.value = if (neu != null && UpdateInfo.istNeuer(installiert, neu.build)) neu else UpdateZustand.Aktuell
             }.onFailure { fehler ->
                 // Auch nach einem Fehlschlag nicht bei jedem Öffnen neu anfragen: erst in 30 Minuten wieder.
-                UpdatePruefer.spaeterNochmal(getApplication(), UpdatePruefer.ABSTAND_MILLIS, WIEDER_NACH_FEHLER_MILLIS)
+                UpdatePruefer.spaeterNochmal(getApplication(), WIEDER_NACH_FEHLER_MILLIS)
                 _zustand.value = when {
                     // Eine schon bekannte Aktualisierung bleibt bekannt, auch wenn die Nachfrage scheitert.
                     vorher is UpdateZustand.Verfuegbar -> vorher

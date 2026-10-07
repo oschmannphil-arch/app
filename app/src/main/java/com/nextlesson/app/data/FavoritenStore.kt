@@ -26,15 +26,7 @@ class FavoritenStore(context: Context) {
 
     private fun lesen(): List<Treffer> = sortiert(
         (prefs.getStringSet(KEY, emptySet()) ?: emptySet())
-            .mapNotNull { s ->
-                val name = s.drop(2)
-                when {
-                    name.isBlank() -> null
-                    s.startsWith("L:") -> Treffer.Lehrer(name)
-                    s.startsWith("R:") -> Treffer.Raum(name)
-                    else -> null
-                }
-            }
+            .mapNotNull { Treffer.ausSchluessel(it) }
     )
 
     private companion object {

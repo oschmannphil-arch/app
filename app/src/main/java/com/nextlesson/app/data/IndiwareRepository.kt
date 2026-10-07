@@ -40,11 +40,14 @@ sealed class PlanResult {
     data class NetzwerkFehler(val nachricht: String) : PlanResult()
 }
 
+/** Anzeigetext, wenn für einen Tag (noch) kein Plan veröffentlicht ist. */
+const val FEHLER_KEIN_PLAN = "Kein Plan veröffentlicht"
+
 /** Kurzer Grund, warum der Plan eines Tages fehlt – null, wenn er geladen wurde. */
 fun PlanResult.tagesFehler(): String? = when (this) {
     is PlanResult.Success -> null
     is PlanResult.AuthFehler -> "Login fehlgeschlagen"
-    is PlanResult.KeinPlanFuerTag -> "Kein Plan veröffentlicht"
+    is PlanResult.KeinPlanFuerTag -> FEHLER_KEIN_PLAN
     is PlanResult.NetzwerkFehler -> "Laden fehlgeschlagen"
 }
 
@@ -68,7 +71,10 @@ data class PersoenlicherPlan(
 sealed class PersoenlicherResult {
     data class Erfolg(val plan: PersoenlicherPlan) : PersoenlicherResult()
     object AuthFehler : PersoenlicherResult()
+    /** Es gibt keinen veröffentlichten Plan (Ferien, freie Tage). */
     object KeinPlan : PersoenlicherResult()
+    /** Pläne sind da, aber keiner der gewählten Kurse hat darin eine Stunde (z.B. veraltete Kurswahl). */
+    object KeineStunden : PersoenlicherResult()
     data class NetzwerkFehler(val nachricht: String) : PersoenlicherResult()
 }
 
@@ -201,15 +207,18 @@ class IndiwareRepository(context: Context) {
      * Der erste Tag ab [ab] (höchstens [maxTage] Tage weit), für den ein Plan veröffentlicht ist –
      * für "Ferien: der nächste Plan steht für … bereit". Null, wenn keiner da ist oder der Abruf scheitert.
      */
-    suspend fun ersterTagMitPlan(creds: IndiwareCredentials, ab: LocalDate, maxTage: Int = 28): LocalDate? {
+    suspend fun ersterTagMitPlan(creds: IndiwareCredentials, ab: LocalDate, maxTage: Int = 28): Result<LocalDate?> {
         var versatz = 0
         while (versatz < maxTage) {
             val tage = holeTage(creds, ab.plusDays(versatz.toLong()), anzahl = minOf(7, maxTage - versatz))
-            tage.firstOrNull { it.second is PlanResult.Success }?.let { return it.first }
-            if (tage.any { it.second is PlanResult.AuthFehler || it.second is PlanResult.NetzwerkFehler }) return null
+            tage.firstOrNull { it.second is PlanResult.Success }?.let { return Result.success(it.first) }
+            // Ein Abruffehler heißt "unbekannt", nicht "keiner da" – das darf nicht als Ergebnis gelten.
+            if (tage.any { it.second is PlanResult.AuthFehler || it.second is PlanResult.NetzwerkFehler }) {
+                return Result.failure(IllegalStateException("Abruf fehlgeschlagen"))
+            }
             versatz += 7
         }
-        return null
+        return Result.success(null)
     }
 
     /** Wie [holeTage], aber nur aus dem lokalen Speicher – ohne Netz und ohne Warten. */
@@ -261,6 +270,7 @@ class IndiwareRepository(context: Context) {
         erzwingen: Boolean = false
     ): PersoenlicherResult = withContext(Dispatchers.Default) {
         var heuteFallback: PersoenlicherPlan? = null
+        var planGesehen = false
 
         suspend fun tag(datum: LocalDate): PlanResult =
             if (nurCache) {
@@ -274,6 +284,7 @@ class IndiwareRepository(context: Context) {
             val datum = ab.plusDays(offset.toLong())
             return when (ergebnis) {
                 is PlanResult.Success -> {
+                    planGesehen = true
                     val plan = ergebnis.plan.tagesplanFuer(gewaehlteKurse)
                     if (offset == 0) {
                         val naechste = plan.naechsteStunde(jetzt)
@@ -330,7 +341,8 @@ class IndiwareRepository(context: Context) {
             }
         }
 
-        heuteFallback?.let { PersoenlicherResult.Erfolg(it) } ?: PersoenlicherResult.KeinPlan
+        heuteFallback?.let { PersoenlicherResult.Erfolg(it) }
+            ?: if (planGesehen) PersoenlicherResult.KeineStunden else PersoenlicherResult.KeinPlan
     }
 
     /** Erster erreichbarer Plan – für die Kursauswahl beim Einrichten. */

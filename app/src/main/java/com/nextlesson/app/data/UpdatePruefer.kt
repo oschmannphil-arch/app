@@ -67,10 +67,16 @@ object UpdatePruefer {
         }.apply()
     }
 
-    /** Beim nächsten Versuch erst nach [wartenMillis] wieder prüfen (nach einem Fehler). */
-    fun spaeterNochmal(context: Context, abstandMillis: Long, wartenMillis: Long, jetzt: Long = System.currentTimeMillis()) {
-        prefs(context).edit().putLong(KEY_ZULETZT, jetzt - abstandMillis + wartenMillis).apply()
+    /** Nach einem Fehler: erst in [wartenMillis] wieder prüfen (statt bei jedem Öffnen oder erst morgen). */
+    fun spaeterNochmal(context: Context, wartenMillis: Long, jetzt: Long = System.currentTimeMillis()) {
+        prefs(context).edit().putLong(KEY_ZULETZT, jetzt - ABSTAND_MILLIS + wartenMillis).apply()
     }
+
+    /** Installierter Build (= Versionscode, den die CI aus der Lauf-Nummer setzt). */
+    fun installierterBuild(context: Context): Int = runCatching {
+        val p = context.packageManager.getPackageInfo(context.packageName, 0)
+        if (android.os.Build.VERSION.SDK_INT >= 28) p.longVersionCode.toInt() else @Suppress("DEPRECATION") p.versionCode
+    }.getOrDefault(0)
 
     /** Das zuletzt gefundene Update – nur, wenn es neuer ist als der installierte Build. */
     fun gefunden(context: Context, installiert: Int): UpdateAngebot? {

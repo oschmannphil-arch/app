@@ -19,6 +19,7 @@ import java.time.LocalDate
 object FreundNotifier {
 
     private const val CHANNEL_ID = "freunde_frei"
+    private const val NOTIFICATION_ID = 5000
 
     private fun kanalAnlegen(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -52,7 +53,7 @@ object FreundNotifier {
             .setAutoCancel(true)
             .setContentIntent(pending)
             .build()
-        val id = 5000 + Math.floorMod("$datum|${freund.id}".hashCode(), 900)
-        runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
+        // Eigene Meldung je Freund und Tag: feste ID, Unterscheidung über das Tag (keine Hash-Kollisionen).
+        runCatching { NotificationManagerCompat.from(context).notify("frei|$datum|${freund.id}", NOTIFICATION_ID, notification) }
     }
 }

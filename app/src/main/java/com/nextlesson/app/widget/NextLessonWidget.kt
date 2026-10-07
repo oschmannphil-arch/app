@@ -159,7 +159,7 @@ class NextLessonWidget : GlanceAppWidget() {
                         maxLines = 1
                     )
                 }
-                SucheKnopf(scaled)
+                // Im schmalen 2x2-Layout ist kein Platz für den Knopf – dort bliebe vom Kopf nichts übrig.
             }
         } else {
             Row(

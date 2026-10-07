@@ -153,6 +153,32 @@ fun KeinPlanScreen(naechster: LocalDate?, gesucht: Boolean, onNeuPruefen: () -> 
     }
 }
 
+/** Pläne sind da, aber ohne eine Stunde der gewählten Kurse – meist hat sich die Kursliste geändert. */
+@Composable
+fun KeineStundenScreen(onKurseAendern: () -> Unit, onNeuPruefen: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "Keine Stunden gefunden", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Die Schule hat Pläne veröffentlicht, aber in deinen gewählten Kursen steht in den nächsten Tagen nichts. " +
+                "Haben sich Kurse geändert oder umbenannt, wähle sie neu aus.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onKurseAendern) { Text("Kurse ändern") }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onNeuPruefen) { Text("Erneut prüfen") }
+    }
+}
+
 /** Zusammenfassung von Hausaufgaben und nächster Klausur für die Startseite. */
 data class Uebersicht(
     val offeneAufgaben: Int,

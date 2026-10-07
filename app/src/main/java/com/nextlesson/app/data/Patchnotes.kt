@@ -42,6 +42,16 @@ object Patchnotes {
                 "Widget: Neuer Knopf \"Suche\" öffnet direkt die Suche mit Tastatur.",
                 "Updates: Die App prüft einmal täglich im Hintergrund und meldet neue Versionen – ohne dass der Start länger dauert."
             )
+        ),
+        PatchEintrag(
+            id = 4,
+            titel = "Fehler behoben",
+            punkte = listOf(
+                "Ein vom Hintergrund-Check gefundenes Update erscheint auch dann, wenn die App schon offen im Hintergrund lag.",
+                "Ferien-Hinweis: Ein fehlgeschlagener Abruf wird nicht mehr als \"nichts eingestellt\" gemerkt. Sind Pläne da, aber ohne deine Kurse, führt die App zur Kurswahl.",
+                "\"Freund hat auch frei\": keine Meldung mehr, wenn eine bekannte freie Zeit nur kleiner oder geteilt wird; Meldungen verschiedener Freunde überschreiben sich nicht.",
+                "Widget: Der Suche-Knopf steht nur in den breiteren Layouts, nach dem Wählen eines Treffers schließt sich die Tastatur."
+            )
         )
     )
 

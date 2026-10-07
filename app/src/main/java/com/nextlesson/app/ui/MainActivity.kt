@@ -283,8 +283,10 @@ private fun AppInhalt(
     }
 
     // "Suche" im Widget: in die Suche wechseln und ins Suchfeld – außer es wird gerade etwas bearbeitet.
-    LaunchedEffect(sucheVomWidget) {
+    LaunchedEffect(sucheVomWidget, zustand) {
         if (!sucheVomWidget) return@LaunchedEffect
+        // Beim Kaltstart ist der Zustand noch "lädt": abwarten, sonst landet man nach der Einrichtung in der Suche.
+        if (zustand is UiZustand.Laedt) return@LaunchedEffect
         if (entwurfId == null && !zeigeKurse && zustand !is UiZustand.KurseWaehlen && zustand !is UiZustand.LoginNoetig) {
             zeigeEinstellungen = false
             freundAnsicht = null
@@ -612,6 +614,10 @@ private fun AppInhalt(
                                 blockAnsicht = design.blockAnsicht,
                                 onBlockAnsicht = design::blockAnsichtSetzen,
                                 onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
+                            )
+                            is UiZustand.KeineStunden -> KeineStundenScreen(
+                                onKurseAendern = { zeigeKurse = true },
+                                onNeuPruefen = { planViewModel.aktualisieren() }
                             )
                             is UiZustand.KeinPlan -> KeinPlanScreen(
                                 naechster = z.naechster,

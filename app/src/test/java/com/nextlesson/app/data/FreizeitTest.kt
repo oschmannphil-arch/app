@@ -281,4 +281,15 @@ class FreizeitTest {
         assertEquals(listOf(b), FreundFreiLogik.neu(setOf(FreundFreiLogik.schluessel(a)), listOf(a, b)))
         assertTrue(FreundFreiLogik.neu(setOf(FreundFreiLogik.schluessel(a)), listOf(a)).isEmpty())
     }
+
+    @Test
+    fun schrumpfenderOderGeteilterBlockIstNichtNeu() {
+        val gross = Freiblock(3, 5, t("08:45"), t("11:45"))
+        val bekannt = setOf(FreundFreiLogik.schluessel(gross))
+        // Block wird kleiner oder geteilt: die freie Zeit gab es schon.
+        assertTrue(FreundFreiLogik.neu(bekannt, listOf(Freiblock(3, 4, t("08:45"), t("11:00")))).isEmpty())
+        assertTrue(FreundFreiLogik.neu(bekannt, listOf(Freiblock(3, 3, t("08:45"), t("09:50")), Freiblock(5, 5, t("11:00"), t("11:45")))).isEmpty())
+        // Wirklich neue Zeit (nach dem bekannten Block): melden.
+        assertEquals(1, FreundFreiLogik.neu(bekannt, listOf(gross, Freiblock(7, 7, t("12:45"), t("13:30")))).size)
+    }
 }

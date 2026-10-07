@@ -66,7 +66,9 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         val freundFreiTracker = FreundFreiTracker(applicationContext)
         freundFreiTracker.aufraeumen(heute)
         val freundFreiAn = BenachrichtigungsEinstellungen(applicationContext).freundFrei
-        val freunde = if (freundFreiAn) FreundeStore(applicationContext).freunde.value else emptyList()
+        // Der Stand wird auch bei abgeschalteter Meldung mitgeführt – beim Einschalten kommt so
+        // keine Flut alter "neuer" Freistunden (wie beim AenderungsTracker).
+        val freunde = FreundeStore(applicationContext).freunde.value
         val repository = IndiwareRepository(applicationContext)
         repository.aufraeumen()
 
@@ -131,12 +133,17 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
                 klausurenProTag[datum] = PlanKlausur.ausStunden(datum, plan.stunden)
 
                 // Neue gemeinsame Freistunde mit einem Freund (z.B. weil bei ihm etwas ausfällt).
-                freunde.forEach { f ->
-                    val frei = Freizeit.gemeinsamFrei(plan, gesamt.tagesplanFuer(f.kurse), gesamt.zeitraster)
-                    val stand = 31 * kurse.hashCode() + f.kurse.hashCode()
-                    val neu = freundFreiTracker.neueBloecke(datum, f.id, stand, frei)
-                        .filter { datum.isAfter(heute) || it.ende.isAfter(jetzt) }
-                    FreundNotifier.melden(applicationContext, datum, f, neu)
+                // Nur rechnen, wenn sich der Plan dieses Tages oder die Auswahl geändert hat: Das
+                // Filtern des Schulplans je Freund ist aufwendig, der Lauf kommt alle 15 Minuten.
+                val tagesStand = "${gesamt.kopf.zeitstempel}|${kurse.hashCode()}|${freunde.map { it.id to it.kurse }.hashCode()}"
+                if (freunde.isNotEmpty() && !freundFreiTracker.tagUnveraendert(datum, tagesStand)) {
+                    freunde.forEach { f ->
+                        val frei = Freizeit.gemeinsamFrei(plan, gesamt.tagesplanFuer(f.kurse), gesamt.zeitraster)
+                        val stand = 31 * kurse.hashCode() + f.kurse.hashCode()
+                        val neu = freundFreiTracker.neueBloecke(datum, f.id, stand, frei)
+                            .filter { datum.isAfter(heute) || it.ende.isAfter(jetzt) }
+                        if (freundFreiAn) FreundNotifier.melden(applicationContext, datum, f, neu)
+                    }
                 }
             }
 

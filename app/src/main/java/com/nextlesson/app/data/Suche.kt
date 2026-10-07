@@ -17,6 +17,19 @@ sealed class Treffer : java.io.Serializable {
     /** Eindeutig über Lehrer und Räume ("L:Weis", "R:204") – zum Speichern und als Listen-Key. */
     val schluessel: String get() = (if (this is Lehrer) "L:" else "R:") + name
 
+    companion object {
+        /** Gegenstück zu [schluessel]; null bei Unlesbarem. */
+        fun ausSchluessel(s: String): Treffer? {
+            val name = s.drop(2)
+            return when {
+                name.isBlank() -> null
+                s.startsWith("L:") -> Lehrer(name)
+                s.startsWith("R:") -> Raum(name)
+                else -> null
+            }
+        }
+    }
+
     data class Lehrer(override val name: String) : Treffer()
     data class Raum(override val name: String) : Treffer()
 }

@@ -145,12 +145,7 @@ object Freizeit {
     }
 
     /** Ist man um [jetzt] in der Schule – zwischen Beginn der ersten und Ende der letzten Stunde? */
-    fun inDerSchule(plan: TagesPlan, jetzt: LocalTime): Boolean {
-        val aktiv = plan.stunden.filter { !it.entfaellt }
-        val beginn = aktiv.mapNotNull { it.beginn }.minOrNull() ?: return false
-        val ende = aktiv.mapNotNull { it.ende }.maxOrNull() ?: return false
-        return !jetzt.isBefore(beginn) && jetzt.isBefore(ende)
-    }
+    fun inDerSchule(plan: TagesPlan, jetzt: LocalTime): Boolean = anwesenheit(plan, jetzt).art == Anwesend.DA
 
     /**
      * Stunden aus [a], die [b] ebenfalls hat – ohne ausgefallene. Derselbe Kurs gilt auch dann

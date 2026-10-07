@@ -26,18 +26,27 @@ class FreundFreiTracker(context: Context) {
 
     fun aufraeumen(heute: LocalDate = LocalDate.now()) {
         val alt = prefs.all.keys.filter { key ->
-            runCatching { LocalDate.parse(key.removePrefix(PREFIX).substringBefore('|')) }.getOrNull()
-                ?.isBefore(heute) ?: true
+            runCatching { LocalDate.parse(key.removePrefix(PREFIX).removePrefix(STAND_PREFIX).substringBefore('|')) }
+                .getOrNull()?.isBefore(heute) ?: true
         }
         if (alt.isNotEmpty()) prefs.edit().apply { alt.forEach { remove(it) } }.apply()
     }
 
-    fun zuruecksetzen() {
-        prefs.edit().clear().apply()
+    /**
+     * Hat sich der Plan dieses Tages (Zeitstempel des Plans) und die Auswahl an Kursen und
+     * Freunden seit dem letzten Mal nicht geändert? Dann muss nichts neu gerechnet werden.
+     * Merkt sich [stand] dabei gleich. Ein leerer Zeitstempel zählt nie als gleich.
+     */
+    fun tagUnveraendert(datum: LocalDate, stand: String): Boolean = synchronized(SPERRE) {
+        val key = "$STAND_PREFIX$datum"
+        val gleich = stand.isNotBlank() && prefs.getString(key, null) == stand
+        if (!gleich) prefs.edit().putString(key, stand).apply()
+        gleich
     }
 
     private companion object {
         const val PREFIX = "frei_"
+        const val STAND_PREFIX = "stand_"
         val SPERRE = Any()
     }
 }

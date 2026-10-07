@@ -47,6 +47,7 @@ import com.nextlesson.app.data.LessonStatus
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
+import com.nextlesson.app.data.FEHLER_KEIN_PLAN
 import com.nextlesson.app.data.alsEintraege
 import com.nextlesson.app.data.hinweisKurz
 import java.time.format.DateTimeFormatter
@@ -83,7 +84,7 @@ fun WochenScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item { Spacer(Modifier.height(4.dp)) }
-                    if (zustand.tage.all { it.plan == null && it.fehlermeldung == "Kein Plan veröffentlicht" }) {
+                    if (zustand.tage.all { it.plan == null && it.fehlermeldung == FEHLER_KEIN_PLAN } && zustand.tage.isNotEmpty()) {
                         item {
                             Text(
                                 text = "Für diese Woche ist noch kein Plan veröffentlicht – Ferien oder schulfrei?",

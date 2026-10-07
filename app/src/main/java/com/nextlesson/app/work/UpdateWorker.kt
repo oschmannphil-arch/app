@@ -22,6 +22,8 @@ import com.nextlesson.app.data.UpdatePruefer
 import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.ui.MainActivity
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Prüft einmal am Tag im Hintergrund, ob es einen neueren Build gibt – WorkManager wählt dafür
@@ -32,10 +34,12 @@ class UpdateWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
 
     override suspend fun doWork(): Result {
         val context = applicationContext
-        val installiert = installierterBuild(context)
+        val installiert = UpdatePruefer.installierterBuild(context)
         val angebot = try {
-            UpdatePruefer.suchen(IndiwareRepository.httpClient)
+            // Blockierender Netzabruf: auf dem IO-Dispatcher, nicht auf einem der wenigen Default-Threads.
+            withContext(Dispatchers.IO) { UpdatePruefer.suchen(IndiwareRepository.httpClient) }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             return Result.retry()
         }
         UpdatePruefer.merken(context, angebot)
@@ -47,9 +51,10 @@ class UpdateWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
         return Result.success()
     }
 
+    /** True nur, wenn die Meldung auch wirklich angezeigt werden darf – sonst später noch einmal. */
     private fun melden(context: Context, build: Int): Boolean {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (!EntfallNotifier.darfBenachrichtigen(context) ||
+            !NotificationManagerCompat.from(context).areNotificationsEnabled()
         ) return false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val kanal = NotificationChannel(CHANNEL_ID, "App-Updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
@@ -76,12 +81,8 @@ class UpdateWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
     companion object {
         private const val WORK_NAME = "update_taeglich"
         private const val CHANNEL_ID = "update"
-        private const val NOTIFICATION_ID = 4300
-
-        private fun installierterBuild(context: Context): Int = runCatching {
-            val p = context.packageManager.getPackageInfo(context.packageName, 0)
-            if (Build.VERSION.SDK_INT >= 28) p.longVersionCode.toInt() else @Suppress("DEPRECATION") p.versionCode
-        }.getOrDefault(0)
+        // Außerhalb von 4201–4566 (Änderungs-Meldungen: 4200 + Tag im Jahr) und 5000–5899 (Freunde).
+        private const val NOTIFICATION_ID = 4600
 
         /** Einmal am Tag, nur mit Netz und nicht bei schwachem Akku. Mehrfaches Einplanen ändert nichts (KEEP). */
         fun einplanen(context: Context) {

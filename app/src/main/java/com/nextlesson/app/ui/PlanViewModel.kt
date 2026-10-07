@@ -39,6 +39,8 @@ sealed class UiZustand {
      * erste Tag danach mit Plan (null = unbekannt); [gesucht] sagt, ob die Suche schon durch ist.
      */
     data class KeinPlan(val naechster: LocalDate?, val gesucht: Boolean) : UiZustand()
+    /** Pläne sind da, aber ohne eine Stunde der gewählten Kurse – meist eine veraltete Kurswahl. */
+    object KeineStunden : UiZustand()
 }
 
 /** Ein einzelner Tag der Wochenansicht. */
@@ -286,6 +288,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             }
             is PersoenlicherResult.AuthFehler -> _zustand.value = fehlerAuth()
             is PersoenlicherResult.KeinPlan -> keinPlanZeigen(creds)
+            is PersoenlicherResult.KeineStunden -> _zustand.value = UiZustand.KeineStunden
             is PersoenlicherResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
         }
     }
@@ -303,18 +306,22 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun keinPlanZeigen(creds: IndiwareCredentials) {
         val prefs = getApplication<Application>().getSharedPreferences("ferien", android.content.Context.MODE_PRIVATE)
         val heute = LocalDate.now()
-        if (prefs.getLong("geprueft_am", -1L) == heute.toEpochDay()) {
+        // Das gemerkte Ergebnis gehört zu Tag UND Schule.
+        val stand = "${heute.toEpochDay()}|${creds.schulnummer}"
+        if (prefs.getString("stand", null) == stand) {
             val naechster = prefs.getLong("naechster", -1L).takeIf { it >= 0 }?.let(LocalDate::ofEpochDay)
             _zustand.value = UiZustand.KeinPlan(naechster, gesucht = true)
             return
         }
         _zustand.value = UiZustand.KeinPlan(null, gesucht = false)
-        val naechster = repository.ersterTagMitPlan(creds, heute.plusDays(8))
-        prefs.edit()
-            .putLong("geprueft_am", heute.toEpochDay())
-            .putLong("naechster", naechster?.toEpochDay() ?: -1L)
-            .apply()
-        if (_zustand.value is UiZustand.KeinPlan) _zustand.value = UiZustand.KeinPlan(naechster, gesucht = true)
+        val suche = repository.ersterTagMitPlan(creds, heute.plusDays(8))
+        // Schlug der Abruf fehl, ist das Ergebnis unbekannt: nichts merken, beim nächsten Mal neu suchen.
+        suche.onSuccess { naechster ->
+            prefs.edit().putString("stand", stand).putLong("naechster", naechster?.toEpochDay() ?: -1L).apply()
+        }
+        if (_zustand.value is UiZustand.KeinPlan) {
+            _zustand.value = UiZustand.KeinPlan(suche.getOrNull(), gesucht = suche.isSuccess)
+        }
     }
 
     private fun fehlerNetz(nachricht: String) =
