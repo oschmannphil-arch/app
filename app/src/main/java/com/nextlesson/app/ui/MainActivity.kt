@@ -68,6 +68,8 @@ import com.nextlesson.app.data.DesignStore
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.FreundTeilen
 import com.nextlesson.app.data.Lesson
+import com.nextlesson.app.data.Noten
+import com.nextlesson.app.data.NotenSystem
 import com.nextlesson.app.data.Patchnotes
 import com.nextlesson.app.data.anzeigeName
 import com.nextlesson.app.ui.theme.NaechsteStundeTheme
@@ -227,7 +229,7 @@ private fun AppInhalt(
     val pruefungen by aufgabenViewModel.pruefungen.collectAsState()
     val erinnerung by aufgabenViewModel.erinnerung.collectAsState()
     val noten by notenViewModel.noten.collectAsState()
-    val klausurAnteil by notenViewModel.klausurAnteil.collectAsState()
+    val klausurAnteile by notenViewModel.klausurAnteile.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
     val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
     val verfuegbareKurse by planViewModel.verfuegbareKurse.collectAsState()
@@ -552,13 +554,16 @@ private fun AppInhalt(
 
                 // Notentracker
                 zeigeNoten && !brauchtKurse -> {
+                    // Klasse 5–10: Noten 1–6, ab Klasse 11: Punkte 0–15 – nach den gewählten Kursen.
+                    val notenSystem = remember { NotenSystem.ausKursIds(planViewModel.aktuelleKursAuswahl()) }
                     NotenScreen(
-                        noten = noten,
-                        klausurAnteil = klausurAnteil,
+                        system = notenSystem,
+                        noten = noten.filter { it.system == notenSystem },
+                        klausurAnteil = klausurAnteile[notenSystem] ?: Noten.STANDARD_KLAUSUR_ANTEIL,
                         pruefungen = pruefungen,
                         fachVorschlaege = fachNamen,
-                        onAnteil = notenViewModel::anteilSetzen,
-                        onHinzufuegen = notenViewModel::hinzufuegen,
+                        onAnteil = { notenViewModel.anteilSetzen(notenSystem, it) },
+                        onHinzufuegen = { f, p, a, d, n -> notenViewModel.hinzufuegen(notenSystem, f, p, a, d, n) },
                         onBearbeiten = notenViewModel::bearbeiten,
                         onLoeschen = notenViewModel::loeschen
                     )

@@ -51,6 +51,7 @@ import com.nextlesson.app.data.FachSchnitt
 import com.nextlesson.app.data.Note
 import com.nextlesson.app.data.Noten
 import com.nextlesson.app.data.NotenArt
+import com.nextlesson.app.data.NotenSystem
 import com.nextlesson.app.data.Pruefung
 import com.nextlesson.app.data.PruefungsArt
 import com.nextlesson.app.ui.theme.fachFarbe
@@ -75,6 +76,7 @@ private data class NotenEntwurf(
 
 @Composable
 fun NotenScreen(
+    system: NotenSystem,
     noten: List<Note>,
     klausurAnteil: Int,
     pruefungen: List<Pruefung>,
@@ -130,7 +132,7 @@ fun NotenScreen(
         ) {
             item {
                 Spacer(Modifier.height(4.dp))
-                GesamtKarte(gesamt, faecher.size)
+                GesamtKarte(system, gesamt, faecher.size)
             }
 
             item {
@@ -165,7 +167,10 @@ fun NotenScreen(
 
             if (noten.isEmpty()) {
                 item {
-                    LeerHinweis("Noch keine Noten. Trag sie unten rechts ein (0 bis 15 Punkte) – die App rechnet Durchschnitt und Zeugnispunkte aus. Alles bleibt nur auf deinem Handy.")
+                    LeerHinweis(
+                        if (system == NotenSystem.PUNKTE) "Noch keine Noten. Trag sie unten rechts ein (0 bis 15 Punkte) – die App rechnet Durchschnitt und Zeugnispunkte aus. Alles bleibt nur auf deinem Handy."
+                        else "Noch keine Noten. Trag sie unten rechts ein (1 bis 6) – die App rechnet Durchschnitt und Zeugnisnote aus. Alles bleibt nur auf deinem Handy."
+                    )
                 }
             } else if (faecher.isEmpty()) {
                 item { LeerHinweis("In diesem Halbjahr gibt es noch keine Noten.") }
@@ -174,6 +179,7 @@ fun NotenScreen(
             items(faecher, key = { Noten.fachSchluessel(it.fach) }) { f ->
                 val fachNoten = sichtbar.filter { Noten.fachSchluessel(it.fach) == Noten.fachSchluessel(f.fach) }
                 FachKarte(
+                    system = system,
                     schnitt = f,
                     noten = fachNoten,
                     klausurAnteil = klausurAnteil,
@@ -189,6 +195,7 @@ fun NotenScreen(
 
     entwurf?.let { e ->
         NoteDialog(
+            system = system,
             entwurf = e,
             vorschlaege = fachVorschlaege,
             onAbbrechen = { entwurf = null },
@@ -203,7 +210,7 @@ fun NotenScreen(
 }
 
 @Composable
-private fun GesamtKarte(gesamt: Double?, anzahlFaecher: Int) {
+private fun GesamtKarte(system: NotenSystem, gesamt: Double?, anzahlFaecher: Int) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -224,13 +231,14 @@ private fun GesamtKarte(gesamt: Double?, anzahlFaecher: Int) {
                 )
             } else {
                 Text(
-                    text = "${komma(gesamt)} Punkte",
+                    text = if (system == NotenSystem.PUNKTE) "${komma(gesamt)} Punkte" else "Note ${komma(gesamt)}",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    text = "≈ Note ${komma(Noten.alsSchulnote(gesamt))} · $anzahlFaecher ${if (anzahlFaecher == 1) "Fach" else "Fächer"}",
+                    text = (if (system == NotenSystem.PUNKTE) "≈ Note ${komma(Noten.alsSchulnote(gesamt))} · " else "") +
+                        "$anzahlFaecher ${if (anzahlFaecher == 1) "Fach" else "Fächer"}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
@@ -241,6 +249,7 @@ private fun GesamtKarte(gesamt: Double?, anzahlFaecher: Int) {
 
 @Composable
 private fun FachKarte(
+    system: NotenSystem,
     schnitt: FachSchnitt,
     noten: List<Note>,
     klausurAnteil: Int,
@@ -251,7 +260,8 @@ private fun FachKarte(
     val akzent = fachFarbe(schnitt.fach, dunkel)
     var ziel by rememberSaveable(schnitt.fach) { mutableStateOf(-1) }
     // Standardziel: einen Punkt über dem aktuellen Zeugnisstand.
-    val zielWert = if (ziel in 0..Noten.MAX) ziel else (schnitt.zeugnis + 1).coerceAtMost(Noten.MAX)
+    val zielWert = if (ziel in system.min..system.max) ziel
+    else (if (system.hoeherIstBesser) schnitt.zeugnis + 1 else schnitt.zeugnis - 1).coerceIn(system.min, system.max)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -289,7 +299,7 @@ private fun FachKarte(
                     ) {
                         TextButton(onClick = { onNote(n) }, modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "${n.punkte} P · ${n.art.anzeige} · ${n.datum.format(notenDatum)}" +
+                                text = "${if (system == NotenSystem.PUNKTE) "${n.punkte} P" else "Note ${n.punkte}"} · ${n.art.anzeige} · ${n.datum.format(notenDatum)}" +
                                     if (n.notiz.isNotBlank()) " · ${n.notiz}" else "",
                                 modifier = Modifier.fillMaxWidth(),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -305,15 +315,16 @@ private fun FachKarte(
                 // Rechner: Was brauche ich noch für mein Ziel?
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Ziel", style = MaterialTheme.typography.labelLarge)
-                    TextButton(onClick = { ziel = (zielWert - 1).coerceAtLeast(0) }, enabled = zielWert > 0) { Text("−") }
-                    Text("$zielWert P", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = { ziel = (zielWert + 1).coerceAtMost(Noten.MAX) }, enabled = zielWert < Noten.MAX) { Text("+") }
+                    TextButton(onClick = { ziel = zielWert - 1 }, enabled = zielWert > system.min) { Text("−") }
+                    Text(if (system == NotenSystem.PUNKTE) "$zielWert P" else "Note $zielWert", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { ziel = zielWert + 1 }, enabled = zielWert < system.max) { Text("+") }
                 }
                 NotenArt.entries.forEach { art ->
                     Text(
                         text = "Nächste ${if (art == NotenArt.KLAUSUR) "Klausur" else "mündliche Note"}: " +
-                            when (val b = Noten.benoetigt(noten, art, zielWert, klausurAnteil)) {
-                                is Noten.Benoetigt.Punkte -> "mindestens ${b.punkte} P"
+                            when (val b = Noten.benoetigt(noten, art, zielWert, klausurAnteil, system)) {
+                                is Noten.Benoetigt.Punkte ->
+                                    if (system == NotenSystem.PUNKTE) "mindestens ${b.punkte} P" else "höchstens Note ${b.punkte}"
                                 Noten.Benoetigt.Sicher -> "Ziel schon sicher"
                                 Noten.Benoetigt.Unmoeglich -> "reicht allein nicht"
                             },
@@ -328,6 +339,7 @@ private fun FachKarte(
 
 @Composable
 private fun NoteDialog(
+    system: NotenSystem,
     entwurf: NotenEntwurf,
     vorschlaege: List<String>,
     onAbbrechen: () -> Unit,
@@ -340,7 +352,7 @@ private fun NoteDialog(
     var datum by remember { mutableStateOf(alt?.datum ?: entwurf.datum) }
     var notiz by remember { mutableStateOf(alt?.notiz ?: "") }
     var datumsDialog by remember { mutableStateOf(false) }
-    val punkte = punkteText.toIntOrNull()?.takeIf { it in 0..Noten.MAX }
+    val punkte = punkteText.toIntOrNull()?.takeIf { it in system.min..system.max }
 
     AlertDialog(
         onDismissRequest = onAbbrechen,
@@ -372,7 +384,7 @@ private fun NoteDialog(
                 OutlinedTextField(
                     value = punkteText,
                     onValueChange = { neu -> punkteText = neu.filter { it.isDigit() }.take(2) },
-                    label = { Text("Punkte (0 bis 15)") },
+                    label = { Text(if (system == NotenSystem.PUNKTE) "Punkte (0 bis 15)" else "Note (1 bis 6)") },
                     isError = punkteText.isNotEmpty() && punkte == null,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

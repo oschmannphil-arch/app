@@ -13,8 +13,38 @@ enum class NotenArt(val anzeige: String) {
     }
 }
 
-/** Eine Note im 15-Punkte-System (0 bis 15). */
+/**
+ * Bewertungssystem: Klasse 5–10 mit Noten 1 (beste) bis 6, ab Klasse 11 (Qualifikationsphase)
+ * mit Punkten 0 bis 15 (15 = beste).
+ */
+enum class NotenSystem(val min: Int, val max: Int, val hoeherIstBesser: Boolean) {
+    PUNKTE(0, 15, true),
+    NOTEN(1, 6, false);
+
+    /** Beste zuletzt: von der schlechtesten bis zur besten Wertung. */
+    val schlechtZuGut: List<Int>
+        get() = if (hoeherIstBesser) (min..max).toList() else (min..max).toList().reversed()
+
+    companion object {
+        /** Klasse 11 und höher → Punkte, sonst Noten. Ohne erkennbare Klasse: Punkte. */
+        const val ERSTE_PUNKTE_KLASSE = 11
+
+        fun ausName(name: String?): NotenSystem = entries.firstOrNull { it.name == name } ?: PUNKTE
+
+        /** Kurs-IDs haben die Form "Klasse::Kürzel", z.B. "12/5::D1" oder "7a::*". Die höchste Klasse entscheidet. */
+        fun ausKursIds(ids: Collection<String>): NotenSystem {
+            val klassen = ids.mapNotNull { id ->
+                id.substringBefore("::").trim().takeWhile { it.isDigit() }.toIntOrNull()
+            }
+            val hoechste = klassen.maxOrNull() ?: return PUNKTE
+            return if (hoechste >= ERSTE_PUNKTE_KLASSE) PUNKTE else NOTEN
+        }
+    }
+}
+
+/** Eine Note: je nach [system] Punkte (0–15) oder Schulnote (1–6) in [punkte]. */
 data class Note(
+    val system: NotenSystem = NotenSystem.PUNKTE,
     val id: String = UUID.randomUUID().toString(),
     val fach: String,
     val punkte: Int,
@@ -31,10 +61,11 @@ data class FachSchnitt(
     val anzahl: Int,
     val klausur: Double?,
     val muendlich: Double?,
-    val gesamt: Double
+    val gesamt: Double,
+    val system: NotenSystem = NotenSystem.PUNKTE
 ) {
-    /** Zeugnispunkte: ab ,5 wird aufgerundet. */
-    val zeugnis: Int get() = Noten.runden(gesamt)
+    /** Zeugniswert (Punkte bzw. Note): ab ,5 wird zur höheren Zahl gerundet. */
+    val zeugnis: Int get() = Noten.runden(gesamt, system)
 }
 
 object Noten {
@@ -45,7 +76,8 @@ object Noten {
     const val ANTEIL_MAX = 50
 
     /** Kaufmännisch runden (x,5 → aufwärts), begrenzt auf 0..15. */
-    fun runden(wert: Double): Int = floor(wert + 0.5).toInt().coerceIn(0, MAX)
+    fun runden(wert: Double, system: NotenSystem = NotenSystem.PUNKTE): Int =
+        floor(wert + 0.5).toInt().coerceIn(system.min, system.max)
 
     /** Punkte als Schulnote: 15 → 1,0 · 12 → 2,0 · 9 → 3,0 · 0 → 6,0. */
     fun alsSchulnote(punkte: Double): Double = 6.0 - punkte / 3.0
@@ -80,7 +112,7 @@ object Noten {
             k != null -> k
             else -> m ?: return null
         }
-        return FachSchnitt(noten.first().fach, noten.size, k, m, gesamt)
+        return FachSchnitt(noten.first().fach, noten.size, k, m, gesamt, noten.first().system)
     }
 
     /** Gleiche Fächer unabhängig von Groß-/Kleinschreibung zusammenfassen. */
@@ -97,7 +129,7 @@ object Noten {
 
     /** Ergebnis der Frage "Was brauche ich noch?". */
     sealed interface Benoetigt {
-        /** Mit mindestens [punkte] in der nächsten Note wird das Ziel erreicht. */
+        /** Mindestens [punkte] Punkte – bzw. bei Noten höchstens die Note [punkte] – erreicht das Ziel. */
         data class Punkte(val punkte: Int) : Benoetigt
         /** Das Ziel ist schon sicher, egal was kommt. */
         data object Sicher : Benoetigt
@@ -113,9 +145,9 @@ object Noten {
         fachNoten: List<Note>,
         art: NotenArt,
         ziel: Int,
-        klausurAnteil: Int = STANDARD_KLAUSUR_ANTEIL
+        klausurAnteil: Int = STANDARD_KLAUSUR_ANTEIL,
+        system: NotenSystem = NotenSystem.PUNKTE
     ): Benoetigt {
-        val schwelle = ziel - 0.5
         val w = klausurAnteil.coerceIn(0, 100) / 100.0
         val dieseArt = fachNoten.filter { it.art == art }
         val andere = fachNoten.filter { it.art != art }
@@ -131,12 +163,19 @@ object Noten {
             else neu * gewichtDiese + andererSchnitt * gewichtAndere
         }
 
+        // Punkte: Durchschnitt ab ziel − 0,5. Noten: Durchschnitt unter ziel + 0,5.
+        fun erreicht(schnitt: Double) =
+            if (system.hoeherIstBesser) schnitt >= ziel - 0.5 else schnitt < ziel + 0.5
+
         // Anteil 0: Diese Art zählt gar nicht, das Ergebnis hängt nicht von der Note ab.
         if (gewichtDiese <= 0.0 && andererSchnitt != null) {
-            return if (andererSchnitt >= schwelle) Benoetigt.Sicher else Benoetigt.Unmoeglich
+            return if (erreicht(andererSchnitt)) Benoetigt.Sicher else Benoetigt.Unmoeglich
         }
-        if (gesamtMit(0) >= schwelle) return Benoetigt.Sicher
-        for (x in 1..MAX) if (gesamtMit(x) >= schwelle) return Benoetigt.Punkte(x)
+        // Von der schlechtesten Wertung aufwärts: die erste, die reicht, ist die geforderte Mindestleistung.
+        val kandidaten = system.schlechtZuGut
+        kandidaten.forEachIndexed { i, x ->
+            if (erreicht(gesamtMit(x))) return if (i == 0) Benoetigt.Sicher else Benoetigt.Punkte(x)
+        }
         return Benoetigt.Unmoeglich
     }
 }

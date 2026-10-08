@@ -68,7 +68,8 @@ object Patchnotes {
                 "Neu: Noten (0 bis 15 Punkte) mit dem Stern oben rechts auf \"Heute\" und \"Klausuren\".",
                 "Durchschnitt pro Fach und gesamt, Zeugnispunkte, nach Halbjahr gefiltert; Klausuren und mündliche Noten mit einstellbarem Gewicht.",
                 "Rechner: Zeigt, wie viele Punkte du in der nächsten Klausur oder mündlich für dein Ziel brauchst.",
-                "Geschriebene Klausuren aus dem Plan bieten dir direkt das Eintragen der Note an. Alles bleibt nur auf deinem Handy."
+                "Geschriebene Klausuren aus dem Plan bieten dir direkt das Eintragen der Note an. Alles bleibt nur auf deinem Handy.",
+                "Klasse 5–10 rechnet mit Noten 1–6, ab Klasse 11 mit Punkten 0–15 – die App erkennt das an deinen gewählten Kursen."
             )
         )
     )

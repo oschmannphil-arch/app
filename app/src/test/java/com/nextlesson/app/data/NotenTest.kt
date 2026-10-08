@@ -102,4 +102,45 @@ class NotenTest {
         assertEquals(Noten.Benoetigt.Sicher, Noten.benoetigt(liste, NotenArt.KLAUSUR, 13, 0))
         assertEquals(Noten.Benoetigt.Unmoeglich, Noten.benoetigt(liste, NotenArt.KLAUSUR, 14, 0))
     }
+
+    private fun sn(fach: String, p: Int, art: NotenArt) =
+        Note(system = NotenSystem.NOTEN, fach = fach, punkte = p, art = art, datumEpochDay = LocalDate.of(2025, 10, 1).toEpochDay())
+
+    @Test
+    fun systemAusKursen() {
+        assertEquals(NotenSystem.PUNKTE, NotenSystem.ausKursIds(setOf("12/5::D1", "12/5::M2")))
+        assertEquals(NotenSystem.PUNKTE, NotenSystem.ausKursIds(setOf("11/3::E1")))
+        assertEquals(NotenSystem.NOTEN, NotenSystem.ausKursIds(setOf("7a::*")))
+        assertEquals(NotenSystem.NOTEN, NotenSystem.ausKursIds(setOf("10b::*", "5c::Ku")))
+        // Gemischt: die höchste Klasse entscheidet.
+        assertEquals(NotenSystem.PUNKTE, NotenSystem.ausKursIds(setOf("10b::*", "12/5::D1")))
+        // Nichts erkennbar → Punkte.
+        assertEquals(NotenSystem.PUNKTE, NotenSystem.ausKursIds(emptySet()))
+        assertEquals(NotenSystem.PUNKTE, NotenSystem.ausKursIds(setOf("Q1::D1")))
+    }
+
+    @Test
+    fun schnittUndZeugnisBeiNoten() {
+        val s = Noten.fachSchnitt(
+            listOf(sn("Mathe", 2, NotenArt.KLAUSUR), sn("Mathe", 3, NotenArt.KLAUSUR), sn("Mathe", 2, NotenArt.MUENDLICH)), 50
+        )!!
+        assertEquals(2.25, s.gesamt, 0.001)
+        assertEquals(2, s.zeugnis)
+        assertEquals(NotenSystem.NOTEN, s.system)
+        // Rundung bleibt in 1..6
+        assertEquals(6, Noten.runden(6.4, NotenSystem.NOTEN))
+        assertEquals(1, Noten.runden(0.2, NotenSystem.NOTEN))
+        assertEquals(3, Noten.runden(2.5, NotenSystem.NOTEN))
+    }
+
+    @Test
+    fun benoetigtBeiNoten() {
+        // Klausur 3, mündlich 3, Anteil 50. Ziel 3 (Schnitt < 3,5): neue Klausur x → (3+x)/2*0,5 + 1,5 < 3,5 → x < 5 → höchstens 4
+        val liste = listOf(sn("M", 3, NotenArt.KLAUSUR), sn("M", 3, NotenArt.MUENDLICH))
+        assertEquals(Noten.Benoetigt.Punkte(4), Noten.benoetigt(liste, NotenArt.KLAUSUR, 3, 50, NotenSystem.NOTEN))
+        // Ziel 4 (< 4,5) ist selbst mit einer 6 sicher: (3+6)/2*0,5+1,5 = 3,75
+        assertEquals(Noten.Benoetigt.Sicher, Noten.benoetigt(liste, NotenArt.KLAUSUR, 4, 50, NotenSystem.NOTEN))
+        // Ziel 2 (< 2,5) geht nicht: selbst mit einer 1 ergibt sich (3+1)/2*0,5+1,5 = 2,5
+        assertEquals(Noten.Benoetigt.Unmoeglich, Noten.benoetigt(liste, NotenArt.KLAUSUR, 2, 50, NotenSystem.NOTEN))
+    }
 }
