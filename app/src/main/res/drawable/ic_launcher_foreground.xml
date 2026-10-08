@@ -4,13 +4,35 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Zifferblatt -->
     <path
-        android:fillColor="#D9B48F"
-        android:pathData="M29,34h50v9h-50z" />
+        android:fillColor="#E6C6A0"
+        android:pathData="M54,25a29,29 0 1,0 0,58a29,29 0 1,0 0,-58z" />
+    <!-- Der Teil bis zur nächsten Stunde -->
     <path
-        android:fillColor="#D9B48F"
-        android:pathData="M29,49h50v9h-50z" />
+        android:fillColor="#5E7F8D"
+        android:pathData="M54,54L54,25A29,29 0 0,1 79.1,68.5z" />
+    <!-- Ring -->
     <path
-        android:fillColor="#A6C3CF"
-        android:pathData="M29,64h28v9h-28z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#A6C3CF"
+        android:strokeWidth="1.8"
+        android:pathData="M54,22.5a31.5,31.5 0 1,0 0,63a31.5,31.5 0 1,0 0,-63z" />
+    <!-- Striche bei 12, 3, 6, 9 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#3A2A16"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:pathData="M54,29.5L54,34M78.5,54L74,54M54,78.5L54,74M29.5,54L34,54" />
+    <!-- Zeiger -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#3A2A16"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M54,54L54,36M54,54L66.1,47" />
+    <path
+        android:fillColor="#3A2A16"
+        android:pathData="M54,50.6a3.4,3.4 0 1,0 0,6.8a3.4,3.4 0 1,0 0,-6.8z" />
 </vector>
