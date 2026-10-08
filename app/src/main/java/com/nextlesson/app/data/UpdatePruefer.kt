@@ -103,10 +103,11 @@ object UpdatePruefer {
 
     /**
      * So lange gilt ein Ergebnis, bevor die App beim Öffnen selbst wieder nachfragt (still im
-     * Hintergrund). Länger als die größte Lücke der [PRUEF_UHRZEITEN] (20 → 7 Uhr = 11 Stunden):
-     * Normalerweise erledigt der Hintergrund-Check das; die App fragt nur nach, wenn der ausgefallen ist.
+     * Hintergrund, der Start wird nicht langsamer). Kurz gehalten, damit ein neuer Build beim
+     * nächsten Öffnen auftaucht; der Hintergrund-Check ([PRUEF_UHRZEITEN]) deckt die Zeit dazwischen ab.
+     * Eine Anfrage pro halbe Stunde bleibt weit unter dem GitHub-Limit (60 pro Stunde).
      */
-    const val ABSTAND_MILLIS = 12 * 60 * 60_000L
+    const val ABSTAND_MILLIS = 30 * 60_000L
 
     /** Wann der Hintergrund-Check läuft (Ortszeit). */
     val PRUEF_UHRZEITEN: List<java.time.LocalTime> =
