@@ -9,4 +9,6 @@ object SuchVerlaufLogik {
     /** [t] nach vorn, ein früheres Vorkommen entfällt, höchstens [MAX] Einträge. */
     fun einfuegen(liste: List<Treffer>, t: Treffer): List<Treffer> =
         (listOf(t) + liste.filter { it != t }).take(MAX)
+
+    fun entfernen(liste: List<Treffer>, t: Treffer): List<Treffer> = liste.filter { it != t }
 }

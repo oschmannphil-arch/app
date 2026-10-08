@@ -49,6 +49,15 @@ class SucheViewModel(app: Application) : AndroidViewModel(app) {
         _verlauf.value = verlaufStore.merken(t)
     }
 
+    fun verlaufEntfernen(t: Treffer) {
+        _verlauf.value = verlaufStore.entfernen(t)
+    }
+
+    fun verlaufLeeren() {
+        verlaufStore.leeren()
+        _verlauf.value = emptyList()
+    }
+
     val favoriten: StateFlow<List<Treffer>> = favoritenStore.favoriten
 
     fun favoritUmschalten(t: Treffer) = favoritenStore.umschalten(t)

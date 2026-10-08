@@ -24,4 +24,11 @@ class SuchVerlaufTest {
         assertNull(SuchVerlaufLogik.ausSchluessel("X:1"))
         assertNull(SuchVerlaufLogik.ausSchluessel("L:"))
     }
+
+    @Test
+    fun eintragEntfernen() {
+        val v = listOf(Treffer.Lehrer("Weis"), Treffer.Raum("204"))
+        assertEquals(listOf(Treffer.Raum("204")), SuchVerlaufLogik.entfernen(v, Treffer.Lehrer("Weis")))
+        assertEquals(v, SuchVerlaufLogik.entfernen(v, Treffer.Raum("999")))
+    }
 }

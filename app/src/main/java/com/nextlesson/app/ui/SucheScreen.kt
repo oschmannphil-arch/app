@@ -1,5 +1,9 @@
 package com.nextlesson.app.ui
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.InputChipDefaults
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -91,6 +95,8 @@ fun SucheScreen(
     onWocheLaden: (naechste: Boolean) -> Unit = {},
     verlauf: List<Treffer> = emptyList(),
     onGewaehlt: (Treffer) -> Unit = {},
+    onVerlaufEntfernen: (Treffer) -> Unit = {},
+    onVerlaufLeeren: () -> Unit = {},
     fokusAnfordern: Boolean = false,
     onFokusErledigt: () -> Unit = {}
 ) {
@@ -165,7 +171,7 @@ fun SucheScreen(
                         woche = woche,
                         onWocheLaden = onWocheLaden
                     )
-                    anfrage.isBlank() -> Startansicht(tag, istHeute, jetzt, zustand.ausCache, favoriten, verlauf) {
+                    anfrage.isBlank() -> Startansicht(tag, istHeute, jetzt, zustand.ausCache, favoriten, verlauf, onVerlaufEntfernen, onVerlaufLeeren) {
                         // Tastatur zu (auch wenn die Suche vom Widget mit offener Tastatur kam).
                         fokus.clearFocus()
                         onGewaehlt(it)
@@ -225,6 +231,8 @@ private fun Startansicht(
     ausCache: Boolean,
     favoriten: List<Treffer>,
     verlauf: List<Treffer>,
+    onVerlaufEntfernen: (Treffer) -> Unit,
+    onVerlaufLeeren: () -> Unit,
     onWahl: (Treffer) -> Unit
 ) {
     val frei = remember(tag, istHeute, jetzt) { if (istHeute) tag.freieRaeume(jetzt) else null }
@@ -256,10 +264,30 @@ private fun Startansicht(
         if (zuletzt.isNotEmpty()) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(text = "Zuletzt gesucht", style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Zuletzt gesucht",
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = onVerlaufLeeren) { Text("Alle löschen") }
+                    }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(zuletzt, key = { it.schluessel }) { t ->
-                            AssistChip(onClick = { onWahl(t) }, label = { Text(t.name) })
+                            InputChip(
+                                selected = false,
+                                onClick = { onWahl(t) },
+                                label = { Text(t.name) },
+                                trailingIcon = {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "${t.name} aus dem Verlauf entfernen",
+                                        modifier = Modifier
+                                            .size(InputChipDefaults.IconSize)
+                                            .clickable { onVerlaufEntfernen(t) }
+                                    )
+                                }
+                            )
                         }
                     }
                 }

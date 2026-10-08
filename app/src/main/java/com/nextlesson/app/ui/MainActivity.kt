@@ -703,6 +703,8 @@ private fun AppInhalt(
                             onWocheLaden = sucheViewModel::wocheLaden,
                             verlauf = verlauf,
                             onGewaehlt = sucheViewModel::gewaehlt,
+                            onVerlaufEntfernen = sucheViewModel::verlaufEntfernen,
+                            onVerlaufLeeren = sucheViewModel::verlaufLeeren,
                             fokusAnfordern = sucheFokus,
                             onFokusErledigt = { sucheFokus = false }
                         )

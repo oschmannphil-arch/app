@@ -17,6 +17,17 @@ class SuchVerlauf(context: Context) {
         return neu
     }
 
+    /** Löscht [t] aus dem Verlauf; gibt die neue Liste zurück. */
+    fun entfernen(t: Treffer): List<Treffer> {
+        val neu = SuchVerlaufLogik.entfernen(laden(), t)
+        prefs.edit().putString(KEY, neu.joinToString("\n") { it.schluessel }).apply()
+        return neu
+    }
+
+    fun leeren() {
+        prefs.edit().remove(KEY).apply()
+    }
+
     private companion object {
         const val KEY = "verlauf"
     }
