@@ -33,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,10 +58,10 @@ import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private val notenDatum = DateTimeFormatter.ofPattern("d. MMM yyyy", Locale.GERMAN)
 private val kurzDatum = DateTimeFormatter.ofPattern("d.M.", Locale.GERMAN)
-private val ANTEILE = listOf(30, 40, 50, 60, 70)
 
 private fun komma(wert: Double): String = String.format(Locale.GERMAN, "%.1f", wert)
 
@@ -144,25 +145,7 @@ fun NotenScreen(
                 }
             }
 
-            item {
-                Text(
-                    text = "Klausuren zählen",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ANTEILE.forEach { a ->
-                        FilterChip(
-                            selected = klausurAnteil == a,
-                            onClick = { onAnteil(a) },
-                            label = { Text("$a %") }
-                        )
-                    }
-                }
-            }
+            item { AnteilRegler(klausurAnteil, onAnteil) }
 
             if (offeneKlausuren.isNotEmpty()) {
                 item {
@@ -425,6 +408,48 @@ private fun NoteDialog(
                 datum = it
                 datumsDialog = false
             }
+        )
+    }
+}
+
+/** Gewicht der Klausuren: Schieberegler von [Noten.ANTEIL_MIN] bis [Noten.ANTEIL_MAX] % und ein Zahlenfeld. */
+@Composable
+private fun AnteilRegler(anteil: Int, onAnteil: (Int) -> Unit) {
+    var text by remember(anteil) { mutableStateOf(anteil.toString()) }
+    Column {
+        Text(
+            text = "Klausuren zählen",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Slider(
+                value = anteil.toFloat(),
+                onValueChange = { onAnteil(it.roundToInt().coerceIn(Noten.ANTEIL_MIN, Noten.ANTEIL_MAX)) },
+                valueRange = Noten.ANTEIL_MIN.toFloat()..Noten.ANTEIL_MAX.toFloat(),
+                steps = Noten.ANTEIL_MAX - Noten.ANTEIL_MIN - 1,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(12.dp))
+            OutlinedTextField(
+                value = text,
+                onValueChange = { neu ->
+                    val ziffern = neu.filter { it.isDigit() }.take(3)
+                    text = ziffern
+                    // Nur gültige Werte übernehmen; bei zu kleinen/großen Zahlen bleibt der alte stehen.
+                    ziffern.toIntOrNull()?.takeIf { it in Noten.ANTEIL_MIN..Noten.ANTEIL_MAX }?.let(onAnteil)
+                },
+                suffix = { Text("%") },
+                isError = text.toIntOrNull()?.let { it !in Noten.ANTEIL_MIN..Noten.ANTEIL_MAX } ?: true,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.width(96.dp)
+            )
+        }
+        Text(
+            text = "Mündlich zählt ${100 - anteil} %. Erlaubt: ${Noten.ANTEIL_MIN} bis ${Noten.ANTEIL_MAX} %.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

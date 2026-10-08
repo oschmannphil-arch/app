@@ -41,6 +41,8 @@ object Noten {
 
     const val MAX = 15
     const val STANDARD_KLAUSUR_ANTEIL = 50
+    const val ANTEIL_MIN = 25
+    const val ANTEIL_MAX = 50
 
     /** Kaufmännisch runden (x,5 → aufwärts), begrenzt auf 0..15. */
     fun runden(wert: Double): Int = floor(wert + 0.5).toInt().coerceIn(0, MAX)

@@ -17,12 +17,12 @@ class NotenStore(context: Context) {
     val noten: StateFlow<List<Note>> = _noten.asStateFlow()
 
     private val _klausurAnteil = MutableStateFlow(
-        prefs.getInt(KEY_ANTEIL, Noten.STANDARD_KLAUSUR_ANTEIL).coerceIn(0, 100)
+        prefs.getInt(KEY_ANTEIL, START_ANTEIL).coerceIn(Noten.ANTEIL_MIN, Noten.ANTEIL_MAX)
     )
     val klausurAnteil: StateFlow<Int> = _klausurAnteil.asStateFlow()
 
     fun anteilSetzen(prozent: Int) {
-        val wert = prozent.coerceIn(0, 100)
+        val wert = prozent.coerceIn(Noten.ANTEIL_MIN, Noten.ANTEIL_MAX)
         _klausurAnteil.value = wert
         prefs.edit().putInt(KEY_ANTEIL, wert).apply()
     }
@@ -92,6 +92,7 @@ class NotenStore(context: Context) {
     private companion object {
         const val KEY_NOTEN = "noten_json"
         const val KEY_ANTEIL = "klausur_anteil"
+        const val START_ANTEIL = 40
         val SPERRE = Any()
     }
 }
