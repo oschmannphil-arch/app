@@ -60,6 +60,16 @@ object Patchnotes {
                 "Die App sucht jetzt um 7, 15 und 20 Uhr im Hintergrund nach neuen Versionen (statt einmal täglich).",
                 "Gibt es eine neue Version, zeigt die App beim Öffnen sofort den Hinweis zum Updaten."
             )
+        )        ,
+        PatchEintrag(
+            id = 6,
+            titel = "Notentracker",
+            punkte = listOf(
+                "Neu: Noten (0 bis 15 Punkte) mit dem Stern oben rechts auf \"Heute\" und \"Klausuren\".",
+                "Durchschnitt pro Fach und gesamt, Zeugnispunkte, nach Halbjahr gefiltert; Klausuren und mündliche Noten mit einstellbarem Gewicht.",
+                "Rechner: Zeigt, wie viele Punkte du in der nächsten Klausur oder mündlich für dein Ziel brauchst.",
+                "Geschriebene Klausuren aus dem Plan bieten dir direkt das Eintragen der Note an. Alles bleibt nur auf deinem Handy."
+            )
         )
     )
 

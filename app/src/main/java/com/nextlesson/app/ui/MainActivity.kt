@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
 
     private val planViewModel: PlanViewModel by viewModels()
     private val aufgabenViewModel: AufgabenViewModel by viewModels()
+    private val notenViewModel: NotenViewModel by viewModels()
     private val sucheViewModel: SucheViewModel by viewModels()
     private val freundeViewModel: FreundeViewModel by viewModels()
     private val updateViewModel: UpdateViewModel by viewModels()
@@ -132,7 +134,7 @@ class MainActivity : ComponentActivity() {
             }
             NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben) {
                 Surface {
-                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel, sucheOeffnen)
+                    AppInhalt(planViewModel, aufgabenViewModel, notenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel, sucheOeffnen)
                 }
             }
         }
@@ -209,6 +211,7 @@ private data class FreundEntwurf(val freund: Freund, val neu: Boolean)
 private fun AppInhalt(
     planViewModel: PlanViewModel,
     aufgabenViewModel: AufgabenViewModel,
+    notenViewModel: NotenViewModel,
     sucheViewModel: SucheViewModel,
     freundeViewModel: FreundeViewModel,
     design: DesignStore,
@@ -223,6 +226,8 @@ private fun AppInhalt(
     val hausaufgaben by aufgabenViewModel.hausaufgaben.collectAsState()
     val pruefungen by aufgabenViewModel.pruefungen.collectAsState()
     val erinnerung by aufgabenViewModel.erinnerung.collectAsState()
+    val noten by notenViewModel.noten.collectAsState()
+    val klausurAnteil by notenViewModel.klausurAnteil.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
     val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
     val verfuegbareKurse by planViewModel.verfuegbareKurse.collectAsState()
@@ -246,6 +251,7 @@ private fun AppInhalt(
     var tab by rememberSaveable { mutableStateOf(Tab.HEUTE) }
     var zeigeEinstellungen by rememberSaveable { mutableStateOf(false) }
     var zeigeKurse by rememberSaveable { mutableStateOf(false) }
+    var zeigeNoten by rememberSaveable { mutableStateOf(false) }
     var freundAnsicht by rememberSaveable { mutableStateOf<String?>(null) }
     // ID des Freundes, der gerade angelegt/bearbeitet wird – als ID, damit sie saveable ist.
     var entwurfId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -277,6 +283,7 @@ private fun AppInhalt(
         importVorschlag?.let {
             zeigeEinstellungen = false
             zeigeKurse = false
+            zeigeNoten = false
             freundAnsicht = null
             gruppeOffen = false
             entwurfId = it.id
@@ -290,6 +297,7 @@ private fun AppInhalt(
         if (zustand is UiZustand.Laedt) return@LaunchedEffect
         if (entwurfId == null && !zeigeKurse && zustand !is UiZustand.KurseWaehlen && zustand !is UiZustand.LoginNoetig) {
             zeigeEinstellungen = false
+            zeigeNoten = false
             freundAnsicht = null
             gruppeOffen = false
             tab = Tab.SUCHE
@@ -343,7 +351,7 @@ private fun AppInhalt(
     // Gelöschter Freund → Ansicht schließt sich von selbst.
     val angezeigterFreund = freundAnsicht?.let { id -> freunde.firstOrNull { it.id == id } }
     // Überlagernde Ansichten verdecken die Reiter und lassen sich mit "Zurück" schließen.
-    val overlay = zeigeEinstellungen || zeigeKurse || entwurf != null || gruppeOffen || angezeigterFreund != null
+    val overlay = zeigeEinstellungen || zeigeKurse || zeigeNoten || entwurf != null || gruppeOffen || angezeigterFreund != null
     val einrichtung = brauchtZugang || brauchtKurse || overlay
 
     // Die Zurück-Taste schloss vorher die ganze App, auch aus den Einstellungen heraus.
@@ -357,6 +365,7 @@ private fun AppInhalt(
             entwurfId != null -> entwurfSchliessen()
             zeigeKurse -> zeigeKurse = false
             zeigeEinstellungen -> zeigeEinstellungen = false
+            zeigeNoten -> zeigeNoten = false
             gruppeOffen -> gruppeOffen = false
             freundAnsicht != null -> freundAnsicht = null
             tab != Tab.HEUTE -> tab = Tab.HEUTE
@@ -383,6 +392,7 @@ private fun AppInhalt(
         brauchtZugang -> "Einstellungen"
         entwurf != null -> if (entwurf.neu) "Freund hinzufügen" else entwurf.freund.name
         zeigeEinstellungen -> "Einstellungen"
+        zeigeNoten -> "Noten"
         brauchtKurse || zeigeKurse -> "Deine Kurse"
         gruppeOffen -> "Gemeinsam frei"
         angezeigterFreund != null -> angezeigterFreund.name
@@ -427,8 +437,14 @@ private fun AppInhalt(
                             Icon(Icons.Filled.Share, contentDescription = "Plan teilen")
                         }
                     }
+                    if (!einrichtung && (tab == Tab.HEUTE || tab == Tab.PRUEFUNGEN)) {
+                        IconButton(onClick = { zeigeNoten = true }) {
+                            Icon(Icons.Filled.Star, contentDescription = "Noten")
+                        }
+                    }
                     if (!brauchtZugang && !brauchtKurse && entwurf == null) {
                         IconButton(onClick = {
+                            zeigeNoten = false
                             zeigeKurse = false
                             zeigeEinstellungen = !zeigeEinstellungen
                         }) {
@@ -531,6 +547,20 @@ private fun AppInhalt(
                         onUpdatePruefen = { updateViewModel.pruefen() },
                         onUpdateLaden = updateViewModel::herunterladen,
                         onUpdateInstallieren = { updateViewModel.installieren(context) }
+                    )
+                }
+
+                // Notentracker
+                zeigeNoten && !brauchtKurse -> {
+                    NotenScreen(
+                        noten = noten,
+                        klausurAnteil = klausurAnteil,
+                        pruefungen = pruefungen,
+                        fachVorschlaege = fachNamen,
+                        onAnteil = notenViewModel::anteilSetzen,
+                        onHinzufuegen = notenViewModel::hinzufuegen,
+                        onBearbeiten = notenViewModel::bearbeiten,
+                        onLoeschen = notenViewModel::loeschen
                     )
                 }
 
