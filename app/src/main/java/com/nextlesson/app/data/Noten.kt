@@ -95,6 +95,16 @@ object Noten {
 
     fun halbjahr(note: Note): String = halbjahr(note.datum)
 
+    /** Erster und letzter Tag des Halbjahres, in dem [datum] liegt (Aug–Jan bzw. Feb–Jul). */
+    fun halbjahrGrenzen(datum: LocalDate): Pair<LocalDate, LocalDate> {
+        val m = datum.monthValue
+        return when {
+            m >= 8 -> LocalDate.of(datum.year, 8, 1) to LocalDate.of(datum.year + 1, 1, 31)
+            m == 1 -> LocalDate.of(datum.year - 1, 8, 1) to LocalDate.of(datum.year, 1, 31)
+            else -> LocalDate.of(datum.year, 2, 1) to LocalDate.of(datum.year, 7, 31)
+        }
+    }
+
     private val HALBJAHR_FORMAT = Regex("""(\d{4})/\d{1,2} · ([12])\. HJ""")
 
     /** Das Halbjahr davor: "2025/26 · 2. HJ" → "2025/26 · 1. HJ", "2025/26 · 1. HJ" → "2024/25 · 2. HJ". */
