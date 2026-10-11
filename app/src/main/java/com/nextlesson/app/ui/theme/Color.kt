@@ -124,19 +124,21 @@ enum class FarbThema(val anzeige: String, val warm: Float?, val kalt: Float?) {
     VIOLETT("Violett", 272f, 250f)
 }
 
-private fun umfaerben(farbe: Color, warm: Float, kalt: Float): Color {
+private fun umfaerben(farbe: Color, warm: Float, kalt: Float, hell: Boolean): Color {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(farbe.toArgb(), hsv)
-    // Weiß, Grau und Schwarz haben keinen Farbton und bleiben.
-    if (hsv[1] < 0.04f) return farbe
+    // Reines Weiß, Grau und Schwarz haben keinen Farbton und bleiben.
+    if (hsv[1] < 0.01f) return farbe
     hsv[0] = Farbton.neu(hsv[0], warm, kalt)
+    // Helle Flächen sind im Original fast weiß (kaum Sättigung) – ohne Anheben sähe man das Thema dort nicht.
+    if (hell && hsv[1] < 0.25f) hsv[1] = minOf(hsv[1] * 2.5f, 0.3f)
     return Color(android.graphics.Color.HSVToColor((farbe.alpha * 255).roundToInt(), hsv))
 }
 
-fun ColorScheme.mitThema(thema: FarbThema): ColorScheme {
+fun ColorScheme.mitThema(thema: FarbThema, hell: Boolean): ColorScheme {
     val warm = thema.warm ?: return this
     val kalt = thema.kalt ?: return this
-    fun d(c: Color) = umfaerben(c, warm, kalt)
+    fun d(c: Color) = umfaerben(c, warm, kalt, hell)
     return copy(
         primary = d(primary), onPrimary = d(onPrimary),
         primaryContainer = d(primaryContainer), onPrimaryContainer = d(onPrimaryContainer),

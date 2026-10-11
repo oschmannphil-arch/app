@@ -2,6 +2,7 @@ package com.nextlesson.app.ui
 
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import com.nextlesson.app.data.FotoAenderung
 import com.nextlesson.app.data.TafelFotos
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asImageBitmap
@@ -70,8 +71,8 @@ fun HausaufgabenScreen(
     aufgaben: List<Hausaufgabe>,
     onUmschalten: (String) -> Unit,
     onLoeschen: (String) -> Unit,
-    onHinzufuegen: (fach: String, text: String, faellig: LocalDate?, foto: Boolean) -> Unit,
-    onBearbeiten: (id: String, fach: String, text: String, faellig: LocalDate?, foto: Boolean) -> Unit,
+    onHinzufuegen: (fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit,
+    onBearbeiten: (id: String, fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit,
     fotoVersion: Int = 0
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
@@ -294,14 +295,16 @@ internal fun HausaufgabeDialog(
     vorschlagFach: String? = null,
     naechsteStunde: LocalDate? = null,
     onAbbrechen: () -> Unit,
-    onSpeichern: (fach: String, text: String, faellig: LocalDate?, foto: Boolean) -> Unit
+    onSpeichern: (fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit
 ) {
     val context = LocalContext.current
     // Ein frisches Kamerabild liegt in der Zwischendatei; ein früheres gehört schon zur Aufgabe.
     var neuesFoto by remember { mutableStateOf(false) }
+    var fotoEntfernen by remember { mutableStateOf(false) }
     val hatAltesFoto = remember { bestehendeAufgabe != null && TafelFotos.vorhanden(context, bestehendeAufgabe.id) }
     DisposableEffect(Unit) { onDispose { TafelFotos.zwischendateiLoeschen(context) } }
-    val kamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> neuesFoto = ok }
+    // Bricht man die Kamera ab, bleibt ein schon gemachtes Foto erhalten.
+    val kamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) { neuesFoto = true; fotoEntfernen = false } }
     var fach by remember { mutableStateOf(bestehendeAufgabe?.fach ?: vorschlagFach ?: "") }
     var text by remember { mutableStateOf(bestehendeAufgabe?.text ?: "") }
     // Neue Aufgabe: ab morgen; bestehende behält ihr Datum – auch "ohne Datum".
@@ -348,6 +351,13 @@ internal fun HausaufgabeDialog(
                     }
                 )
 
+                if (hatAltesFoto && !neuesFoto) {
+                    AssistChip(
+                        onClick = { fotoEntfernen = !fotoEntfernen },
+                        label = { Text(if (fotoEntfernen) "Foto wird entfernt – rückgängig" else "Foto entfernen") }
+                    )
+                }
+
                 Text("Fällig", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (naechsteStunde != null) {
@@ -386,7 +396,16 @@ internal fun HausaufgabeDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSpeichern(fach, text, faellig, neuesFoto) },
+                onClick = {
+                    onSpeichern(
+                        fach, text, faellig,
+                        when {
+                            neuesFoto -> FotoAenderung.NEU
+                            fotoEntfernen -> FotoAenderung.ENTFERNEN
+                            else -> FotoAenderung.KEINE
+                        }
+                    )
+                },
                 enabled = text.isNotBlank()
             ) { Text("Speichern") }
         },

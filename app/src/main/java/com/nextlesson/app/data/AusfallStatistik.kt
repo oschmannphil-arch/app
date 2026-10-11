@@ -17,12 +17,24 @@ data class AusfallErgebnis(
 /** Reine Logik: Tage kodieren und auswerten (ohne Android, damit testbar). */
 object AusfallLogik {
 
+    /**
+     * Name des Fachs einer ausgefallenen Stunde: Bei Ausfall steht im Fach oft nur "---" oder nichts –
+     * dann das Kurskürzel, sonst das erste Wort aus dem Hinweis ("PHY1 fällt aus" → "PHY1").
+     */
+    internal fun ausfallName(l: Lesson): String {
+        fun hatBuchstaben(s: String?) = s != null && s.any { it.isLetter() }
+        if (hatBuchstaben(l.fach)) return l.fach.trim()
+        if (hatBuchstaben(l.kursKuerzel)) return l.kursKuerzel!!.trim()
+        val wort = l.info.split(' ', '\n', ',', ':').firstOrNull { w -> w.any { it.isLetter() } && w.any { it.isDigit() } }
+        return wort?.trim().orEmpty()
+    }
+
     /** "n;stunde|fach,stunde|fach": n = Stunden des Tages, danach die ausgefallenen (ohne Klausuren). */
     fun kodieren(stunden: List<Lesson>): String {
         val echte = stunden.filter { it.fach.isNotBlank() || it.entfaellt }
         val gesamt = echte.distinctBy { it.stunde }.size
         val aus = echte.filter { it.entfaellt && !it.istKlausur }.distinctBy { it.stunde }
-        return "$gesamt;" + aus.joinToString(",") { "${it.stunde}|${it.fach.replace(',', ' ').replace('|', ' ').trim()}" }
+        return "$gesamt;" + aus.joinToString(",") { "${it.stunde}|${ausfallName(it).replace(',', ' ').replace('|', ' ')}" }
     }
 
     /** Auswertung für [von]..[bis] (einschließlich); Tage nach [heute] zählen als "kommend". */
@@ -32,6 +44,7 @@ object AusfallLogik {
         var ausgefallen = 0
         var kommend = 0
         val proFach = HashMap<String, Int>()
+        val namen = HashMap<String, MutableList<String>>()
         for ((schluessel, wert) in eintraege) {
             val datum = runCatching { LocalDate.parse(schluessel) }.getOrNull() ?: continue
             if (datum.isBefore(von) || datum.isAfter(bis)) continue
@@ -47,10 +60,17 @@ object AusfallLogik {
             ausgefallen += aus.size
             aus.forEach { e ->
                 val fach = e.substringAfter('|', "").ifBlank { "Unbekannt" }
-                proFach.merge(fach, 1, Int::plus)
+                // GEO2 und Geo zählen als dasselbe Fach.
+                proFach.merge(FachName.schluessel(fach), 1, Int::plus)
+                namen.getOrPut(FachName.schluessel(fach)) { mutableListOf() } += fach
             }
         }
-        return AusfallErgebnis(tage, gesamt, ausgefallen, kommend, proFach.entries.sortedByDescending { it.value }.map { it.key to it.value })
+        return AusfallErgebnis(
+            tage, gesamt, ausgefallen, kommend,
+            proFach.entries.sortedByDescending { it.value }.map { (schluessel, n) ->
+                FachName.zusammen(namen[schluessel].orEmpty()).firstOrNull().orEmpty().ifBlank { "Unbekannt" } to n
+            }
+        )
     }
 }
 

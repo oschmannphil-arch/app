@@ -294,7 +294,8 @@ fun steckbriefAus(stunden: List<Lesson>): Steckbrief? {
     return Steckbrief(
         faecher = FachName.zusammen(aktiv.map { it.fach }),
         jahrgaenge = gesammelt(aktiv.map { Freizeit.jahrgang(it.klasse) }).sortedBy { it.toIntOrNull() ?: Int.MAX_VALUE },
-        raeume = gesammelt(aktiv.map { it.raum }).sorted(),
+        // Ein Eintrag wie "204 205" sind zwei Räume.
+        raeume = gesammelt(aktiv.flatMap { it.raum.split(' ', ',', ';', '/') }).sorted(),
         stunden = aktiv.distinctBy { it.stunde }.size
     )
 }

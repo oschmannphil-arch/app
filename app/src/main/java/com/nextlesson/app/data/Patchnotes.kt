@@ -109,6 +109,19 @@ object Patchnotes {
                 "Heute: Nach links oder rechts wischen (oder die Pfeile oben) wechselt zum nächsten bzw. vorigen Schultag – auch über Wochen hinweg.",
                 "Blockansicht: Eine Klausur über mehrere Stunden (z. B. 3.–6.) ist jetzt ein einziger Block."
             )
+        )        ,
+        PatchEintrag(
+            id = 11,
+            titel = "Fehler behoben",
+            punkte = listOf(
+                "Farbthemen: Die Namen passen jetzt zu den Farben (Wald ist grün, Violett violett).",
+                "GEO2 und Geo (Oberstufe und normales Fach) zählen als ein Fach – bei Lehrkräften, Farben und Noten.",
+                "Farbe pro Fach zeigt alle deine Kurse.",
+                "Tafel-Foto geht nicht mehr verloren und lässt sich wieder entfernen.",
+                "Tage durchwischen: zuverlässiger, auch beim Aktualisieren eines anderen Tages.",
+                "Kurs-Hinweis nach dem Halbjahreswechsel meldet sich erst, wenn der Befund sicher ist.",
+                "Noten: Abi-Rechner mit der Formel Durchschnitt × 40; für Klasse 5–10 ein passenderer Startwert (35 %)."
+            )
         )
     )
 

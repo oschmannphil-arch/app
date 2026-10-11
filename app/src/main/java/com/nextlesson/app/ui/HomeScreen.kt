@@ -132,6 +132,14 @@ fun KeinPlanScreen(naechster: LocalDate?, gesucht: Boolean, onNeuPruefen: () -> 
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Ferien.text(LocalDate.now())?.let { ferienText ->
+            Text(
+                text = "🏖️ $ferienText (ohne Gewähr)",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         Spacer(Modifier.height(12.dp))
         when {
             naechster != null -> Text(

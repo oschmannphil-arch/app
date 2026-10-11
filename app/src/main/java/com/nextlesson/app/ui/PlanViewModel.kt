@@ -109,6 +109,15 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
      * Wechselt vom gerade gezeigten Tag [aktuell] zum vorigen ([richtung] < 0) oder nächsten Schultag,
      * auch über Wochengrenzen. [standard] ist der normale Tag; dorthin geht es ohne Nachladen zurück.
      */
+    /** Der normale Tag zuletzt – nötig, um den angesehenen Tag neu zu laden. */
+    private var letzterStandard: LocalDate? = null
+
+    /** Lädt den gerade angesehenen anderen Tag frisch (Ziehen zum Aktualisieren). */
+    fun tagNeuLaden() {
+        val aktuell = _tagAnsicht.value ?: return
+        tagWaehlen(aktuell.datum, letzterStandard ?: return, erzwingen = true)
+    }
+
     fun tagWischen(richtung: Int, aktuell: LocalDate, standard: LocalDate) {
         val ziel = schultagVersetzt(aktuell, richtung)
         val heute = LocalDate.now()
@@ -117,7 +126,8 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         tagWaehlen(ziel, standard)
     }
 
-    fun tagWaehlen(datum: LocalDate, standard: LocalDate) {
+    fun tagWaehlen(datum: LocalDate, standard: LocalDate, erzwingen: Boolean = false) {
+        letzterStandard = standard
         tagJob?.cancel()
         if (datum == standard) {
             _tagAnsicht.value = null
@@ -125,9 +135,13 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         }
         _tagAnsicht.value = TagAnsicht.Laedt(datum)
         tagJob = viewModelScope.launch {
-            val creds = withContext(Dispatchers.IO) { credentialsStore.laden() } ?: return@launch
+            val creds = withContext(Dispatchers.IO) { credentialsStore.laden() }
+            if (creds == null) {
+                _tagAnsicht.value = TagAnsicht.Leer(datum, "Du bist nicht angemeldet.")
+                return@launch
+            }
             val kurse = kursSelectionStore.laden()
-            val ergebnis = repository.holeTage(creds, datum, anzahl = 1).firstOrNull()?.second
+            val ergebnis = repository.holeTage(creds, datum, anzahl = 1, erzwingen = erzwingen).firstOrNull()?.second
             val neu = withContext(Dispatchers.Default) {
                 when (ergebnis) {
                     is PlanResult.Success -> {

@@ -12,6 +12,9 @@ import java.io.File
  * Cache; beim Speichern der Aufgabe wird das Bild verkleinert und unter der Aufgaben-ID abgelegt.
  * Alles bleibt auf dem Gerät.
  */
+/** Was beim Speichern einer Hausaufgabe mit dem Foto passiert. */
+enum class FotoAenderung { KEINE, NEU, ENTFERNEN }
+
 object TafelFotos {
 
     private const val MAX_KANTE = 1600
@@ -35,9 +38,23 @@ object TafelFotos {
         zwischendatei(context).delete()
     }
 
-    /** Macht aus dem Kamerabild das Foto der Aufgabe [id] (verkleinert). Gibt zurück, ob es geklappt hat. */
-    fun uebernehmen(context: Context, id: String): Boolean {
+    private fun rohDatei(context: Context, id: String) = File(fotoOrdner(context), datei(context, id).name + ".neu")
+
+    /**
+     * Schritt 1 (sofort, ohne Warten): Das Kamerabild aus der Zwischendatei an die Aufgabe [id] hängen,
+     * damit das Schließen des Dialogs es nicht mehr löschen kann.
+     */
+    fun sichern(context: Context, id: String): Boolean {
         val quelle = zwischendatei(context)
+        if (!quelle.exists() || quelle.length() == 0L) return false
+        val ziel = rohDatei(context, id)
+        ziel.delete()
+        return quelle.renameTo(ziel) || runCatching { quelle.copyTo(ziel, overwrite = true); quelle.delete(); true }.getOrDefault(false)
+    }
+
+    /** Schritt 2 (im Hintergrund): das gesicherte Bild verkleinern und als Foto der Aufgabe [id] ablegen. */
+    fun uebernehmen(context: Context, id: String): Boolean {
+        val quelle = rohDatei(context, id)
         if (!quelle.exists() || quelle.length() == 0L) return false
         return runCatching {
             val grenzen = BitmapFactory.Options().apply { inJustDecodeBounds = true }

@@ -8,6 +8,7 @@ import com.nextlesson.app.data.ErinnerungsStore
 import com.nextlesson.app.data.Hausaufgabe
 import com.nextlesson.app.data.Pruefung
 import com.nextlesson.app.data.PruefungsArt
+import com.nextlesson.app.data.FotoAenderung
 import com.nextlesson.app.data.TafelFotos
 import com.nextlesson.app.work.LernErinnerung
 import androidx.lifecycle.viewModelScope
@@ -48,24 +49,35 @@ class AufgabenViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Hausaufgaben ----------
 
-    /** [foto]: Es liegt ein neues Kamerabild bereit, das zur Aufgabe gehören soll. */
-    fun hausaufgabeHinzufuegen(fach: String, text: String, faellig: LocalDate?, foto: Boolean = false) {
+    fun hausaufgabeHinzufuegen(fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung = FotoAenderung.KEINE) {
         if (text.isBlank()) return
         val id = store.hausaufgabeHinzufuegen(fach, text, faellig)
-        if (foto) fotoUebernehmen(id)
+        fotoAnwenden(id, foto)
     }
 
-    fun hausaufgabeBearbeiten(id: String, fach: String, text: String, faellig: LocalDate?, foto: Boolean = false) {
+    fun hausaufgabeBearbeiten(id: String, fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung = FotoAenderung.KEINE) {
         if (text.isBlank()) return
         store.hausaufgabeBearbeiten(id, fach, text, faellig)
-        if (foto) fotoUebernehmen(id)
+        fotoAnwenden(id, foto)
     }
 
-    // Verkleinern kostet etwas – nicht auf dem Hauptthread.
-    private fun fotoUebernehmen(id: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            TafelFotos.uebernehmen(kontext, id)
-            _fotoVersion.value += 1
+    private fun fotoAnwenden(id: String, aenderung: FotoAenderung) {
+        when (aenderung) {
+            FotoAenderung.KEINE -> Unit
+            FotoAenderung.ENTFERNEN -> {
+                TafelFotos.loeschen(kontext, id)
+                _fotoVersion.value += 1
+            }
+            FotoAenderung.NEU -> {
+                // Erst sofort sichern (der Dialog räumt beim Schließen die Zwischendatei weg), dann im
+                // Hintergrund verkleinern.
+                if (TafelFotos.sichern(kontext, id)) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        TafelFotos.uebernehmen(kontext, id)
+                        _fotoVersion.value += 1
+                    }
+                }
+            }
         }
     }
 

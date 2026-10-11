@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,13 +49,17 @@ fun TagWischen(
 ) {
     var strecke by remember { mutableFloatStateOf(0f) }
     val schwelle = with(LocalDensity.current) { 90.dp.toPx() }
+    // Die Geste darf bei einer Neuzeichnung (z. B. dem Minuten-Tick) nicht neu starten – sonst geht ein
+    // gerade laufendes Wischen verloren. Darum den jeweils neuesten Aufruf merken und nur mit Unit starten.
+    val aktuellVor by rememberUpdatedState(onVor)
+    val aktuellZurueck by rememberUpdatedState(onZurueck)
     Box(
-        modifier = modifier.pointerInput(onVor, onZurueck) {
+        modifier = modifier.pointerInput(Unit) {
             detectHorizontalDragGestures(
                 onDragStart = { strecke = 0f },
                 onDragCancel = { strecke = 0f },
                 onDragEnd = {
-                    if (strecke <= -schwelle) onVor() else if (strecke >= schwelle) onZurueck()
+                    if (strecke <= -schwelle) aktuellVor() else if (strecke >= schwelle) aktuellZurueck()
                     strecke = 0f
                 }
             ) { _, delta -> strecke += delta }

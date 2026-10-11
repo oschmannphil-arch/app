@@ -460,6 +460,7 @@ private fun AppInhalt(
                             } else {
                                 planViewModel.aktualisieren()
                                 if (tab == Tab.WOCHE) planViewModel.wocheLaden(erzwingen = true)
+                                if (tab == Tab.HEUTE) planViewModel.tagNeuLaden()
                                 widgetAktualisieren()
                             }
                         }) {
@@ -667,6 +668,8 @@ private fun AppInhalt(
                         isRefreshing = aktualisiertGerade,
                         onRefresh = {
                             planViewModel.aktualisieren()
+                            // Zeigt man gerade einen anderen Tag, soll auch der neu geladen werden.
+                            planViewModel.tagNeuLaden()
                             widgetAktualisieren()
                         },
                         modifier = Modifier.fillMaxSize()
@@ -844,7 +847,20 @@ private fun AppInhalt(
     }
     val kursSignatur = remember(kursMigration) { (kursMigration.ersetzt.entries.map { "${it.key}>${it.value}" } + kursMigration.fehlend).sorted().joinToString("|") }
     var kursHinweisAus by rememberSaveable { mutableStateOf(false) }
-    val kursHinweisOffen = kursMigration.hatAenderung && !einrichtung && !updateDialogOffen &&
+    // Die Kursliste stammt aus dem Plan eines einzelnen Tages – ein Ausreißer soll keinen Fehlalarm geben.
+    // Darum erst melden, wenn derselbe Befund schon beim vorigen Öffnen der App auftrat.
+    var kursBefundBestaetigt by remember { mutableStateOf(false) }
+    LaunchedEffect(kursSignatur) {
+        if (kursSignatur.isEmpty()) {
+            kursPrefs.edit().remove("verdacht").apply()
+            kursBefundBestaetigt = false
+        } else if (kursPrefs.getString("verdacht", "") == kursSignatur) {
+            kursBefundBestaetigt = true
+        } else {
+            kursPrefs.edit().putString("verdacht", kursSignatur).apply()
+        }
+    }
+    val kursHinweisOffen = kursMigration.hatAenderung && kursBefundBestaetigt && !einrichtung && !updateDialogOffen &&
         patchEintraege.isEmpty() && !kursHinweisAus && kursPrefs.getString("ignoriert", "") != kursSignatur
     if (kursHinweisOffen) {
         fun spaeter() {
@@ -876,7 +892,8 @@ private fun AppInhalt(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val neu = kursMigration.neueAuswahl(planViewModel.aktuelleKursAuswahl())
+                    // Nur Nachfolger einsetzen – die fehlenden Kurse nimmt man in der Kurswahl selbst heraus.
+                    val neu = kursMigration.mitNachfolgern(planViewModel.aktuelleKursAuswahl())
                     if (kursMigration.ersetzt.isNotEmpty()) planViewModel.kursAuswahlSpeichern(neu)
                     kursHinweisAus = true
                     if (kursMigration.fehlend.isNotEmpty()) zeigeKurse = true

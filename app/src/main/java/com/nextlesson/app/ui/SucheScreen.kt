@@ -286,9 +286,11 @@ private fun Startansicht(
                                     Icon(
                                         Icons.Filled.Close,
                                         contentDescription = "${t.name} aus dem Verlauf entfernen",
+                                        // Größere Fläche zum Antippen als das Symbol selbst.
                                         modifier = Modifier
-                                            .size(InputChipDefaults.IconSize)
+                                            .size(InputChipDefaults.IconSize + 14.dp)
                                             .clickable { onVerlaufEntfernen(t) }
+                                            .padding(7.dp)
                                     )
                                 }
                             )

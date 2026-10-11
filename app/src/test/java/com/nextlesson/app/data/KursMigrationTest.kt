@@ -26,6 +26,13 @@ class KursMigrationTest {
     }
 
     @Test
+    fun nurNachfolgerEinsetzenFehlendeBleiben() {
+        val gewaehlt = setOf("12/5::MAT2", "12/5::PHY1", "12/5::ENG1")
+        val e = KursMigration.pruefen(gewaehlt, liste)
+        assertEquals(setOf("12/5::MAT3", "12/5::PHY1", "12/5::ENG1"), e.mitNachfolgern(gewaehlt))
+    }
+
+    @Test
     fun mehrdeutigOderGanzFortWirdGemeldet() {
         val e = KursMigration.pruefen(setOf("12/5::PHY1", "12/5::KUN1"), liste)
         assertTrue(e.ersetzt.isEmpty())

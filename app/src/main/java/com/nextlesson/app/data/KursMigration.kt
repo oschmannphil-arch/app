@@ -18,6 +18,10 @@ object KursMigration {
         /** Die Auswahl nach Anwendung der Nachfolger, ohne die fehlenden. */
         fun neueAuswahl(gewaehlt: Set<String>): Set<String> =
             gewaehlt.filter { it !in ersetzt && it !in fehlend }.toSet() + ersetzt.values
+
+        /** Nur die Nachfolger einsetzen; fehlende Kurse bleiben stehen, bis man sie selbst abwählt. */
+        fun mitNachfolgern(gewaehlt: Set<String>): Set<String> =
+            gewaehlt.filter { it !in ersetzt }.toSet() + ersetzt.values
     }
 
     private fun klasse(id: String) = id.substringBefore("::")

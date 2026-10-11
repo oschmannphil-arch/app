@@ -179,6 +179,12 @@ ${std(3, "09:05", "09:50", "MAT2", "Mei", "226")}
     }
 
     @Test
+    fun steckbriefTrenntRaeumeInEinemEintrag() {
+        val l = Lesson(1, null, null, "DE", false, "204 205", false, null, "Schö", false, null, "", false, klasse = "10/2")
+        assertEquals(listOf("204", "205"), steckbriefAus(listOf(l))!!.raeume)
+    }
+
+    @Test
     fun steckbriefFasstLehrerTagZusammen() {
         val b = steckbriefAus(schultag().stundenVon(Treffer.Lehrer("Weis")))!!
         assertEquals(listOf("MA", "MAT2"), b.faecher)

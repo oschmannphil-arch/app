@@ -18,6 +18,23 @@ class AusfallStatistikTest {
     }
 
     @Test
+    fun fachNameAuchBeiLeeremFach() {
+        // Ausfall: im Fach steht nichts, aber das Kurskürzel ist bekannt
+        assertEquals("PHY1", AusfallLogik.ausfallName(l(1, "", aus = true).copy(kursKuerzel = "PHY1")))
+        // Weder Fach noch Kürzel: aus dem Hinweis
+        assertEquals("MAT2", AusfallLogik.ausfallName(l(1, "---", aus = true).copy(info = "MAT2 fällt aus")))
+        assertEquals("", AusfallLogik.ausfallName(l(1, "", aus = true)))
+        assertEquals("2;2|PHY1", AusfallLogik.kodieren(listOf(l(1, "Ma"), l(2, "", aus = true).copy(kursKuerzel = "PHY1"))))
+    }
+
+    @Test
+    fun geoUndGeo2ZaehlenAlsEinFach() {
+        val e = mapOf("2026-10-12" to "6;1|GEO2,2|Geo", "2026-10-13" to "6;1|De")
+        val r = AusfallLogik.auswerten(e, LocalDate.of(2026, 8, 1), LocalDate.of(2027, 1, 31), LocalDate.of(2026, 10, 14))
+        assertEquals(listOf("Geo" to 2, "De" to 1), r.proFach)
+    }
+
+    @Test
     fun auswertenVergangenheitUndZukunft() {
         val heute = LocalDate.of(2026, 10, 14)
         val e = mapOf(

@@ -27,9 +27,7 @@ class NotenStore(context: Context) {
     }
 
     // Zielwert pro Fach: "SYSTEM|fach" → Ziel (Punkte bzw. Note).
-    private val _ziele = MutableStateFlow(
-        prefs.all.mapNotNull { (k, v) -> if (k.startsWith(ZIEL_PREFIX) && v is Int) k.removePrefix(ZIEL_PREFIX) to v else null }.toMap()
-    )
+    private val _ziele = MutableStateFlow(zieleLesen())
     val ziele: StateFlow<Map<String, Int>> = _ziele.asStateFlow()
 
     fun zielSetzen(system: NotenSystem, fach: String, wert: Int) {
@@ -37,6 +35,32 @@ class NotenStore(context: Context) {
         val begrenzt = wert.coerceIn(system.min, system.max)
         _ziele.value = _ziele.value + (schluessel to begrenzt)
         prefs.edit().putInt(ZIEL_PREFIX + schluessel, begrenzt).apply()
+    }
+
+    /**
+     * Liest die Ziele. Ältere Schlüssel trugen den ganzen Fachnamen ("mat2"), jetzt zählt nur das Fach
+     * ("mat") – sie werden hier einmal umgeschrieben, damit kein Ziel verloren geht.
+     */
+    private fun zieleLesen(): Map<String, Int> {
+        val ergebnis = HashMap<String, Int>()
+        val alteKeys = ArrayList<String>()
+        for ((k, v) in prefs.all) {
+            if (!k.startsWith(ZIEL_PREFIX) || v !is Int) continue
+            val roh = k.removePrefix(ZIEL_PREFIX)
+            val system = roh.substringBefore('|')
+            val fach = roh.substringAfter('|', "")
+            val neu = "$system|${Noten.fachSchluessel(fach)}"
+            if (neu != roh) alteKeys += k
+            // Ein schon vorhandener neuer Schlüssel hat Vorrang vor dem umgeschriebenen alten.
+            if (neu == roh || neu !in ergebnis) ergebnis[neu] = v
+        }
+        if (alteKeys.isNotEmpty()) {
+            prefs.edit().apply {
+                alteKeys.forEach { remove(it) }
+                ergebnis.forEach { (k, v) -> putInt(ZIEL_PREFIX + k, v) }
+            }.apply()
+        }
+        return ergebnis
     }
 
     private fun anteilKey(system: NotenSystem) =
@@ -121,7 +145,8 @@ class NotenStore(context: Context) {
         const val KEY_ANTEIL = "klausur_anteil"
         const val KEY_ANTEIL_NOTEN = "klausur_anteil_noten"
         const val START_ANTEIL = 40
-        const val START_ANTEIL_NOTEN = 50
+        // Klasse 5–10: Klassenarbeiten laut älterem Erlass etwa 25–40 % der Note.
+        const val START_ANTEIL_NOTEN = 35
         val SPERRE = Any()
     }
 }

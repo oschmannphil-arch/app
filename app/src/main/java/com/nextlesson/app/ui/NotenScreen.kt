@@ -99,7 +99,14 @@ fun NotenScreen(
     var zeugnisOffen by remember { mutableStateOf(false) }
     var abiOffen by remember { mutableStateOf(false) }
     // "" = alle Halbjahre
-    var halbjahr by rememberSaveable { mutableStateOf(Noten.halbjahr(heute)) }
+    // Gibt es im aktuellen Halbjahr noch keine Noten, aber in einem früheren, starten wir dort.
+    var halbjahr by rememberSaveable {
+        val aktuell = Noten.halbjahr(heute)
+        mutableStateOf(
+            if (noten.isEmpty() || noten.any { Noten.halbjahr(it) == aktuell }) aktuell
+            else Noten.halbjahr(noten.maxByOrNull { it.datumEpochDay }!!)
+        )
+    }
 
     val halbjahre = remember(noten, heute) {
         (noten.map { Noten.halbjahr(it) } + Noten.halbjahr(heute)).distinct().sortedDescending()
@@ -163,6 +170,11 @@ fun NotenScreen(
             }
 
             item { AnteilRegler(klausurAnteil, onAnteil) }
+            if (system == NotenSystem.NOTEN) {
+                item {
+                    LeerHinweis("Klasse 5–10: Klassenarbeiten zählen laut älterem Erlass etwa 25–40 % der Note (eine 45-Minuten-Arbeit ca. 20 %). Frag im Zweifel deine Lehrkraft.")
+                }
+            }
 
             if (faecher.isNotEmpty()) {
                 item {
@@ -525,7 +537,10 @@ private fun AnteilRegler(anteil: Int, onAnteil: (Int) -> Unit) {
                     ziffern.toIntOrNull()?.takeIf { it in Noten.ANTEIL_MIN..Noten.ANTEIL_MAX }?.let(onAnteil)
                 },
                 suffix = { Text("%") },
-                isError = text.toIntOrNull()?.let { it !in Noten.ANTEIL_MIN..Noten.ANTEIL_MAX } ?: true,
+                // Erst als Fehler zeigen, wenn die Eingabe nicht mehr zu einer gültigen Zahl werden kann ("3" → "35").
+                isError = text.toIntOrNull().let { w ->
+                    w == null || w > Noten.ANTEIL_MAX || (text.length >= 2 && w < Noten.ANTEIL_MIN)
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.width(96.dp)
@@ -688,7 +703,7 @@ private fun AbiDialog(schnitt: Double?, onSchliessen: () -> Unit) {
                     )
                 }
                 Text(
-                    "Grobe Schätzung nach dem bundesweiten 900-Punkte-Schema. Welche Kurse genau zählen, regelt das Land – verbindlich sind nur Schule und Landesschulamt.",
+                    "Block I = Durchschnitt × 40 (Summe der Punkte geteilt durch die Zahl der gewerteten Ergebnisse × 40). Laut Oberstufenverordnung zählen 36 bis 40 Kurshalbjahre, einige davon doppelt – diese Auswahl macht deine Schule. Das hier ist darum nur eine Schätzung.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
