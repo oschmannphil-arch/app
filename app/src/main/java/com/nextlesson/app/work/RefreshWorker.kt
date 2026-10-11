@@ -8,6 +8,7 @@ import com.nextlesson.app.data.AufgabenStore
 import com.nextlesson.app.data.CredentialsStore
 import com.nextlesson.app.data.PlanKlausur
 import com.nextlesson.app.data.Aenderung
+import com.nextlesson.app.data.AenderungsVerlauf
 import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.FreundFreiTracker
 import com.nextlesson.app.data.FreundeStore
@@ -107,6 +108,8 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         val klausurenProTag = HashMap<LocalDate, List<PlanKlausur>>()
         val ausfallStatistik = AusfallStatistik(applicationContext)
         ausfallStatistik.aufraeumen()
+        val aenderungsVerlauf = AenderungsVerlauf(applicationContext)
+        aenderungsVerlauf.aufraeumen()
 
         tage.forEach { (datum, ergebnis) ->
             val success = ergebnis as? PlanResult.Success ?: return@forEach
@@ -119,6 +122,7 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
             //    nichts Neues enthalten.
             if (success.aus == Quelle.NETZ) {
                 val aktuell = Aenderung.von(plan.stunden)
+                aenderungsVerlauf.vergleiche(datum, aktuell)
                 val neu = aenderungsTracker.neueAenderungen(datum, aktuell)
                 // Gemeldet wird nur, was eingeschaltet ist und noch bevorsteht.
                 fun zeigen(a: Aenderung) = a.art in gemeldeteArten && a.nochRelevant(datum, heute, jetzt)

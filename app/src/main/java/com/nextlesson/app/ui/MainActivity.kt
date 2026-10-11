@@ -1,5 +1,7 @@
 package com.nextlesson.app.ui
 
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import com.nextlesson.app.ui.theme.FarbThema
 import android.Manifest
 import android.content.Intent
@@ -469,8 +471,21 @@ private fun AppInhalt(
                     }
                     val angezeigt = zustand as? UiZustand.Angezeigt
                     if (!einrichtung && tab == Tab.HEUTE && angezeigt != null) {
-                        IconButton(onClick = { teilen(context, planAlsText(angezeigt.plan), "Plan teilen") }) {
-                            Icon(Icons.Filled.Share, contentDescription = "Plan teilen")
+                        var teilenMenue by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { teilenMenue = true }) {
+                                Icon(Icons.Filled.Share, contentDescription = "Plan teilen")
+                            }
+                            DropdownMenu(expanded = teilenMenue, onDismissRequest = { teilenMenue = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Als Text") },
+                                    onClick = { teilenMenue = false; teilen(context, planAlsText(angezeigt.plan), "Plan teilen") }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Als Bild") },
+                                    onClick = { teilenMenue = false; planAlsBildTeilen(context, angezeigt.plan) }
+                                )
+                            }
                         }
                     }
                     if (!einrichtung && (tab == Tab.HEUTE || tab == Tab.PRUEFUNGEN)) {

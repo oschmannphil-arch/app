@@ -122,6 +122,16 @@ object Patchnotes {
                 "Kurs-Hinweis nach dem Halbjahreswechsel meldet sich erst, wenn der Befund sicher ist.",
                 "Noten: Abi-Rechner mit der Formel Durchschnitt × 40; für Klasse 5–10 ein passenderer Startwert (35 %)."
             )
+        ),
+        PatchEintrag(
+            id = 12,
+            titel = "Änderungen im Blick, Plan als Bild, Web-App",
+            punkte = listOf(
+                "Heute: „Seit gestern geändert“ zeigt, was sich im Plan gegenüber einem früheren Tag verändert hat (ab dem zweiten Tag, den die App kennt).",
+                "Plan teilen: jetzt auch als Bild, z. B. für WhatsApp.",
+                "Einstellungen: aufklappbare Bereiche statt einer langen Liste.",
+                "Neu: Web-App für iPhone und Browser – Link in den Einstellungen unter „App, Update & Statistik“."
+            )
         )
     )
 

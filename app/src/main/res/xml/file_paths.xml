@@ -3,4 +3,5 @@
 <paths>
     <cache-path name="updates" path="updates/" />
     <cache-path name="tafel" path="tafel/" />
+    <cache-path name="teilen" path="teilen/" />
 </paths>

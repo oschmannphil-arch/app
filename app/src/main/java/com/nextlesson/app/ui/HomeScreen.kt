@@ -266,6 +266,16 @@ fun HomeScreen(
         }
     }
 
+    // Änderungen gegenüber dem Stand eines früheren Tages ("seit gestern geändert").
+    val kontext = androidx.compose.ui.platform.LocalContext.current
+    var seitGestern by remember { mutableStateOf<List<com.nextlesson.app.data.Aenderung>>(emptyList()) }
+    LaunchedEffect(persoenlich.datum, plan.stunden) {
+        seitGestern = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.nextlesson.app.data.AenderungsVerlauf(kontext)
+                .vergleiche(persoenlich.datum, com.nextlesson.app.data.Aenderung.von(plan.stunden))
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -296,6 +306,17 @@ fun HomeScreen(
                 HeroKarte(naechste, istHeute, persoenlich.datum, jetzt, dunkel)
             } else {
                 LeerKarte(tagVorbei = tagVorbei, laedt = aktualisiertGerade)
+            }
+        }
+
+        if (seitGestern.isNotEmpty()) {
+            item {
+                UebersichtKarte(
+                    titel = "Seit gestern geändert",
+                    text = com.nextlesson.app.data.AenderungsText.text(seitGestern),
+                    hervorgehoben = false,
+                    onClick = null
+                )
             }
         }
 

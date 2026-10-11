@@ -83,6 +83,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     private val credentialsStore by lazy { CredentialsStore(app) }
     private val kursSelectionStore = KursSelectionStore(app)
     private val aenderungsTracker = AenderungsTracker(app)
+    private val aenderungsVerlauf = com.nextlesson.app.data.AenderungsVerlauf(app)
     private val widgetDataStore = WidgetDataStore(app)
     private val repository = IndiwareRepository(app)
 
@@ -215,6 +216,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         val alteSchule = credentialsStore.laden()?.schulnummer
         credentialsStore.speichern(creds)
         aenderungsTracker.zuruecksetzen()
+        aenderungsVerlauf.zuruecksetzen()
         // Die Kurswahl gehört zur Schule: Kurs-IDs einer anderen Schule passen auf nichts und
         // ließen den Plan leer ("kein Plan gefunden") – dann lieber gleich neu wählen lassen.
         if (alteSchule != null && alteSchule != creds.schulnummer) {
@@ -256,6 +258,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         kursSelectionStore.speichern(kursIds)
         // Der alte Änderungs-Stand bezog sich auf andere Kurse und würde sonst Fehlalarme geben.
         aenderungsTracker.zuruecksetzen()
+        aenderungsVerlauf.zuruecksetzen()
         _wochenZustand.value = WochenZustand.NichtGeladen
 
         if (kursIds.isEmpty()) {
