@@ -41,6 +41,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -114,6 +116,15 @@ fun EinstellungenScreen(
     var passwort by remember { mutableStateOf(credentials?.passwort.orEmpty()) }
     var zeitDialog by remember { mutableStateOf(false) }
 
+    val reiter = listOf("Allgemein", "Meldungen", "Konto", "App")
+    var reiterNr by rememberSaveable { mutableIntStateOf(0) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+    TabRow(selectedTabIndex = reiterNr) {
+        reiter.forEachIndexed { i, name ->
+            Tab(selected = reiterNr == i, onClick = { reiterNr = i }, text = { Text(name, maxLines = 1) })
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -123,9 +134,10 @@ fun EinstellungenScreen(
     ) {
         Spacer(Modifier.height(4.dp))
 
-        BenachrichtigungenKarte()
+        if (reiterNr == 1) BenachrichtigungenKarte()
 
         // --- Erinnerung ---
+        if (reiterNr == 1)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -176,7 +188,7 @@ fun EinstellungenScreen(
         }
 
         // --- Kurse ---
-        Card(
+        if (reiterNr == 0) Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -207,7 +219,7 @@ fun EinstellungenScreen(
         }
 
         // --- Darstellung ---
-        Card(
+        if (reiterNr == 0) Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -251,11 +263,11 @@ fun EinstellungenScreen(
         }
 
         // --- Statistik ---
-        AusfallKarte()
+        if (reiterNr == 3) AusfallKarte()
 
         // --- Freunde ---
         // Braucht die Kursliste der Schule – also erst, wenn ein Zugang gespeichert ist.
-        if (credentials != null) {
+        if (reiterNr == 0 && credentials != null) {
             FreundeEinstellungenKarte(
                 freunde = freunde,
                 onBearbeiten = onFreundBearbeiten,
@@ -264,7 +276,7 @@ fun EinstellungenScreen(
         }
 
         // --- Widget ---
-        Card(
+        if (reiterNr == 1) Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -293,6 +305,7 @@ fun EinstellungenScreen(
         }
 
         // --- Zugangsdaten ---
+        if (reiterNr == 2) {
         Text(
             text = "Zugang zu Indiware mobil",
             style = MaterialTheme.typography.titleMedium,
@@ -339,10 +352,15 @@ fun EinstellungenScreen(
         ) {
             Text("Zugang speichern")
         }
+        }
 
-        UpdateKarte(update, installierterBuild, onUpdatePruefen, onUpdateLaden, onUpdateInstallieren)
-        VersionsZeile()
+        if (reiterNr == 3) {
+            UpdateKarte(update, installierterBuild, onUpdatePruefen, onUpdateLaden, onUpdateInstallieren)
+            WebAppKarte()
+            VersionsZeile()
+        }
         Spacer(Modifier.height(24.dp))
+    }
     }
 
     if (farbDialog) {
@@ -365,6 +383,42 @@ fun EinstellungenScreen(
                 zeitDialog = false
             }
         )
+    }
+}
+
+private const val WEB_APP_URL = "https://oschmannphil-arch.github.io/app/"
+
+/** Link zur Web-Version (z. B. für Freunde mit iPhone): öffnen oder weitergeben. */
+@Composable
+private fun WebAppKarte() {
+    val kontext = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Web-App (iPhone & Browser)", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "Für Freunde ohne Android: im Browser öffnen, am iPhone in Safari über „Teilen → Zum Home-Bildschirm“ installieren.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(WEB_APP_URL, style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    kontext.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(WEB_APP_URL)))
+                }) { Text("Öffnen") }
+                OutlinedButton(onClick = {
+                    val senden = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, "NextLesson als Web-App: $WEB_APP_URL")
+                    }
+                    kontext.startActivity(Intent.createChooser(senden, "Link teilen"))
+                }) { Text("Link teilen") }
+            }
+        }
     }
 }
 
