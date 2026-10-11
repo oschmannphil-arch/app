@@ -498,7 +498,8 @@ private fun Detail(
                     ) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("Steckbrief (an diesem Tag)", style = MaterialTheme.typography.labelLarge)
-                            Text("Fächer: ${steckbrief.faecher.joinToString(", ") { fachAnzeige(it) }}", style = MaterialTheme.typography.bodyMedium)
+                            val faecherText = steckbrief.faecher.map { fachAnzeige(it) }.joinToString(", ")
+                            Text("Fächer: $faecherText", style = MaterialTheme.typography.bodyMedium)
                             Text("Jahrgänge: ${steckbrief.jahrgaenge.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
                             Text("Räume: ${steckbrief.raeume.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
                             Text("${steckbrief.stunden} ${if (steckbrief.stunden == 1) "Stunde" else "Stunden"}", style = MaterialTheme.typography.bodyMedium)

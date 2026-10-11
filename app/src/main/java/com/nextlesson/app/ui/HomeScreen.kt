@@ -1,5 +1,6 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.data.Ferien
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -267,6 +268,17 @@ fun HomeScreen(
             item {
                 Spacer(Modifier.height(4.dp))
                 OfflineHinweis(persoenlich.geprueftUm, aktualisiertGerade)
+            }
+        }
+
+        Ferien.text(LocalDate.now())?.let { ferienText ->
+            item {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "🏖️ $ferienText (ohne Gewähr)",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
