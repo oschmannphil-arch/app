@@ -11,6 +11,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import com.nextlesson.app.data.DesignModus
+import com.nextlesson.app.data.Patchnotes
 import com.nextlesson.app.ui.theme.FachFarbAuswahl
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
@@ -600,15 +601,33 @@ private fun VersionsZeile() {
             "Build $build · Version ${p.versionName}"
         }.getOrDefault("Build unbekannt")
     }
-    Text(
-        text = info,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp),
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-    )
+    var verlauf by remember { mutableStateOf(false) }
+    TextButton(onClick = { verlauf = true }, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "$info · Was ist neu?",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+    if (verlauf) {
+        AlertDialog(
+            onDismissRequest = { verlauf = false },
+            title = { Text("Update-Verlauf") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Patchnotes.alle.sortedByDescending { it.id }.forEach { eintrag ->
+                        Text(eintrag.titel, style = MaterialTheme.typography.titleSmall)
+                        eintrag.punkte.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { verlauf = false }) { Text("Schließen") } }
+        )
+    }
 }
 
 /** App-Update: neuen Build suchen, herunterladen und installieren. */

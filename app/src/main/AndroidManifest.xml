@@ -33,6 +33,10 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="nextlesson" android:host="freund" />
             </intent-filter>
+            <!-- Schnellaktionen beim langen Drücken auf das App-Symbol -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <provider

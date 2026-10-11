@@ -95,6 +95,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var design: DesignStore
     /** Vom Widget ("Suche") gesetzt: Suche öffnen. Wird von der Oberfläche verbraucht. */
     private val sucheOeffnen = MutableStateFlow(false)
+    /** Vom Symbol-Menü ("Noten", "Klausuren", "Aufgaben") gesetzt; wird von der Oberfläche verbraucht. */
+    private val bereichOeffnen = MutableStateFlow<String?>(null)
 
     private val benachrichtigungAnfrage =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* Ergebnis egal */ }
@@ -136,7 +138,7 @@ class MainActivity : ComponentActivity() {
             }
             NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben, fachSymbole = design.fachSymbole) {
                 Surface {
-                    AppInhalt(planViewModel, aufgabenViewModel, notenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel, sucheOeffnen)
+                    AppInhalt(planViewModel, aufgabenViewModel, notenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel, sucheOeffnen, bereichOeffnen)
                 }
             }
         }
@@ -149,7 +151,11 @@ class MainActivity : ComponentActivity() {
 
     /** Ein angetippter Kurs-Link ("nextlesson://freund?…") wird als Freund vorgeschlagen; "Suche" vom Widget öffnet die Suche. */
     private fun intentAuswerten(intent: Intent?) {
-        if (intent?.getStringExtra(EXTRA_OEFFNE) == OEFFNE_SUCHE) sucheOeffnen.value = true
+        when (val ziel = intent?.getStringExtra(EXTRA_OEFFNE)) {
+            null -> Unit
+            OEFFNE_SUCHE -> sucheOeffnen.value = true
+            else -> bereichOeffnen.value = ziel
+        }
         if (intent?.action != Intent.ACTION_VIEW) return
         FreundTeilen.lesen(intent?.dataString)?.let { freundeViewModel.importVorschlagen(it) }
     }
@@ -218,7 +224,8 @@ private fun AppInhalt(
     freundeViewModel: FreundeViewModel,
     design: DesignStore,
     updateViewModel: UpdateViewModel,
-    sucheOeffnen: MutableStateFlow<Boolean>
+    sucheOeffnen: MutableStateFlow<Boolean>,
+    bereichOeffnen: MutableStateFlow<String?>
 ) {
     val update by updateViewModel.zustand.collectAsState()
     // Welchen Build der Nutzer im Hinweis auf "Später" gesetzt hat – bis zum nächsten Start Ruhe.
@@ -239,6 +246,7 @@ private fun AppInhalt(
     val favoriten by sucheViewModel.favoriten.collectAsState()
     val verlauf by sucheViewModel.verlauf.collectAsState()
     val sucheVomWidget by sucheOeffnen.collectAsState()
+    val bereichZiel by bereichOeffnen.collectAsState()
     var sucheFokus by remember { mutableStateOf(false) }
     val sucheWoche by sucheViewModel.woche.collectAsState()
     val importVorschlag by freundeViewModel.importVorschlag.collectAsState()
@@ -290,6 +298,23 @@ private fun AppInhalt(
             gruppeOffen = false
             entwurfId = it.id
         }
+    }
+
+    // Schnellaktion am App-Symbol: Noten, Klausuren oder Aufgaben direkt öffnen – außer es wird gerade etwas bearbeitet.
+    LaunchedEffect(bereichZiel, zustand) {
+        val ziel = bereichZiel ?: return@LaunchedEffect
+        if (zustand is UiZustand.Laedt) return@LaunchedEffect
+        if (entwurfId == null && !zeigeKurse && zustand !is UiZustand.KurseWaehlen && zustand !is UiZustand.LoginNoetig) {
+            zeigeEinstellungen = false
+            freundAnsicht = null
+            gruppeOffen = false
+            zeigeNoten = ziel == "noten"
+            when (ziel) {
+                "klausuren" -> tab = Tab.PRUEFUNGEN
+                "aufgaben" -> tab = Tab.HAUSAUFGABEN
+            }
+        }
+        bereichOeffnen.value = null
     }
 
     // "Suche" im Widget: in die Suche wechseln und ins Suchfeld – außer es wird gerade etwas bearbeitet.

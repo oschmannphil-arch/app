@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="suche"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_suche">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.nextlesson.app"
+            android:targetClass="com.nextlesson.app.ui.MainActivity">
+            <extra android:name="oeffne" android:value="suche" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="noten"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_noten">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.nextlesson.app"
+            android:targetClass="com.nextlesson.app.ui.MainActivity">
+            <extra android:name="oeffne" android:value="noten" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="klausuren"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_klausuren">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.nextlesson.app"
+            android:targetClass="com.nextlesson.app.ui.MainActivity">
+            <extra android:name="oeffne" android:value="klausuren" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="aufgaben"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_aufgaben">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.nextlesson.app"
+            android:targetClass="com.nextlesson.app.ui.MainActivity">
+            <extra android:name="oeffne" android:value="aufgaben" />
+        </intent>
+    </shortcut>
+</shortcuts>

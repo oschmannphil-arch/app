@@ -26,6 +26,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -93,6 +94,18 @@ fun HausaufgabenScreen(
                         if (it > 0) "$it überfällig" else null
                     }
                 )
+                if (aufgaben.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { erledigt.size.toFloat() / aufgaben.size },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "${erledigt.size} von ${aufgaben.size} erledigt",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             if (aufgaben.isEmpty()) {
