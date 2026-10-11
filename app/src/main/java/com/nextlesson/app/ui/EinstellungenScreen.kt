@@ -41,8 +41,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -116,28 +114,21 @@ fun EinstellungenScreen(
     var passwort by remember { mutableStateOf(credentials?.passwort.orEmpty()) }
     var zeitDialog by remember { mutableStateOf(false) }
 
-    val reiter = listOf("Allgemein", "Meldungen", "Konto", "App")
-    var reiterNr by rememberSaveable { mutableIntStateOf(0) }
+    var offeneText by rememberSaveable { mutableStateOf("") }
+    val offene = offeneText.split(",")
 
-    Column(modifier = Modifier.fillMaxSize()) {
-    TabRow(selectedTabIndex = reiterNr) {
-        reiter.forEachIndexed { i, name ->
-            Tab(selected = reiterNr == i, onClick = { reiterNr = i }, text = { Text(name, maxLines = 1) })
-        }
-    }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Spacer(Modifier.height(4.dp))
 
-        if (reiterNr == 1) BenachrichtigungenKarte()
-
+        Abschnitt("Meldungen & Erinnerung", offen = "meld" in offene, onKlick = { offeneText = if ("meld" in offene) offene.filter { it != "meld" }.joinToString(",") else (offene + "meld").joinToString(",") }) {
+        BenachrichtigungenKarte()
         // --- Erinnerung ---
-        if (reiterNr == 1)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -187,8 +178,40 @@ fun EinstellungenScreen(
             }
         }
 
+        // --- Widget ---
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Großer Widget-Text", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "Vergrößert die Schriftart im Homescreen-Widget.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = grosserText,
+                    onCheckedChange = onGrosserTextSetzen
+                )
+            }
+        }
+
+        }
+
+        Abschnitt("Kurse & Freunde", offen = "kurse" in offene, onKlick = { offeneText = if ("kurse" in offene) offene.filter { it != "kurse" }.joinToString(",") else (offene + "kurse").joinToString(",") }) {
         // --- Kurse ---
-        if (reiterNr == 0) Card(
+        Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -218,8 +241,21 @@ fun EinstellungenScreen(
             }
         }
 
+        // --- Freunde ---
+        // Braucht die Kursliste der Schule – also erst, wenn ein Zugang gespeichert ist.
+        if (credentials != null) {
+            FreundeEinstellungenKarte(
+                freunde = freunde,
+                onBearbeiten = onFreundBearbeiten,
+                onLinkImportieren = onLinkImportieren
+            )
+        }
+
+        }
+
+        Abschnitt("Darstellung", offen = "darst" in offene, onKlick = { offeneText = if ("darst" in offene) offene.filter { it != "darst" }.joinToString(",") else (offene + "darst").joinToString(",") }) {
         // --- Darstellung ---
-        if (reiterNr == 0) Card(
+        Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -262,50 +298,9 @@ fun EinstellungenScreen(
             }
         }
 
-        // --- Statistik ---
-        if (reiterNr == 3) AusfallKarte()
-
-        // --- Freunde ---
-        // Braucht die Kursliste der Schule – also erst, wenn ein Zugang gespeichert ist.
-        if (reiterNr == 0 && credentials != null) {
-            FreundeEinstellungenKarte(
-                freunde = freunde,
-                onBearbeiten = onFreundBearbeiten,
-                onLinkImportieren = onLinkImportieren
-            )
         }
 
-        // --- Widget ---
-        if (reiterNr == 1) Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Großer Widget-Text", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = "Vergrößert die Schriftart im Homescreen-Widget.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = grosserText,
-                    onCheckedChange = onGrosserTextSetzen
-                )
-            }
-        }
-
-        // --- Zugangsdaten ---
-        if (reiterNr == 2) {
+        Abschnitt("Zugang zu Indiware mobil", offen = "konto" in offene, onKlick = { offeneText = if ("konto" in offene) offene.filter { it != "konto" }.joinToString(",") else (offene + "konto").joinToString(",") }) {
         Text(
             text = "Zugang zu Indiware mobil",
             style = MaterialTheme.typography.titleMedium,
@@ -354,13 +349,16 @@ fun EinstellungenScreen(
         }
         }
 
-        if (reiterNr == 3) {
+        Abschnitt("App, Update & Statistik", offen = "app" in offene, onKlick = { offeneText = if ("app" in offene) offene.filter { it != "app" }.joinToString(",") else (offene + "app").joinToString(",") }) {
+        // --- Statistik ---
+        AusfallKarte()
+
             UpdateKarte(update, installierterBuild, onUpdatePruefen, onUpdateLaden, onUpdateInstallieren)
             WebAppKarte()
             VersionsZeile()
         }
+
         Spacer(Modifier.height(24.dp))
-    }
     }
 
     if (farbDialog) {
@@ -383,6 +381,32 @@ fun EinstellungenScreen(
                 zeitDialog = false
             }
         )
+    }
+}
+
+/** Aufklappbarer Einstellungsbereich; startet eingeklappt. */
+@Composable
+private fun Abschnitt(titel: String, offen: Boolean, onKlick: () -> Unit, inhalt: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onKlick).padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(titel, style = MaterialTheme.typography.titleMedium)
+            Text(if (offen) "▲" else "▼", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (offen) {
+            Column(
+                modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) { inhalt() }
+        }
     }
 }
 
