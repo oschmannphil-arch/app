@@ -34,4 +34,11 @@ class FachSymboleTest {
         assertEquals("Quatsch", FachSymbole.mitSymbol("Quatsch"))
         assertEquals("🔢 Ma", FachSymbole.mitSymbol("Ma"))
     }
+
+    @Test
+    fun geschichteInAllenSchreibweisen() {
+        listOf("Ge", "GE1", "Ges", "GES1", "Gesch", "Geschichte", "Gsch").forEach {
+            assertEquals(it, "📜", FachSymbole.fuer(it))
+        }
+    }
 }
