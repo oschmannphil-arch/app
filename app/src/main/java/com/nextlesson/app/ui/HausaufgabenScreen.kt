@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Hausaufgabe
+import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
@@ -202,7 +203,7 @@ private fun AufgabenZeile(
                                 .background(fachFarbe(aufgabe.fach, dunkel))
                         )
                         Text(
-                            text = aufgabe.fach,
+                            text = fachAnzeige(aufgabe.fach),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

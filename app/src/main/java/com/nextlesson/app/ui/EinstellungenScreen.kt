@@ -87,6 +87,8 @@ fun EinstellungenScreen(
     onKurseTeilen: (() -> Unit)? = null,
     modus: DesignModus = DesignModus.SYSTEM,
     onModus: (DesignModus) -> Unit = {},
+    fachSymbole: Boolean = true,
+    onFachSymbole: (Boolean) -> Unit = {},
     fachNamen: List<String> = emptyList(),
     fachFarben: Map<String, Int> = emptyMap(),
     onFachFarbe: (String, Int?) -> Unit = { _, _ -> },
@@ -212,6 +214,21 @@ fun EinstellungenScreen(
                 }
                 OutlinedButton(onClick = { farbDialog = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Farbe pro Fach anpassen")
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Fach-Symbole", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = "Ein Symbol vor dem Fach, z. B. 🔢 Mathe.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = fachSymbole, onCheckedChange = onFachSymbole)
                 }
             }
         }

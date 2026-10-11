@@ -17,6 +17,14 @@ val LocalDunkel = staticCompositionLocalOf { false }
 /** Eigene Fachfarben (Fach klein geschrieben → ARGB) aus den Einstellungen. */
 val LocalFachFarben = compositionLocalOf<Map<String, Int>> { emptyMap() }
 
+/** Soll vor dem Fachnamen ein Symbol stehen? */
+val LocalFachSymbole = staticCompositionLocalOf { true }
+
+/** Fachname für die Anzeige, je nach Einstellung mit Symbol. */
+@Composable
+fun fachAnzeige(fach: String): String =
+    if (LocalFachSymbole.current) com.nextlesson.app.data.FachSymbole.mitSymbol(fach) else fach
+
 /**
  * Das Mocha-Design.
  *
@@ -32,6 +40,7 @@ fun NaechsteStundeTheme(
     dunkel: Boolean = isSystemInDarkTheme(),
     dynamischeFarben: Boolean = false,
     fachFarben: Map<String, Int> = emptyMap(),
+    fachSymbole: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -47,6 +56,7 @@ fun NaechsteStundeTheme(
         CompositionLocalProvider(
             LocalDunkel provides dunkel,
             LocalFachFarben provides fachFarben,
+            LocalFachSymbole provides fachSymbole,
             content = content
         )
     }

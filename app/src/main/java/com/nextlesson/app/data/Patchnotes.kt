@@ -71,6 +71,14 @@ object Patchnotes {
                 "Geschriebene Klausuren aus dem Plan bieten dir direkt das Eintragen der Note an. Alles bleibt nur auf deinem Handy.",
                 "Klasse 5–10 rechnet mit Noten 1–6, ab Klasse 11 mit Punkten 0–15 – die App erkennt das an deinen gewählten Kursen."
             )
+        )        ,
+        PatchEintrag(
+            id = 7,
+            titel = "Symbole und Sperrbildschirm",
+            punkte = listOf(
+                "Fach-Symbole: Vor dem Fach steht ein passendes Symbol, z. B. 🔢 Mathe oder 📖 Deutsch. Abschaltbar unter Einstellungen → Darstellung.",
+                "Das Widget lässt sich auch auf dem Sperrbildschirm platzieren – sofern dein Gerät das unterstützt."
+            )
         )
     )
 

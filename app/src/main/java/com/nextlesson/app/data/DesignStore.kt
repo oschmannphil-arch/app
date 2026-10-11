@@ -31,6 +31,15 @@ class DesignStore(context: Context) {
         prefs.edit().putBoolean(KEY_BLOECKE, an).apply()
     }
 
+    /** Symbol (Emoji) vor dem Fachnamen. */
+    var fachSymbole by mutableStateOf(prefs.getBoolean(KEY_SYMBOLE, true))
+        private set
+
+    fun fachSymboleSetzen(an: Boolean) {
+        fachSymbole = an
+        prefs.edit().putBoolean(KEY_SYMBOLE, an).apply()
+    }
+
     /** Fach (klein geschrieben) → Farbe als ARGB-Int. */
     var fachFarben by mutableStateOf(lesen())
         private set
@@ -59,5 +68,6 @@ class DesignStore(context: Context) {
         private const val KEY_MODUS = "modus"
         private const val KEY_BLOECKE = "block_ansicht"
         private const val KEY_FARBEN = "fach_farben"
+        private const val KEY_SYMBOLE = "fach_symbole"
     }
 }

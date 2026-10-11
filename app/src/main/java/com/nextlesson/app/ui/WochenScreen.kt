@@ -44,6 +44,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.LessonStatus
+import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
@@ -315,7 +316,7 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean, stundenKurz: Str
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = lesson.fach.ifBlank { "—" },
+                    text = fachAnzeige(lesson.fach.ifBlank { "—" }),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (lesson.hatAenderung) FontWeight.SemiBold else FontWeight.Normal,
                     textDecoration = if (istEntfall) TextDecoration.LineThrough else null,

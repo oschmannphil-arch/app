@@ -14,6 +14,6 @@
     android:targetCellHeight="2"
     android:updatePeriodMillis="1800000"
     android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen"
+    android:widgetCategory="home_screen|keyguard"
     android:description="@string/widget_beschreibung"
     android:previewImage="@drawable/ic_launcher_foreground" />

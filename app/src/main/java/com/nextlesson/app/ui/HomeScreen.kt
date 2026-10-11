@@ -57,6 +57,7 @@ import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.LessonStatus
 import com.nextlesson.app.data.NaechsteStundeErgebnis
 import com.nextlesson.app.data.PersoenlicherPlan
+import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.Instant
@@ -566,7 +567,7 @@ private fun HeroKarte(
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    text = lesson.fach.ifBlank { "—" },
+                    text = fachAnzeige(lesson.fach.ifBlank { "—" }),
                     style = MaterialTheme.typography.displaySmall,
                     color = if (warnung) MaterialTheme.colorScheme.onErrorContainer
                     else MaterialTheme.colorScheme.onPrimaryContainer,
@@ -821,7 +822,7 @@ internal fun StundenZeile(
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = lesson.fach.ifBlank { "—" },
+                    text = fachAnzeige(lesson.fach.ifBlank { "—" }),
                     style = MaterialTheme.typography.titleMedium,
                     textDecoration = if (istEntfall) TextDecoration.LineThrough else null,
                     color = if (istEntfall) textNeben else textHaupt,

@@ -134,7 +134,7 @@ class MainActivity : ComponentActivity() {
                     navigationBarStyle = SystemBarStyle.auto(NAVI_SCHLEIER_HELL, NAVI_SCHLEIER_DUNKEL) { dunkel }
                 )
             }
-            NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben) {
+            NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben, fachSymbole = design.fachSymbole) {
                 Surface {
                     AppInhalt(planViewModel, aufgabenViewModel, notenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel, sucheOeffnen)
                 }
@@ -541,6 +541,8 @@ private fun AppInhalt(
                         },
                         modus = design.modus,
                         onModus = design::modusSetzen,
+                        fachSymbole = design.fachSymbole,
+                        onFachSymbole = design::fachSymboleSetzen,
                         fachNamen = fachNamen,
                         fachFarben = design.fachFarben,
                         onFachFarbe = design::fachFarbeSetzen,

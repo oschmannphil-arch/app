@@ -54,6 +54,7 @@ import com.nextlesson.app.data.NotenArt
 import com.nextlesson.app.data.NotenSystem
 import com.nextlesson.app.data.Pruefung
 import com.nextlesson.app.data.PruefungsArt
+import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
@@ -274,7 +275,7 @@ private fun FachKarte(
             Column(modifier = Modifier.weight(1f).padding(start = 14.dp, top = 12.dp, bottom = 8.dp, end = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(schnitt.fach, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(fachAnzeige(schnitt.fach), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         val teile = listOfNotNull(
                             schnitt.klausur?.let { "Klausuren Ø ${komma(it)}" },
                             schnitt.muendlich?.let { "Mündlich Ø ${komma(it)}" }

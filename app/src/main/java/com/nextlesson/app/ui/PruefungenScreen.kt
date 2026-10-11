@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Pruefung
 import com.nextlesson.app.data.PruefungsArt
+import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.ui.theme.fachFarbe
 import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
@@ -209,7 +210,7 @@ private fun PruefungsKarte(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = pruefung.fach,
+                            text = fachAnzeige(pruefung.fach),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
