@@ -102,6 +102,14 @@ object Patchnotes {
                 "Suche: Lehrer-Steckbrief mit Fächern, Jahrgängen und Räumen.",
                 "Kurse: Hat sich deine Kursliste geändert (z. B. neues Halbjahr), weist die App darauf hin."
             )
+        )        ,
+        PatchEintrag(
+            id = 10,
+            titel = "Tage durchwischen",
+            punkte = listOf(
+                "Heute: Nach links oder rechts wischen (oder die Pfeile oben) wechselt zum nächsten bzw. vorigen Schultag – auch über Wochen hinweg.",
+                "Blockansicht: Eine Klausur über mehrere Stunden (z. B. 3.–6.) ist jetzt ein einziger Block."
+            )
         )
     )
 
