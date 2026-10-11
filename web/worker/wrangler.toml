@@ -1,0 +1,9 @@
+# Nur nötig, wenn du den Dienst mit der Kommandozeile (wrangler) veröffentlichst:
+#   cd web/worker && npx wrangler deploy
+name = "nextlesson-proxy"
+main = "proxy.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+# Deine Web-App-Adresse, z. B. https://dein-name.github.io  (mehrere mit Komma trennen)
+ERLAUBTE_URSPRUENGE = "*"

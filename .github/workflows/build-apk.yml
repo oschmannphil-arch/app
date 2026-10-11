@@ -5,6 +5,10 @@ name: APK bauen
 on:
   push:
     branches: [claude/dazzling-hamilton-6czczc, main]
+    # Reine Änderungen an der Web-App brauchen keine neue APK (und keinen Update-Hinweis in der App).
+    paths-ignore:
+      - 'web/**'
+      - '.github/workflows/web.yml'
   workflow_dispatch:
 
 permissions:

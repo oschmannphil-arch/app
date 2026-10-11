@@ -1,0 +1,53 @@
+name: Web-App
+
+# Prüft die Web-App (Typen, Tests, Build) und veröffentlicht sie auf GitHub Pages.
+# Die fertige Seite landet im Zweig "gh-pages" – in den Repo-Einstellungen unter
+# Pages als Quelle "Deploy from a branch" → "gh-pages" wählen.
+on:
+  push:
+    branches: [claude/dazzling-hamilton-6czczc, main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Typen und Tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Bauen
+        run: npm run build
+
+      # Nur der Hauptzweig der Web-App wird veröffentlicht; Arbeitszweige lassen "gh-pages" in Ruhe,
+      # außer es ist der konfigurierte Entwicklungszweig (damit man die Seite vor dem Zusammenführen sieht).
+      - name: Auf GitHub Pages veröffentlichen
+        run: |
+          cd dist
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Web-App ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
