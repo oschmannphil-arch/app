@@ -92,7 +92,8 @@ class AufgabenStore(context: Context) {
 
     // ---------- Hausaufgaben ----------
 
-    fun hausaufgabeHinzufuegen(fach: String, text: String, faellig: LocalDate?) {
+    /** Legt die Aufgabe an und gibt ihre ID zurück. */
+    fun hausaufgabeHinzufuegen(fach: String, text: String, faellig: LocalDate?): String {
         val neu = Hausaufgabe(
             fach = fach.trim(),
             text = text.trim(),
@@ -100,6 +101,7 @@ class AufgabenStore(context: Context) {
         )
         _hausaufgaben.value = (_hausaufgaben.value + neu).sortiert()
         hausaufgabenSchreiben()
+        return neu.id
     }
 
     fun hausaufgabeBearbeiten(id: String, fach: String, text: String, faellig: LocalDate?) {

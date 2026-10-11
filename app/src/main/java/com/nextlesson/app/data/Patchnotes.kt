@@ -90,6 +90,18 @@ object Patchnotes {
                 "App-Symbol: Lange drücken öffnet Suche, Noten, Klausuren oder Aufgaben direkt.",
                 "Einstellungen: Unten unter dem Build steht jetzt der Update-Verlauf („Was ist neu?\")."
             )
+        )        ,
+        PatchEintrag(
+            id = 9,
+            titel = "Mehr Übersicht",
+            punkte = listOf(
+                "Farbthemen: Mocha, Ozean, Wald, Rose oder Violett (Einstellungen → Darstellung).",
+                "Ferien-Countdown auf der Startseite (Termine ohne Gewähr).",
+                "Ausfall-Statistik: wie viele Stunden dieses Halbjahr ausfielen (Einstellungen).",
+                "Hausaufgaben: Tafel fotografieren und das Foto an die Aufgabe hängen.",
+                "Suche: Lehrer-Steckbrief mit Fächern, Jahrgängen und Räumen.",
+                "Kurse: Hat sich deine Kursliste geändert (z. B. neues Halbjahr), weist die App darauf hin."
+            )
         )
     )
 

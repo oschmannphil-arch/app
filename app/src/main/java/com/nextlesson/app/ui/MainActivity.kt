@@ -68,6 +68,7 @@ import com.nextlesson.app.data.DesignModus
 import com.nextlesson.app.data.DesignStore
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.FreundTeilen
+import com.nextlesson.app.data.KursMigration
 import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.Noten
 import com.nextlesson.app.data.NotenSystem
@@ -237,6 +238,7 @@ private fun AppInhalt(
     val pruefungen by aufgabenViewModel.pruefungen.collectAsState()
     val erinnerung by aufgabenViewModel.erinnerung.collectAsState()
     val noten by notenViewModel.noten.collectAsState()
+    val fotoVersion by aufgabenViewModel.fotoVersion.collectAsState()
     val klausurAnteile by notenViewModel.klausurAnteile.collectAsState()
     val notenZiele by notenViewModel.ziele.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
@@ -753,7 +755,8 @@ private fun AppInhalt(
                         onUmschalten = aufgabenViewModel::hausaufgabeUmschalten,
                         onLoeschen = aufgabenViewModel::hausaufgabeLoeschen,
                         onHinzufuegen = aufgabenViewModel::hausaufgabeHinzufuegen,
-                        onBearbeiten = aufgabenViewModel::hausaufgabeBearbeiten
+                        onBearbeiten = aufgabenViewModel::hausaufgabeBearbeiten,
+                        fotoVersion = fotoVersion
                     )
 
                     Tab.PRUEFUNGEN -> PruefungenScreen(
@@ -803,6 +806,54 @@ private fun AppInhalt(
             confirmButton = { TextButton(onClick = { patchGesehenMerken() }) { Text("Verstanden") } }
         )
     }
+    // Kurse, die es in der aktuellen Kursliste nicht mehr gibt (z. B. nach dem Halbjahreswechsel).
+    val kursPrefs = remember { context.getSharedPreferences("kurs_hinweis", Context.MODE_PRIVATE) }
+    val kursMigration = remember(verfuegbareKurse, zustand, zeigeKurse) {
+        KursMigration.pruefen(planViewModel.aktuelleKursAuswahl(), verfuegbareKurse)
+    }
+    val kursSignatur = remember(kursMigration) { (kursMigration.ersetzt.entries.map { "${it.key}>${it.value}" } + kursMigration.fehlend).sorted().joinToString("|") }
+    var kursHinweisAus by rememberSaveable { mutableStateOf(false) }
+    val kursHinweisOffen = kursMigration.hatAenderung && !einrichtung && !updateDialogOffen &&
+        patchEintraege.isEmpty() && !kursHinweisAus && kursPrefs.getString("ignoriert", "") != kursSignatur
+    if (kursHinweisOffen) {
+        fun spaeter() {
+            kursPrefs.edit().putString("ignoriert", kursSignatur).apply()
+            kursHinweisAus = true
+        }
+        AlertDialog(
+            onDismissRequest = { spaeter() },
+            title = { Text("Deine Kurse haben sich geändert") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (kursMigration.ersetzt.isNotEmpty()) {
+                        Text("Diese Kurse gibt es nicht mehr – ein Nachfolger passt:", style = MaterialTheme.typography.bodyMedium)
+                        kursMigration.ersetzt.forEach { (alt, neu) ->
+                            Text("• ${alt.substringAfter("::")} → ${neu.substringAfter("::")}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    if (kursMigration.fehlend.isNotEmpty()) {
+                        Text("Diese Kurse stehen nicht mehr in der Kursliste:", style = MaterialTheme.typography.bodyMedium)
+                        kursMigration.fehlend.forEach {
+                            Text("• ${it.substringAfter("::")} (${it.substringBefore("::")})", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Text("Wähle sie neu aus, damit dein Plan wieder stimmt.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val neu = kursMigration.neueAuswahl(planViewModel.aktuelleKursAuswahl())
+                    if (kursMigration.ersetzt.isNotEmpty()) planViewModel.kursAuswahlSpeichern(neu)
+                    kursHinweisAus = true
+                    if (kursMigration.fehlend.isNotEmpty()) zeigeKurse = true
+                }) { Text(if (kursMigration.fehlend.isNotEmpty()) "Kurse wählen" else "Übernehmen") }
+            },
+            dismissButton = { TextButton(onClick = { spaeter() }) { Text("Später") } }
+        )
+    }
     if (updateDialogOffen) {
         AlertDialog(
             onDismissRequest = { spaeterBuild = gefundenerBuild },
@@ -837,8 +888,8 @@ private fun AppInhalt(
             vorschlagFach = lesson.anzeigeName().orEmpty(),
             naechsteStunde = naechsteStunde,
             onAbbrechen = { aufgabeAusStunde = null },
-            onSpeichern = { fach, text, faellig ->
-                aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig)
+            onSpeichern = { fach, text, faellig, foto ->
+                aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig, foto)
                 aufgabeAusStunde = null
             }
         )

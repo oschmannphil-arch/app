@@ -1,5 +1,16 @@
 package com.nextlesson.app.ui
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import com.nextlesson.app.data.TafelFotos
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.Image
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -59,8 +70,9 @@ fun HausaufgabenScreen(
     aufgaben: List<Hausaufgabe>,
     onUmschalten: (String) -> Unit,
     onLoeschen: (String) -> Unit,
-    onHinzufuegen: (fach: String, text: String, faellig: LocalDate?) -> Unit,
-    onBearbeiten: (id: String, fach: String, text: String, faellig: LocalDate?) -> Unit
+    onHinzufuegen: (fach: String, text: String, faellig: LocalDate?, foto: Boolean) -> Unit,
+    onBearbeiten: (id: String, fach: String, text: String, faellig: LocalDate?, foto: Boolean) -> Unit,
+    fotoVersion: Int = 0
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
     var bearbeitungsAufgabe by remember { mutableStateOf<Hausaufgabe?>(null) }
@@ -119,7 +131,8 @@ fun HausaufgabenScreen(
                     dunkel = dunkel,
                     onUmschalten = onUmschalten,
                     onLoeschen = onLoeschen,
-                    onBearbeitenClick = { bearbeitungsAufgabe = aufgabe }
+                    onBearbeitenClick = { bearbeitungsAufgabe = aufgabe },
+                    fotoVersion = fotoVersion
                 )
             }
 
@@ -144,7 +157,8 @@ fun HausaufgabenScreen(
                         dunkel = dunkel,
                         onUmschalten = onUmschalten,
                         onLoeschen = onLoeschen,
-                        onBearbeitenClick = { bearbeitungsAufgabe = aufgabe }
+                        onBearbeitenClick = { bearbeitungsAufgabe = aufgabe },
+                    fotoVersion = fotoVersion
                     )
                 }
             }
@@ -156,8 +170,8 @@ fun HausaufgabenScreen(
     if (dialogOffen) {
         HausaufgabeDialog(
             onAbbrechen = { dialogOffen = false },
-            onSpeichern = { fach, text, faellig ->
-                onHinzufuegen(fach, text, faellig)
+            onSpeichern = { fach, text, faellig, foto ->
+                onHinzufuegen(fach, text, faellig, foto)
                 dialogOffen = false
             }
         )
@@ -167,8 +181,8 @@ fun HausaufgabenScreen(
         HausaufgabeDialog(
             bestehendeAufgabe = aufgabe,
             onAbbrechen = { bearbeitungsAufgabe = null },
-            onSpeichern = { fach, text, faellig ->
-                onBearbeiten(aufgabe.id, fach, text, faellig)
+            onSpeichern = { fach, text, faellig, foto ->
+                onBearbeiten(aufgabe.id, fach, text, faellig, foto)
                 bearbeitungsAufgabe = null
             }
         )
@@ -182,7 +196,8 @@ private fun AufgabenZeile(
     dunkel: Boolean,
     onUmschalten: (String) -> Unit,
     onLoeschen: (String) -> Unit,
-    onBearbeitenClick: () -> Unit
+    onBearbeitenClick: () -> Unit,
+    fotoVersion: Int
 ) {
     val ueberfaellig = aufgabe.istUeberfaellig(heute)
     Card(
@@ -240,6 +255,16 @@ private fun AufgabenZeile(
                 }
             }
 
+            val kontext = LocalContext.current
+            var fotoOffen by remember { mutableStateOf(false) }
+            // Nach dem Speichern entsteht die Datei kurz verzögert – darum an der Aufgabe festmachen.
+            val fotoDa = remember(aufgabe.id, fotoVersion) { TafelFotos.vorhanden(kontext, aufgabe.id) }
+            if (fotoDa) {
+                TextButton(onClick = { fotoOffen = true }) { Text("📷") }
+            }
+            if (fotoOffen) {
+                FotoDialog(aufgabe.id) { fotoOffen = false }
+            }
             IconButton(onClick = { onLoeschen(aufgabe.id) }) {
                 Icon(
                     Icons.Filled.Delete,
@@ -269,8 +294,14 @@ internal fun HausaufgabeDialog(
     vorschlagFach: String? = null,
     naechsteStunde: LocalDate? = null,
     onAbbrechen: () -> Unit,
-    onSpeichern: (fach: String, text: String, faellig: LocalDate?) -> Unit
+    onSpeichern: (fach: String, text: String, faellig: LocalDate?, foto: Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+    // Ein frisches Kamerabild liegt in der Zwischendatei; ein früheres gehört schon zur Aufgabe.
+    var neuesFoto by remember { mutableStateOf(false) }
+    val hatAltesFoto = remember { bestehendeAufgabe != null && TafelFotos.vorhanden(context, bestehendeAufgabe.id) }
+    DisposableEffect(Unit) { onDispose { TafelFotos.zwischendateiLoeschen(context) } }
+    val kamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> neuesFoto = ok }
     var fach by remember { mutableStateOf(bestehendeAufgabe?.fach ?: vorschlagFach ?: "") }
     var text by remember { mutableStateOf(bestehendeAufgabe?.text ?: "") }
     // Neue Aufgabe: ab morgen; bestehende behält ihr Datum – auch "ohne Datum".
@@ -302,6 +333,19 @@ internal fun HausaufgabeDialog(
                     onValueChange = { text = it },
                     label = { Text("Was ist zu tun?") },
                     modifier = Modifier.fillMaxWidth()
+                )
+
+                AssistChip(
+                    onClick = { kamera.launch(TafelFotos.uriFuerKamera(context)) },
+                    label = {
+                        Text(
+                            when {
+                                neuesFoto -> "📷 Neues Foto bereit"
+                                hatAltesFoto -> "📷 Foto ersetzen"
+                                else -> "📷 Tafel fotografieren"
+                            }
+                        )
+                    }
                 )
 
                 Text("Fällig", style = MaterialTheme.typography.labelMedium)
@@ -342,7 +386,7 @@ internal fun HausaufgabeDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSpeichern(fach, text, faellig) },
+                onClick = { onSpeichern(fach, text, faellig, neuesFoto) },
                 enabled = text.isNotBlank()
             ) { Text("Speichern") }
         },
@@ -392,4 +436,25 @@ fun LeerHinweis(text: String) {
             modifier = Modifier.padding(16.dp)
         )
     }
+}
+
+
+@Composable
+private fun FotoDialog(id: String, onSchliessen: () -> Unit) {
+    val context = LocalContext.current
+    val bild by produceState<ImageBitmap?>(null, id) {
+        value = withContext(Dispatchers.IO) { TafelFotos.laden(context, id)?.asImageBitmap() }
+    }
+    AlertDialog(
+        onDismissRequest = onSchliessen,
+        text = {
+            val b = bild
+            if (b == null) {
+                Text("Foto wird geladen …")
+            } else {
+                Image(bitmap = b, contentDescription = "Foto zur Hausaufgabe", modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } }
+    )
 }
