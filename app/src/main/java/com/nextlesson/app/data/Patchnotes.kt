@@ -79,6 +79,17 @@ object Patchnotes {
                 "Fach-Symbole: Vor dem Fach steht ein passendes Symbol, z. B. 🔢 Mathe oder 📖 Deutsch. Abschaltbar unter Einstellungen → Darstellung.",
                 "Das Widget lässt sich auch auf dem Sperrbildschirm platzieren – sofern dein Gerät das unterstützt."
             )
+        )        ,
+        PatchEintrag(
+            id = 8,
+            titel = "Noten, Wochen und Schnellzugriff",
+            punkte = listOf(
+                "Noten: Notenziel pro Fach (wird gespeichert), „Was wäre wenn …\"-Prognose, Vergleich mit dem Vorhalbjahr, Zeugnis-Vorschau und – ab Klasse 11 – ein Abi-Rechner (grobe Schätzung).",
+                "Wochenansicht: Neu „In 2 Wochen\".",
+                "Hausaufgaben: Fortschrittsbalken „x von y erledigt\".",
+                "App-Symbol: Lange drücken öffnet Suche, Noten, Klausuren oder Aufgaben direkt.",
+                "Einstellungen: Unten unter dem Build steht jetzt der Update-Verlauf („Was ist neu?\")."
+            )
         )
     )
 

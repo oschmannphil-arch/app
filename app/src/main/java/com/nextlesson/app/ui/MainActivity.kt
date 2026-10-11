@@ -237,6 +237,7 @@ private fun AppInhalt(
     val erinnerung by aufgabenViewModel.erinnerung.collectAsState()
     val noten by notenViewModel.noten.collectAsState()
     val klausurAnteile by notenViewModel.klausurAnteile.collectAsState()
+    val notenZiele by notenViewModel.ziele.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
     val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
     val verfuegbareKurse by planViewModel.verfuegbareKurse.collectAsState()
@@ -590,6 +591,8 @@ private fun AppInhalt(
                         pruefungen = pruefungen,
                         fachVorschlaege = fachNamen,
                         onAnteil = { notenViewModel.anteilSetzen(notenSystem, it) },
+                        ziele = notenZiele,
+                        onZiel = { fach, wert -> notenViewModel.zielSetzen(notenSystem, fach, wert) },
                         onHinzufuegen = { f, p, a, d, n -> notenViewModel.hinzufuegen(notenSystem, f, p, a, d, n) },
                         onBearbeiten = notenViewModel::bearbeiten,
                         onLoeschen = notenViewModel::loeschen

@@ -143,4 +143,34 @@ class NotenTest {
         // Ziel 2 (< 2,5) geht nicht: selbst mit einer 1 ergibt sich (3+1)/2*0,5+1,5 = 2,5
         assertEquals(Noten.Benoetigt.Unmoeglich, Noten.benoetigt(liste, NotenArt.KLAUSUR, 2, 50, NotenSystem.NOTEN))
     }
+
+    @Test
+    fun halbjahrDavor() {
+        assertEquals("2025/26 · 1. HJ", Noten.halbjahrDavor("2025/26 · 2. HJ"))
+        assertEquals("2024/25 · 2. HJ", Noten.halbjahrDavor("2025/26 · 1. HJ"))
+        assertEquals(null, Noten.halbjahrDavor("kaputt"))
+    }
+
+    @Test
+    fun prognoseUndZiel() {
+        val liste = listOf(n("M", 10, NotenArt.KLAUSUR), n("M", 10, NotenArt.MUENDLICH))
+        // Neue Klausur mit 14: Klausuren Ø 12, mündlich 10 → bei 50 % ergibt das 11
+        val p = Noten.prognose("M", liste, NotenSystem.PUNKTE, NotenArt.KLAUSUR, 14, 50)!!
+        assertEquals(11.0, p.gesamt, 0.001)
+        assertEquals(11, p.zeugnis)
+        // Ohne bisherige Noten zählt nur die angenommene
+        assertEquals(13.0, Noten.prognose("M", emptyList(), NotenSystem.PUNKTE, NotenArt.MUENDLICH, 13)!!.gesamt, 0.001)
+        assertEquals(true, Noten.zielErreicht(13, 12, NotenSystem.PUNKTE))
+        assertEquals(false, Noten.zielErreicht(11, 12, NotenSystem.PUNKTE))
+        assertEquals(true, Noten.zielErreicht(2, 2, NotenSystem.NOTEN))
+        assertEquals(false, Noten.zielErreicht(3, 2, NotenSystem.NOTEN))
+    }
+
+    @Test
+    fun durchschnittAllerHalbjahre() {
+        val hj1 = Note(fach = "M", punkte = 10, art = NotenArt.KLAUSUR, datumEpochDay = LocalDate.of(2025, 10, 1).toEpochDay())
+        val hj2 = Note(fach = "M", punkte = 14, art = NotenArt.KLAUSUR, datumEpochDay = LocalDate.of(2026, 3, 1).toEpochDay())
+        assertEquals(12.0, Noten.durchschnittAllerHalbjahre(listOf(hj1, hj2))!!, 0.001)
+        assertNull(Noten.durchschnittAllerHalbjahre(emptyList()))
+    }
 }

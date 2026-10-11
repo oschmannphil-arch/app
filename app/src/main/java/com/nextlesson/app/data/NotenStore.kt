@@ -26,6 +26,19 @@ class NotenStore(context: Context) {
         prefs.edit().putInt(anteilKey(system), wert).apply()
     }
 
+    // Zielwert pro Fach: "SYSTEM|fach" → Ziel (Punkte bzw. Note).
+    private val _ziele = MutableStateFlow(
+        prefs.all.mapNotNull { (k, v) -> if (k.startsWith(ZIEL_PREFIX) && v is Int) k.removePrefix(ZIEL_PREFIX) to v else null }.toMap()
+    )
+    val ziele: StateFlow<Map<String, Int>> = _ziele.asStateFlow()
+
+    fun zielSetzen(system: NotenSystem, fach: String, wert: Int) {
+        val schluessel = zielSchluessel(system, fach)
+        val begrenzt = wert.coerceIn(system.min, system.max)
+        _ziele.value = _ziele.value + (schluessel to begrenzt)
+        prefs.edit().putInt(ZIEL_PREFIX + schluessel, begrenzt).apply()
+    }
+
     private fun anteilKey(system: NotenSystem) =
         if (system == NotenSystem.PUNKTE) KEY_ANTEIL else KEY_ANTEIL_NOTEN
 
@@ -99,7 +112,11 @@ class NotenStore(context: Context) {
         }.getOrDefault(emptyList()).sortedByDescending { it.datumEpochDay }
     }
 
-    private companion object {
+    companion object {
+        fun zielSchluessel(system: NotenSystem, fach: String) = "${system.name}|${Noten.fachSchluessel(fach)}"
+
+        private const val ZIEL_PREFIX = "ziel_"
+
         const val KEY_NOTEN = "noten_json"
         const val KEY_ANTEIL = "klausur_anteil"
         const val KEY_ANTEIL_NOTEN = "klausur_anteil_noten"

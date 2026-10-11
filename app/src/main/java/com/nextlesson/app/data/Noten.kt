@@ -95,6 +95,46 @@ object Noten {
 
     fun halbjahr(note: Note): String = halbjahr(note.datum)
 
+    private val HALBJAHR_FORMAT = Regex("""(\d{4})/\d{1,2} · ([12])\. HJ""")
+
+    /** Das Halbjahr davor: "2025/26 · 2. HJ" → "2025/26 · 1. HJ", "2025/26 · 1. HJ" → "2024/25 · 2. HJ". */
+    fun halbjahrDavor(halbjahr: String): String? {
+        val m = HALBJAHR_FORMAT.matchEntire(halbjahr) ?: return null
+        val jahr = m.groupValues[1].toInt()
+        return if (m.groupValues[2] == "2") "$jahr/${(jahr + 1) % 100} · 1. HJ"
+        else "${jahr - 1}/${jahr % 100} · 2. HJ"
+    }
+
+    /**
+     * Was-wäre-wenn: Fachschnitt, falls als Nächstes eine weitere Note der [art] mit [wert] dazukommt.
+     */
+    fun prognose(
+        fach: String,
+        fachNoten: List<Note>,
+        system: NotenSystem,
+        art: NotenArt,
+        wert: Int,
+        klausurAnteil: Int = STANDARD_KLAUSUR_ANTEIL
+    ): FachSchnitt? {
+        val angenommen = Note(
+            system = system, fach = fach, punkte = wert.coerceIn(system.min, system.max),
+            art = art, datumEpochDay = 0L
+        )
+        return fachSchnitt(fachNoten + angenommen, klausurAnteil)
+    }
+
+    /** Ist das Ziel erreicht? Punkte: mindestens, Noten: höchstens. */
+    fun zielErreicht(zeugnis: Int, ziel: Int, system: NotenSystem): Boolean =
+        if (system.hoeherIstBesser) zeugnis >= ziel else zeugnis <= ziel
+
+    /** Mittel der Zeugniswerte aller Fächer in allen Halbjahren (Grundlage für Block I im Abi-Rechner). */
+    fun durchschnittAllerHalbjahre(noten: List<Note>, klausurAnteil: Int = STANDARD_KLAUSUR_ANTEIL): Double? {
+        val werte = noten.groupBy { halbjahr(it) }.values
+            .flatMap { nachFach(it, klausurAnteil) }
+            .map { it.zeugnis }
+        return if (werte.isEmpty()) null else werte.average()
+    }
+
     private fun schnitt(werte: List<Note>): Double? =
         if (werte.isEmpty()) null else werte.sumOf { it.punkte }.toDouble() / werte.size
 

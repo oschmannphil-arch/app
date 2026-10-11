@@ -16,6 +16,10 @@ class NotenViewModel(app: Application) : AndroidViewModel(app) {
     val noten: StateFlow<List<Note>> = store.noten
     val klausurAnteile: StateFlow<Map<NotenSystem, Int>> = store.klausurAnteile
 
+    val ziele: StateFlow<Map<String, Int>> = store.ziele
+
+    fun zielSetzen(system: NotenSystem, fach: String, wert: Int) = store.zielSetzen(system, fach, wert)
+
     fun anteilSetzen(system: NotenSystem, prozent: Int) = store.anteilSetzen(system, prozent)
 
     fun hinzufuegen(system: NotenSystem, fach: String, punkte: Int, art: NotenArt, datum: LocalDate, notiz: String) =

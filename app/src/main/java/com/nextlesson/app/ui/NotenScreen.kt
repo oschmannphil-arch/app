@@ -1,5 +1,8 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.data.NotenStore
+import com.nextlesson.app.data.Abi
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -83,6 +86,8 @@ fun NotenScreen(
     pruefungen: List<Pruefung>,
     fachVorschlaege: List<String>,
     onAnteil: (Int) -> Unit,
+    ziele: Map<String, Int>,
+    onZiel: (fach: String, wert: Int) -> Unit,
     onHinzufuegen: (fach: String, punkte: Int, art: NotenArt, datum: LocalDate, notiz: String) -> Unit,
     onBearbeiten: (id: String, fach: String, punkte: Int, art: NotenArt, datum: LocalDate, notiz: String) -> Unit,
     onLoeschen: (String) -> Unit
@@ -91,6 +96,8 @@ fun NotenScreen(
     val heute = LocalDate.now()
     val jetzt by rememberJetzt()
     var entwurf by remember { mutableStateOf<NotenEntwurf?>(null) }
+    var zeugnisOffen by remember { mutableStateOf(false) }
+    var abiOffen by remember { mutableStateOf(false) }
     // "" = alle Halbjahre
     var halbjahr by rememberSaveable { mutableStateOf(Noten.halbjahr(heute)) }
 
@@ -102,6 +109,13 @@ fun NotenScreen(
     }
     val faecher = remember(sichtbar, klausurAnteil) { Noten.nachFach(sichtbar, klausurAnteil) }
     val gesamt = remember(faecher) { Noten.gesamtSchnitt(faecher) }
+    // Das Halbjahr davor, zum Vergleichen (nur wenn ein einzelnes Halbjahr gewählt ist).
+    val vorher = remember(noten, halbjahr, klausurAnteil) {
+        val davor = Noten.halbjahrDavor(halbjahr)
+        if (davor == null) emptyMap()
+        else Noten.nachFach(noten.filter { Noten.halbjahr(it) == davor }, klausurAnteil)
+            .associateBy { Noten.fachSchluessel(it.fach) }
+    }
 
     // Geschriebene Klausuren, zu denen noch keine Note eingetragen ist.
     val offeneKlausuren = remember(pruefungen, noten, heute, jetzt) {
@@ -150,6 +164,20 @@ fun NotenScreen(
 
             item { AnteilRegler(klausurAnteil, onAnteil) }
 
+            if (faecher.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AssistChip(onClick = { zeugnisOffen = true }, label = { Text("Zeugnis-Vorschau") })
+                        if (system == NotenSystem.PUNKTE) {
+                            AssistChip(onClick = { abiOffen = true }, label = { Text("Abi-Rechner") })
+                        }
+                    }
+                }
+            }
+
             if (offeneKlausuren.isNotEmpty()) {
                 item {
                     Text(
@@ -186,12 +214,25 @@ fun NotenScreen(
                     klausurAnteil = klausurAnteil,
                     dunkel = dunkel,
                     onNote = { entwurf = NotenEntwurf(bestehend = it) },
-                    onLoeschen = onLoeschen
+                    onLoeschen = onLoeschen,
+                    vorher = vorher[Noten.fachSchluessel(f.fach)],
+                    gespeichertesZiel = ziele[NotenStore.zielSchluessel(system, f.fach)],
+                    onZiel = { onZiel(f.fach, it) }
                 )
             }
 
             item { Spacer(Modifier.height(88.dp)) }
         }
+    }
+
+    if (zeugnisOffen) {
+        ZeugnisDialog(system, faecher, gesamt, if (halbjahr.isEmpty()) "Alle Halbjahre" else halbjahr) { zeugnisOffen = false }
+    }
+    if (abiOffen) {
+        AbiDialog(
+            schnitt = remember(noten, klausurAnteil) { Noten.durchschnittAllerHalbjahre(noten, klausurAnteil) },
+            onSchliessen = { abiOffen = false }
+        )
     }
 
     entwurf?.let { e ->
@@ -256,12 +297,15 @@ private fun FachKarte(
     klausurAnteil: Int,
     dunkel: Boolean,
     onNote: (Note) -> Unit,
-    onLoeschen: (String) -> Unit
+    onLoeschen: (String) -> Unit,
+    vorher: FachSchnitt?,
+    gespeichertesZiel: Int?,
+    onZiel: (Int) -> Unit
 ) {
     val akzent = fachFarbe(schnitt.fach, dunkel)
-    var ziel by rememberSaveable(schnitt.fach) { mutableStateOf(-1) }
-    // Standardziel: einen Punkt über dem aktuellen Zeugnisstand.
-    val zielWert = if (ziel in system.min..system.max) ziel
+    var prognoseOffen by remember { mutableStateOf(false) }
+    // Ohne gespeichertes Ziel: einen Schritt besser als der aktuelle Zeugnisstand.
+    val zielWert = if (gespeichertesZiel != null && gespeichertesZiel in system.min..system.max) gespeichertesZiel
     else (if (system.hoeherIstBesser) schnitt.zeugnis + 1 else schnitt.zeugnis - 1).coerceIn(system.min, system.max)
 
     Card(
@@ -292,6 +336,26 @@ private fun FachKarte(
                     }
                 }
 
+                if (vorher != null) {
+                    // Besser/schlechter zum Vorhalbjahr – bei Noten ist weniger besser.
+                    val diff = schnitt.gesamt - vorher.gesamt
+                    val besser = if (system.hoeherIstBesser) diff > 0.05 else diff < -0.05
+                    val schlechter = if (system.hoeherIstBesser) diff < -0.05 else diff > 0.05
+                    Text(
+                        text = "Vorhalbjahr Ø ${komma(vorher.gesamt)} · " + when {
+                            besser -> "▲ ${komma(kotlin.math.abs(diff))} besser"
+                            schlechter -> "▼ ${komma(kotlin.math.abs(diff))} schlechter"
+                            else -> "gleich geblieben"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when {
+                            besser -> MaterialTheme.colorScheme.primary
+                            schlechter -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+
                 Spacer(Modifier.height(6.dp))
                 noten.forEach { n ->
                     Row(
@@ -316,9 +380,12 @@ private fun FachKarte(
                 // Rechner: Was brauche ich noch für mein Ziel?
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Ziel", style = MaterialTheme.typography.labelLarge)
-                    TextButton(onClick = { ziel = zielWert - 1 }, enabled = zielWert > system.min) { Text("−") }
+                    TextButton(onClick = { onZiel(zielWert - 1) }, enabled = zielWert > system.min) { Text("−") }
                     Text(if (system == NotenSystem.PUNKTE) "$zielWert P" else "Note $zielWert", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = { ziel = zielWert + 1 }, enabled = zielWert < system.max) { Text("+") }
+                    TextButton(onClick = { onZiel(zielWert + 1) }, enabled = zielWert < system.max) { Text("+") }
+                    if (Noten.zielErreicht(schnitt.zeugnis, zielWert, system)) {
+                        Text("✓ erreicht", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 NotenArt.entries.forEach { art ->
                     Text(
@@ -333,10 +400,15 @@ private fun FachKarte(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                TextButton(onClick = { prognoseOffen = true }) { Text("Was wäre wenn …") }
             }
         }
     }
+    if (prognoseOffen) {
+        PrognoseDialog(system, schnitt.fach, noten, klausurAnteil) { prognoseOffen = false }
+    }
 }
+
 
 @Composable
 private fun NoteDialog(
@@ -465,4 +537,163 @@ private fun AnteilRegler(anteil: Int, onAnteil: (Int) -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+private fun PrognoseDialog(
+    system: NotenSystem,
+    fach: String,
+    noten: List<Note>,
+    klausurAnteil: Int,
+    onSchliessen: () -> Unit
+) {
+    var art by remember { mutableStateOf(NotenArt.KLAUSUR) }
+    var wertText by remember { mutableStateOf("") }
+    val wert = wertText.toIntOrNull()?.takeIf { it in system.min..system.max }
+    val ergebnis = wert?.let { Noten.prognose(fach, noten, system, art, it, klausurAnteil) }
+
+    AlertDialog(
+        onDismissRequest = onSchliessen,
+        title = { Text("Was wäre wenn … ($fach)") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NotenArt.entries.forEach { option ->
+                        FilterChip(selected = art == option, onClick = { art = option }, label = { Text(option.anzeige) })
+                    }
+                }
+                OutlinedTextField(
+                    value = wertText,
+                    onValueChange = { neu -> wertText = neu.filter { it.isDigit() }.take(2) },
+                    label = { Text(if (system == NotenSystem.PUNKTE) "Angenommene Punkte (0 bis 15)" else "Angenommene Note (1 bis 6)") },
+                    isError = wertText.isNotEmpty() && wert == null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (ergebnis != null) {
+                    Text(
+                        text = "Dann steht das Fach bei Ø ${komma(ergebnis.gesamt)} – " +
+                            if (system == NotenSystem.PUNKTE) "Zeugnis: ${ergebnis.zeugnis} Punkte" else "Zeugnis: Note ${ergebnis.zeugnis}",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } }
+    )
+}
+
+@Composable
+private fun ZeugnisDialog(
+    system: NotenSystem,
+    faecher: List<FachSchnitt>,
+    gesamt: Double?,
+    zeitraum: String,
+    onSchliessen: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onSchliessen,
+        title = { Text("Zeugnis-Vorschau") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(zeitraum, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                faecher.forEach { f ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(fachAnzeige(f.fach), style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            if (system == NotenSystem.PUNKTE) "${f.zeugnis} P" else "${f.zeugnis}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                if (gesamt != null) {
+                    val zeugnisSchnitt = faecher.map { it.zeugnis }.average()
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Durchschnitt der Zeugniswerte: ${komma(zeugnisSchnitt)}" +
+                            if (system == NotenSystem.PUNKTE) " P (≈ Note ${komma(Noten.alsSchulnote(zeugnisSchnitt))})" else "",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                }
+                Text(
+                    "Nur eine Vorschau aus deinen eingetragenen Noten – die Lehrkraft entscheidet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } }
+    )
+}
+
+@Composable
+private fun AbiDialog(schnitt: Double?, onSchliessen: () -> Unit) {
+    var pruefungen by remember {
+        mutableStateOf(List(5) { schnitt?.let { s -> Noten.runden(s).toString() } ?: "10" })
+    }
+    val punkte = pruefungen.map { it.toIntOrNull()?.takeIf { p -> p in 0..Noten.MAX } }
+    val blockI = schnitt?.let { Abi.blockI(it) }
+    val blockII = if (punkte.all { it != null }) Abi.blockII(punkte.filterNotNull()) else null
+    val gesamt = if (blockI != null && blockII != null) blockI + blockII else null
+
+    AlertDialog(
+        onDismissRequest = onSchliessen,
+        title = { Text("Abi-Rechner") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = if (schnitt == null) "Trag zuerst Noten ein – daraus wird Block I geschätzt."
+                    else "Block I aus deinem Durchschnitt aller Halbjahre (Ø ${komma(schnitt)} P). " +
+                        "Trag unten ein, wie viele Punkte du in den fünf Prüfungen erwartest.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    pruefungen.forEachIndexed { i, text ->
+                        OutlinedTextField(
+                            value = text,
+                            onValueChange = { neu ->
+                                pruefungen = pruefungen.toMutableList().also { it[i] = neu.filter { c -> c.isDigit() }.take(2) }
+                            },
+                            label = { Text("P${i + 1}") },
+                            isError = punkte[i] == null,
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                if (blockI != null) Text("Block I: $blockI von ${Abi.BLOCK_I_MAX}", style = MaterialTheme.typography.bodyLarge)
+                if (blockII != null) Text("Block II: $blockII von ${Abi.BLOCK_II_MAX}", style = MaterialTheme.typography.bodyLarge)
+                if (gesamt != null && blockI != null && blockII != null) {
+                    val note = Abi.note(gesamt)
+                    val geschafft = Abi.bestanden(blockI, blockII)
+                    Text(
+                        text = "Gesamt: $gesamt von 900" + if (note != null && geschafft) " · Note ≈ ${komma(note)}" else "",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (geschafft) "Bestehens-Grenzen erreicht." else
+                            "Unter den Mindestwerten (Block I ${Abi.BLOCK_I_MIN}, Block II ${Abi.BLOCK_II_MIN}, gesamt ${Abi.GESAMT_MIN}).",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (geschafft) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+                Text(
+                    "Grobe Schätzung nach dem bundesweiten 900-Punkte-Schema. Welche Kurse genau zählen, regelt das Land – verbindlich sind nur Schule und Landesschulamt.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } }
+    )
 }
