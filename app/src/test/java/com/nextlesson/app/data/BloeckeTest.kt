@@ -55,4 +55,19 @@ class BloeckeTest {
         val b = listOf(std(1, "07:15", "08:00", "A"), std(2, "08:00", "08:45", "A").copy(entfaellt = true)).alsBloecke()
         assertEquals(2, b.size)
     }
+
+    @Test
+    fun klausurWirdEinBlockAuchUeberPausen() {
+        fun klausur(nr: Int, von: String, bis: String, info: String) =
+            std(nr, von, bis, "ENG2", lehrer = "Däu", raum = "032").copy(istKlausur = true, info = info)
+        val b = listOf(
+            klausur(3, "09:05", "09:50", "Klausur!"), klausur(4, "09:50", "10:35", "Klausur!"),
+            klausur(5, "11:00", "11:45", "ENG2 Klausur"), klausur(6, "11:45", "12:30", "Klausur")
+        ).alsBloecke()
+        assertEquals(listOf("3.–6. Std"), b.map { it.stundenText })
+        assertEquals(t("09:05") to t("12:30"), b[0].zusammengefasst.beginn to b[0].zusammengefasst.ende)
+        // Eine normale Stunde dazwischen trennt weiterhin nicht zusammen mit der Klausur eines anderen Kurses.
+        val getrennt = listOf(klausur(3, "09:05", "09:50", "K"), klausur(4, "09:50", "10:35", "K").copy(raum = "033")).alsBloecke()
+        assertEquals(2, getrennt.size)
+    }
 }

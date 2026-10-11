@@ -1,5 +1,7 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.data.schultagVersetzt
+import com.nextlesson.app.data.Quelle
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -64,6 +66,17 @@ enum class WochenAuswahl(val label: String) {
     UEBERNAECHSTE("In 2 Wochen")
 }
 
+private const val TAG_RUECKBLICK = 14L
+private const val TAG_VORAUS = 28L
+
+/** Ein anderer Tag als der normale, den man mit Wischen oder den Pfeilen gewählt hat. */
+sealed class TagAnsicht {
+    abstract val datum: LocalDate
+    data class Laedt(override val datum: LocalDate) : TagAnsicht()
+    data class Fertig(override val datum: LocalDate, val plan: PersoenlicherPlan) : TagAnsicht()
+    data class Leer(override val datum: LocalDate, val grund: String) : TagAnsicht()
+}
+
 class PlanViewModel(app: Application) : AndroidViewModel(app) {
 
     // Lazy: EncryptedSharedPreferences legt beim ersten Zugriff einen Schlüssel an und ist
@@ -87,6 +100,70 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _wochenZustand = MutableStateFlow<WochenZustand>(WochenZustand.NichtGeladen)
     val wochenZustand: StateFlow<WochenZustand> = _wochenZustand.asStateFlow()
+
+    private val _tagAnsicht = MutableStateFlow<TagAnsicht?>(null)
+    /** Null = der normale Tag (heute bzw. der nächste Schultag). */
+    val tagAnsicht: StateFlow<TagAnsicht?> = _tagAnsicht.asStateFlow()
+    private var tagJob: Job? = null
+
+    /**
+     * Wechselt vom gerade gezeigten Tag [aktuell] zum vorigen ([richtung] < 0) oder nächsten Schultag,
+     * auch über Wochengrenzen. [standard] ist der normale Tag; dorthin geht es ohne Nachladen zurück.
+     */
+    fun tagWischen(richtung: Int, aktuell: LocalDate, standard: LocalDate) {
+        val ziel = schultagVersetzt(aktuell, richtung)
+        val heute = LocalDate.now()
+        // Nicht endlos in die Vergangenheit oder Zukunft: Pläne gibt es nur für ein paar Wochen.
+        if (ziel.isBefore(heute.minusDays(TAG_RUECKBLICK)) || ziel.isAfter(heute.plusDays(TAG_VORAUS))) return
+        tagWaehlen(ziel, standard)
+    }
+
+    fun tagWaehlen(datum: LocalDate, standard: LocalDate) {
+        tagJob?.cancel()
+        if (datum == standard) {
+            _tagAnsicht.value = null
+            return
+        }
+        _tagAnsicht.value = TagAnsicht.Laedt(datum)
+        tagJob = viewModelScope.launch {
+            val creds = withContext(Dispatchers.IO) { credentialsStore.laden() } ?: return@launch
+            val kurse = kursSelectionStore.laden()
+            val ergebnis = repository.holeTage(creds, datum, anzahl = 1).firstOrNull()?.second
+            val neu = withContext(Dispatchers.Default) {
+                when (ergebnis) {
+                    is PlanResult.Success -> {
+                        val plan = ergebnis.plan.tagesplanFuer(kurse)
+                        if (plan.stunden.isEmpty()) {
+                            TagAnsicht.Leer(datum, "An diesem Tag hast du laut Plan keinen Unterricht.")
+                        } else {
+                            TagAnsicht.Fertig(
+                                datum,
+                                PersoenlicherPlan(
+                                    datum = datum,
+                                    plan = plan,
+                                    naechste = plan.naechsteStunde(java.time.LocalTime.MIN),
+                                    istHeute = false,
+                                    gesamt = ergebnis.plan,
+                                    geprueftUm = ergebnis.geprueftUm,
+                                    ausCache = ergebnis.aus == Quelle.CACHE
+                                )
+                            )
+                        }
+                    }
+                    null -> TagAnsicht.Leer(datum, "Laden fehlgeschlagen.")
+                    is PlanResult.KeinPlanFuerTag -> TagAnsicht.Leer(datum, "Für diesen Tag ist kein Plan veröffentlicht (Ferien oder frei?).")
+                    else -> TagAnsicht.Leer(datum, ergebnis.tagesFehler() ?: "Laden fehlgeschlagen.")
+                }
+            }
+            _tagAnsicht.value = neu
+        }
+    }
+
+    /** Zurück zum normalen Tag. */
+    fun tagZuruecksetzen() {
+        tagJob?.cancel()
+        _tagAnsicht.value = null
+    }
 
     private val _wochenAuswahl = MutableStateFlow(WochenAuswahl.AKTUELL)
     val wochenAuswahl: StateFlow<WochenAuswahl> = _wochenAuswahl.asStateFlow()

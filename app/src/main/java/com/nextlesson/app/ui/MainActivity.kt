@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -240,6 +241,7 @@ private fun AppInhalt(
     val noten by notenViewModel.noten.collectAsState()
     val fotoVersion by aufgabenViewModel.fotoVersion.collectAsState()
     val klausurAnteile by notenViewModel.klausurAnteile.collectAsState()
+    val tagAnsicht by planViewModel.tagAnsicht.collectAsState()
     val notenZiele by notenViewModel.ziele.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
     val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
@@ -669,23 +671,50 @@ private fun AppInhalt(
                     ) {
                         when (val z = zustand) {
                             is UiZustand.Laedt -> LadeScreen()
-                            is UiZustand.Angezeigt -> HomeScreen(
-                                persoenlich = z.plan,
-                                uebersicht = uebersicht,
-                                aktualisiertGerade = aktualisiertGerade,
-                                onOeffneAufgaben = { tab = Tab.HAUSAUFGABEN },
-                                onOeffnePruefungen = { tab = Tab.PRUEFUNGEN },
-                                onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to z.plan.datum },
-                                freunde = freunde,
-                                onFreund = { freundAnsicht = it.id },
-                                onFreundeWoche = {
-                                    gruppeStart = freunde.map { it.id }.toSet()
-                                    gruppeOffen = true
-                                },
-                                blockAnsicht = design.blockAnsicht,
-                                onBlockAnsicht = design::blockAnsichtSetzen,
-                                onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
-                            )
+                            is UiZustand.Angezeigt -> {
+                                // Anderer Tag per Wischen/Pfeil? Dann dessen Plan statt des normalen.
+                                val abweichend = tagAnsicht?.takeIf { it.datum != z.plan.datum }
+                                val angezeigtesDatum = abweichend?.datum ?: z.plan.datum
+                                val persoenlichAnzeige = (abweichend as? TagAnsicht.Fertig)?.plan ?: z.plan
+                                fun wischen(richtung: Int) = planViewModel.tagWischen(richtung, angezeigtesDatum, z.plan.datum)
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    TagesLeiste(
+                                        datum = angezeigtesDatum,
+                                        abweichend = abweichend != null,
+                                        basisText = if (z.plan.datum == LocalDate.now()) "Zurück zu heute" else "Zurück",
+                                        onZurueck = { wischen(-1) },
+                                        onVor = { wischen(1) },
+                                        onBasis = planViewModel::tagZuruecksetzen
+                                    )
+                                    TagWischen(
+                                        onVor = { wischen(1) },
+                                        onZurueck = { wischen(-1) },
+                                        modifier = Modifier.weight(1f).fillMaxWidth()
+                                    ) {
+                                        when (abweichend) {
+                                            is TagAnsicht.Laedt -> LadeScreen()
+                                            is TagAnsicht.Leer -> TagLeerHinweis(abweichend.grund)
+                                            else -> HomeScreen(
+                                    persoenlich = persoenlichAnzeige,
+                                    uebersicht = uebersicht,
+                                    aktualisiertGerade = aktualisiertGerade,
+                                    onOeffneAufgaben = { tab = Tab.HAUSAUFGABEN },
+                                    onOeffnePruefungen = { tab = Tab.PRUEFUNGEN },
+                                    onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to persoenlichAnzeige.datum },
+                                    freunde = freunde,
+                                    onFreund = { freundAnsicht = it.id },
+                                    onFreundeWoche = {
+                                        gruppeStart = freunde.map { it.id }.toSet()
+                                        gruppeOffen = true
+                                    },
+                                    blockAnsicht = design.blockAnsicht,
+                                    onBlockAnsicht = design::blockAnsichtSetzen,
+                                    onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
+                                )
+                                        }
+                                    }
+                                }
+                            }
                             is UiZustand.KeineStunden -> KeineStundenScreen(
                                 onKurseAendern = { zeigeKurse = true },
                                 onNeuPruefen = { planViewModel.aktualisieren() }

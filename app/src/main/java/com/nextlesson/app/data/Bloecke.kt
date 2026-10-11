@@ -27,7 +27,8 @@ data class StundenBlock(val ersteIndex: Int, val stunden: List<Lesson>) {
  * Fasst Stunden zusammen, die direkt aufeinander folgen und sonst gleich sind (Kurs, Lehrkraft,
  * Raum, Status, Hinweis). Pausen bis [maxPauseMinuten] trennen nicht – eine Doppelstunde über
  * die große Pause hinweg ist keine, aber 5 Minuten zwischen 1. und 2. Stunde schon.
- * Parallele Kurse (gleiche Stundennummer) werden einzeln verfolgt.
+ * Parallele Kurse (gleiche Stundennummer) werden einzeln verfolgt. Klausurstunden eines Kurses
+ * werden immer zu einem Block, auch über Pausen hinweg.
  */
 fun List<Lesson>.alsBloecke(maxPauseMinuten: Long = 10): List<StundenBlock> {
     val bloecke = ArrayList<MutableList<Lesson>>()
@@ -46,6 +47,12 @@ fun List<Lesson>.alsBloecke(maxPauseMinuten: Long = 10): List<StundenBlock> {
 
 private fun Lesson.schliesstAn(b: Lesson, maxPauseMinuten: Long): Boolean {
     if (b.stunde != stunde + 1) return false
+    // Eine Klausur ist ein einziger Termin: aufeinanderfolgende Klausurstunden desselben Kurses gehören
+    // zusammen – auch über Pausen hinweg und egal, wie der Plan den Hinweis je Stunde formuliert.
+    if (istKlausur && b.istKlausur) {
+        return klasse == b.klasse && kursKuerzel == b.kursKuerzel && fach == b.fach &&
+            lehrer == b.lehrer && raum == b.raum
+    }
     if (klasse != b.klasse || kursKuerzel != b.kursKuerzel || fach != b.fach) return false
     if (lehrer != b.lehrer || raum != b.raum || info != b.info) return false
     if (entfaellt != b.entfaellt || status != b.status || istKlausur != b.istKlausur) return false
