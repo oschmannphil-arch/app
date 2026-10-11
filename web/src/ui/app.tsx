@@ -22,7 +22,7 @@ import { naechsteStundeVon } from '../services/repo';
 import { neueId, useAblage } from '../services/speicher';
 import { abmelden, aktualisieren, anmelden, kurseSpeichern, kursListeLaden, tagNeuLaden, useZustand } from '../services/steuerung';
 import { Dialog, Icon, IconKnopf, type IconName, useFach } from './basis';
-import { HausaufgabeDialog, Aufgaben, Klausuren } from './aufgaben';
+import { HausaufgabeDialog, Aufgaben, Klausuren, fotoAnwenden } from './aufgaben';
 import { Anmeldung, FehlerSeite, KeinPlanSeite, KeineStundenSeite, Kurswahl, LadeSeite } from './einrichtung';
 import { Einstellungen } from './einstellungen';
 import { FreundBearbeiten, FreundTag, GemeinsamFrei } from './freunde';
@@ -31,6 +31,7 @@ import { Noten } from './noten';
 import { Suche } from './suche';
 import { Woche } from './woche';
 import { teilen } from './basis';
+import { planBildTeilen } from './planbild';
 
 type Tab = 'heute' | 'woche' | 'suche' | 'aufgaben' | 'klausuren';
 const TABS: Array<[Tab, string, IconName]> = [
@@ -72,6 +73,7 @@ export function App() {
   const [aufgabeAusStunde, setAufgabeAusStunde] = useState<{ lesson: Lesson; datum: Datum } | null>(null);
   const [naechsteStunde, setNaechsteStunde] = useState<Datum | null>(null);
   const [hinweis, setHinweis] = useState('');
+  const [teilenMenue, setTeilenMenue] = useState(false);
   const { anzeige } = useFach();
   void anzeige;
 
@@ -265,7 +267,7 @@ export function App() {
           <IconKnopf icon="neu" titel="Aktualisieren" onClick={() => { void aktualisieren(true); tagNeuLaden(); }} />
         )}
         {!einrichtung && !overlay && tab === 'heute' && ui.art === 'ANGEZEIGT' && (
-          <IconKnopf icon="teilen" titel="Plan teilen" onClick={async () => setHinweis(await teilen(planAlsText(ui.plan), 'Plan teilen'))} />
+          <IconKnopf icon="teilen" titel="Plan teilen" onClick={() => setTeilenMenue(true)} />
         )}
         {!einrichtung && !overlay && (tab === 'heute' || tab === 'klausuren') && <IconKnopf icon="stern" titel="Noten" onClick={() => setOverlay({ art: 'noten' })} />}
         {zugang && ui.art !== 'LOGIN' && ui.art !== 'KURSE' && (
@@ -273,6 +275,18 @@ export function App() {
         )}
       </header>
       <main class="inhalt">{inhalt}</main>
+      {teilenMenue && ui.art === 'ANGEZEIGT' && (
+        <Dialog
+          titel="Plan teilen"
+          onZu={() => setTeilenMenue(false)}
+          knoepfe={<button class="textknopf" onClick={() => setTeilenMenue(false)}>Abbrechen</button>}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button class="knopf breit" onClick={async () => { setTeilenMenue(false); setHinweis(await teilen(planAlsText(ui.plan), 'Plan teilen')); }}>Als Text</button>
+            <button class="knopf breit" onClick={async () => { setTeilenMenue(false); setHinweis(await planBildTeilen(ui.plan)); }}>Als Bild</button>
+          </div>
+        </Dialog>
+      )}
       {!einrichtung && !overlay && (
         <nav class="navi">
           {TABS.map(([t, name, icon]) => (
@@ -290,8 +304,8 @@ export function App() {
           vorschlagFach={aufgabeAusStunde.lesson.fach}
           naechsteStunde={naechsteStunde}
           onZu={() => setAufgabeAusStunde(null)}
-          onSpeichern={(fach, text, faellig) => {
-            hausaufgabeHinzufuegen(fach, text, faellig);
+          onSpeichern={(fach, text, faellig, foto) => {
+            void fotoAnwenden(hausaufgabeHinzufuegen(fach, text, faellig), foto);
             setAufgabeAusStunde(null);
           }}
         />

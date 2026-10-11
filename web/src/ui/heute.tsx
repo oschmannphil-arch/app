@@ -1,15 +1,16 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { alsEintraege, blockErste, blockStundenText, blockZusammengefasst } from '../logic/bloecke';
 import { anwesenheit } from '../logic/freizeit';
 import { berechneUebersicht, istUeberfaellig, pruefungsArtText, tageBis, type Pruefung, type Uebersicht } from '../logic/aufgaben';
+import { aenderungsText } from '../logic/aenderungen';
 import { ferienText } from '../logic/ferien';
 import { freiVor, freiblockStundenText, type Freiblock } from '../logic/freizeit';
 import { hinweisKurz } from '../logic/hinweis';
 import { type Lesson, type NaechsteStundeErgebnis, hatAenderung, naechsteStunde, schluss } from '../logic/models';
 import { schultagVersetzt } from '../logic/raster';
 import { type Datum, countdownText, heute as heuteTag, kurzesDatum, langesDatum, plusTage, uhrzeitText, wochentagName } from '../logic/zeit';
-import { aufgabenAblage, designAendern, designAblage, freundeAblage, pruefungenAblage } from '../services/daten';
+import { aenderungenSeitGestern, aufgabenAblage, designAendern, designAblage, freundeAblage, pruefungenAblage } from '../services/daten';
 import type { PersoenlicherPlan } from '../services/repo';
 import { useAblage } from '../services/speicher';
 import { type TagAnsicht, tagNeuLaden, tagWischen, tagZuruecksetzen } from '../services/steuerung';
@@ -268,6 +269,8 @@ function Tagesplan(p: {
   const zeitstempel = new Date(pp.geprueftUm).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   void anwesenheit;
   void zeitraster;
+  // Änderungen gegenüber dem Stand eines früheren Tages.
+  const seitGestern = useMemo(() => aenderungenSeitGestern(pp.datum, plan.stunden), [pp.datum, plan]);
 
   return (
     <div class="seite">
@@ -293,6 +296,7 @@ function Tagesplan(p: {
         </Karte>
       )}
 
+      {seitGestern.length > 0 && <UebersichtKarte titel="Seit gestern geändert" text={aenderungsText(seitGestern)} hervor={false} />}
       {plan.hinweise.length > 0 && (
         <UebersichtKarte
           titel={`Hinweise für ${istHeute ? 'heute' : 'diesen Tag'}`}

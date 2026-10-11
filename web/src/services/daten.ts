@@ -11,6 +11,7 @@ import type { Zugang } from '../logic/models';
 import { type Note, type NotenSystem } from '../logic/noten';
 import { type Treffer, trefferAusSchluessel, trefferSchluessel } from '../logic/suche';
 import { type Datum, heute, plusTage, tageZwischen } from '../logic/zeit';
+import { fotoLoeschen } from './kv';
 import { ablage, neueId } from './speicher';
 
 // ---------- Zugang und Kurse ----------
@@ -66,7 +67,10 @@ export function hausaufgabeBearbeiten(id: string, fach: string, text: string, fa
 export const hausaufgabeUmschalten = (id: string) =>
   aufgabenAblage.set((l) => sortierteAufgaben(l.map((h) => (h.id === id ? { ...h, erledigt: !h.erledigt } : h))));
 
-export const hausaufgabeLoeschen = (id: string) => aufgabenAblage.set((l) => l.filter((h) => h.id !== id));
+export const hausaufgabeLoeschen = (id: string) => {
+  aufgabenAblage.set((l) => l.filter((h) => h.id !== id));
+  void fotoLoeschen(id);
+};
 
 const nachDatum = (l: Pruefung[]) => [...l].sort((a, b) => a.datum.localeCompare(b.datum));
 
@@ -192,3 +196,26 @@ export function ausfallAufraeumen(): void {
 }
 
 void tageZwischen;
+
+// ---------- Änderungen seit gestern ----------
+
+import { type Aenderung, type VerlaufsStand, aenderungenVon, fortschreiben } from '../logic/aenderungen';
+import type { Lesson } from '../logic/models';
+
+export const aenderungsVerlaufAblage = ablage<Record<string, VerlaufsStand>>('aenderungsverlauf', {});
+
+/** Speichert den Stand eines Tages und liefert die Änderungen, die gegenüber einem früheren Tag neu sind. */
+export function aenderungenSeitGestern(datum: Datum, stunden: Lesson[]): Aenderung[] {
+  const aktuell = aenderungenVon(stunden);
+  const keys = aktuell.map((a) => a.schluessel);
+  const alle = aenderungsVerlaufAblage.get();
+  const alt = alle[datum];
+  const stand = fortschreiben(alt, keys, heute());
+  if (JSON.stringify(stand) !== JSON.stringify(alt)) {
+    // Vergangene Tage gleich mit aufräumen, damit die Ablage nicht wächst.
+    const bereinigt = Object.fromEntries(Object.entries(alle).filter(([d]) => d >= heute()));
+    aenderungsVerlaufAblage.set({ ...bereinigt, [datum]: stand });
+  }
+  const basis = stand.basis;
+  return basis === null ? [] : aktuell.filter((a) => !basis.includes(a.schluessel));
+}

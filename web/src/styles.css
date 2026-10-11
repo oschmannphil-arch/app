@@ -161,3 +161,11 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 hr { border: 0; border-top: 1px solid var(--outline-variant); width: 100%; margin: 4px 0; }
 a { color: var(--primary); }
 .tabelle-zeile { display: flex; justify-content: space-between; gap: 12px; }
+
+/* Aufklappbare Bereiche (Einstellungen) */
+.abschnitt { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: var(--radius); overflow: hidden; }
+.abschnitt > summary { list-style: none; cursor: pointer; padding: 14px 16px; font-size: 18px; font-weight: 500; color: var(--on-surface); display: flex; justify-content: space-between; align-items: center; }
+.abschnitt > summary::-webkit-details-marker { display: none; }
+.abschnitt > summary::after { content: '▼'; font-size: 12px; color: var(--on-surface-variant); }
+.abschnitt[open] > summary::after { content: '▲'; }
+.abschnitt > .abschnitt-inhalt { display: flex; flex-direction: column; gap: 10px; padding: 0 8px 8px; }

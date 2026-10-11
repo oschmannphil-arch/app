@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { auswerten as ausfallAuswerten, anteilProzent } from '../logic/ausfall';
 import { FachName } from '../logic/fachname';
@@ -122,6 +123,16 @@ function SicherungKarte() {
   );
 }
 
+/** Aufklappbarer Bereich; startet eingeklappt. */
+function Abschnitt(p: { titel: string; children: ComponentChildren }) {
+  return (
+    <details class="abschnitt">
+      <summary>{p.titel}</summary>
+      <div class="abschnitt-inhalt">{p.children}</div>
+    </details>
+  );
+}
+
 export function Einstellungen(p: {
   faecher: string[];
   freunde: Freund[];
@@ -139,9 +150,9 @@ export function Einstellungen(p: {
   const [meldung, setMeldung] = useState('');
   return (
     <div class="seite">
+      <Abschnitt titel="Darstellung">
       <Karte>
         <div class="stapel">
-          <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--on-surface)' }}>Darstellung</div>
           <div class="zeile">{MODI.map(([m, t]) => <Chip key={m} an={design.modus === m} onClick={() => designAendern({ modus: m })}>{t}</Chip>)}</div>
           <div class="sehr-klein">Farbthema</div>
           <div class="scroll-x">
@@ -157,13 +168,15 @@ export function Einstellungen(p: {
           </div>
         </div>
       </Karte>
+      </Abschnitt>
 
-      <AusfallKarte />
+      <Abschnitt titel="Kurse & Freunde">
       <FreundeEinstellungen freunde={p.freunde} onBearbeiten={p.onFreundBearbeiten} onLink={p.onFreundLink} />
+      </Abschnitt>
 
+      <Abschnitt titel="Zugang zu Indiware mobil">
       <Karte>
         <div class="stapel">
-          <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--on-surface)' }}>Zugang zu Indiware mobil</div>
           {zugang ? (
             <div class="klein">Schule {zugang.schulnummer} · Benutzer {zugang.benutzername} · {kurse.length} {kurse.length === 1 ? 'Kurs' : 'Kurse'} gewählt</div>
           ) : (
@@ -180,8 +193,12 @@ export function Einstellungen(p: {
           <button class="knopf breit" style={{ color: 'var(--error)' }} onClick={p.onAbmelden}>Abmelden und Daten dieses Plans entfernen</button>
         </div>
       </Karte>
+      </Abschnitt>
 
-      <SicherungKarte />
+      <Abschnitt titel="Statistik & Sicherung">
+        <AusfallKarte />
+        <SicherungKarte />
+      </Abschnitt>
 
       <button class="textknopf" onClick={() => setVerlauf(true)}>Web-Version · Was ist neu?</button>
       {farbDialog && <FachFarbenDialog faecher={p.faecher} onZu={() => setFarbDialog(false)} />}

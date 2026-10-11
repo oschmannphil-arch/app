@@ -1,7 +1,8 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { type Hausaufgabe, type Pruefung, type PruefungsArt, istUeberfaellig, pruefungIstVorbei, pruefungsArtText, tageBis } from '../logic/aufgaben';
 import { type Datum, deutschesDatum, heute as heuteTag, langesDatum, plusTage } from '../logic/zeit';
 import { aufgabenAblage, hausaufgabeBearbeiten, hausaufgabeHinzufuegen, hausaufgabeLoeschen, hausaufgabeUmschalten, pruefungBearbeiten, pruefungHinzufuegen, pruefungLoeschen, pruefungenAblage } from '../services/daten';
+import { fotoIds, fotoLesen, fotoLoeschen, fotoSpeichern, fotoVerkleinern } from '../services/kv';
 import { useAblage } from '../services/speicher';
 import { Badge, Chip, Dialog, Karte, LeerHinweis, Ueberschrift, Icon, useFach, useHeute, useJetzt } from './basis';
 
@@ -17,14 +18,63 @@ function DatumsFeld(p: { wert: Datum | null; onAendern: (d: Datum | null) => voi
   return <input type="date" value={p.wert ?? ''} onInput={(e) => p.onAendern((e.target as HTMLInputElement).value || null)} />;
 }
 
+/** Was beim Speichern einer Hausaufgabe mit dem Foto passiert. */
+export type FotoAenderung = { art: 'KEINE' } | { art: 'NEU'; bild: Blob } | { art: 'ENTFERNEN' };
+
+/** Foto nach dem Speichern der Aufgabe [id] anwenden (verkleinern, ablegen bzw. löschen). */
+export async function fotoAnwenden(id: string, f: FotoAenderung): Promise<void> {
+  if (f.art === 'ENTFERNEN') await fotoLoeschen(id);
+  else if (f.art === 'NEU') {
+    const klein = await fotoVerkleinern(f.bild);
+    if (klein) await fotoSpeichern(id, klein);
+  }
+}
+
+/** Ids der Aufgaben mit Foto – für das 📷 in der Liste. */
+function useFotoIds(version: number): Set<string> {
+  const [ids, setIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let aktiv = true;
+    void fotoIds().then((l) => aktiv && setIds(new Set(l)));
+    return () => {
+      aktiv = false;
+    };
+  }, [version]);
+  return ids;
+}
+
+function FotoAnsicht(p: { id: string; onZu: () => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let u: string | null = null;
+    void fotoLesen(p.id).then((b) => {
+      if (b) {
+        u = URL.createObjectURL(b);
+        setUrl(u);
+      }
+    });
+    return () => {
+      if (u) URL.revokeObjectURL(u);
+    };
+  }, [p.id]);
+  return (
+    <Dialog titel="Foto" onZu={p.onZu} knoepfe={<button class="textknopf" onClick={p.onZu}>Schließen</button>}>
+      {url ? <img src={url} alt="Foto zur Hausaufgabe" style={{ width: '100%', borderRadius: 8 }} /> : <div>Kein Foto gefunden.</div>}
+    </Dialog>
+  );
+}
+
 export function HausaufgabeDialog(p: {
   bestehend?: Hausaufgabe | null;
   vorschlagFach?: string;
   naechsteStunde?: Datum | null;
   onZu: () => void;
-  onSpeichern: (fach: string, text: string, faellig: Datum | null) => void;
+  hatFoto?: boolean;
+  onSpeichern: (fach: string, text: string, faellig: Datum | null, foto: FotoAenderung) => void;
 }) {
   const heute = useHeute();
+  const [neuesFoto, setNeuesFoto] = useState<Blob | null>(null);
+  const [fotoWeg, setFotoWeg] = useState(false);
   const [fach, setFach] = useState(p.bestehend?.fach ?? p.vorschlagFach ?? '');
   const [text, setText] = useState(p.bestehend?.text ?? '');
   const [faellig, setFaellig] = useState<Datum | null>(p.bestehend ? p.bestehend.faellig : plusTage(heute, 1));
@@ -42,7 +92,7 @@ export function HausaufgabeDialog(p: {
       knoepfe={
         <>
           <button class="textknopf" onClick={p.onZu}>Abbrechen</button>
-          <button class="textknopf" disabled={text.trim() === ''} onClick={() => p.onSpeichern(fach, text, wirksam)}>Speichern</button>
+          <button class="textknopf" disabled={text.trim() === ''} onClick={() => p.onSpeichern(fach, text, wirksam, neuesFoto ? { art: 'NEU', bild: neuesFoto } : fotoWeg ? { art: 'ENTFERNEN' } : { art: 'KEINE' })}>Speichern</button>
         </>
       }
     >
@@ -55,6 +105,24 @@ export function HausaufgabeDialog(p: {
         <Chip onClick={() => setze(null)}>Ohne</Chip>
       </div>
       <DatumsFeld wert={wirksam} onAendern={setze} />
+      <label class="knopf breit" style={{ textAlign: 'center', cursor: 'pointer' }}>
+        {neuesFoto ? '📷 Neues Foto bereit' : p.hatFoto && !fotoWeg ? '📷 Foto ersetzen' : '📷 Tafel fotografieren'}
+        <input
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = (e.target as HTMLInputElement).files?.[0];
+            if (f) {
+              setNeuesFoto(f);
+              setFotoWeg(false);
+            }
+          }}
+        />
+      </label>
+      {(neuesFoto || (p.hatFoto && !fotoWeg)) && (
+        <button class="textknopf" onClick={() => { setNeuesFoto(null); setFotoWeg(true); }}>Foto entfernen</button>
+      )}
       <div class="sehr-klein">
         {wirksam ? `Gewählt: ${langesDatum(wirksam)}${wirksam === p.naechsteStunde ? ' (nächste Stunde)' : ''}` : 'Ohne Datum'}
       </div>
@@ -62,7 +130,7 @@ export function HausaufgabeDialog(p: {
   );
 }
 
-function AufgabenZeile(p: { h: Hausaufgabe; heute: Datum; onBearbeiten: () => void }) {
+function AufgabenZeile(p: { h: Hausaufgabe; heute: Datum; hatFoto: boolean; onBearbeiten: () => void; onFoto: () => void }) {
   const { farbe, anzeige } = useFach();
   const { h } = p;
   const ueber = istUeberfaellig(h, p.heute);
@@ -81,6 +149,7 @@ function AufgabenZeile(p: { h: Hausaufgabe; heute: Datum; onBearbeiten: () => vo
           <div class="sehr-klein" style={{ fontWeight: ueber ? 700 : 400, color: ueber ? 'var(--error)' : undefined }}>{faelligkeitText(h.faellig, p.heute)}</div>
         )}
       </div>
+      {p.hatFoto && <button class="icon-knopf" aria-label="Foto ansehen" onClick={p.onFoto}>📷</button>}
       <button class="icon-knopf" aria-label="Löschen" onClick={() => hausaufgabeLoeschen(h.id)}>
         <Icon name="muell" />
       </button>
@@ -92,6 +161,9 @@ export function Aufgaben() {
   const aufgaben = useAblage(aufgabenAblage);
   const heute = useHeute();
   const [dialog, setDialog] = useState<'neu' | Hausaufgabe | null>(null);
+  const [fotoVersion, setFotoVersion] = useState(0);
+  const [fotoOffen, setFotoOffen] = useState<string | null>(null);
+  const fotos = useFotoIds(fotoVersion);
   const offen = aufgaben.filter((h) => !h.erledigt);
   const erledigt = aufgaben.filter((h) => h.erledigt);
   const ueber = offen.filter((h) => istUeberfaellig(h, heute)).length;
@@ -105,28 +177,35 @@ export function Aufgaben() {
         </div>
       )}
       {aufgaben.length === 0 && <LeerHinweis text="Noch keine Hausaufgaben eingetragen. Unten rechts hinzufügen." />}
-      {offen.map((h) => <AufgabenZeile key={h.id} h={h} heute={heute} onBearbeiten={() => setDialog(h)} />)}
+      {offen.map((h) => <AufgabenZeile key={h.id} h={h} heute={heute} hatFoto={fotos.has(h.id)} onBearbeiten={() => setDialog(h)} onFoto={() => setFotoOffen(h.id)} />)}
       {erledigt.length > 0 && (
         <>
           <div style={{ paddingTop: 12 }}>
             <div class="titel-klein">Erledigt</div>
             <div class="sehr-klein">Verschwindet beim nächsten Start der App.</div>
           </div>
-          {erledigt.map((h) => <AufgabenZeile key={h.id} h={h} heute={heute} onBearbeiten={() => setDialog(h)} />)}
+          {erledigt.map((h) => <AufgabenZeile key={h.id} h={h} heute={heute} hatFoto={fotos.has(h.id)} onBearbeiten={() => setDialog(h)} onFoto={() => setFotoOffen(h.id)} />)}
         </>
       )}
       <button class="fab" onClick={() => setDialog('neu')}><Icon name="plus" />Aufgabe</button>
       {dialog && (
         <HausaufgabeDialog
           bestehend={dialog === 'neu' ? null : dialog}
+          hatFoto={dialog !== 'neu' && fotos.has(dialog.id)}
           onZu={() => setDialog(null)}
-          onSpeichern={(fach, text, faellig) => {
-            if (dialog === 'neu') hausaufgabeHinzufuegen(fach, text, faellig);
-            else hausaufgabeBearbeiten(dialog.id, fach, text, faellig);
+          onSpeichern={(fach, text, faellig, foto) => {
+            let id: string;
+            if (dialog === 'neu') id = hausaufgabeHinzufuegen(fach, text, faellig);
+            else {
+              id = dialog.id;
+              hausaufgabeBearbeiten(id, fach, text, faellig);
+            }
             setDialog(null);
+            void fotoAnwenden(id, foto).then(() => setFotoVersion((n) => n + 1));
           }}
         />
       )}
+      {fotoOffen && <FotoAnsicht id={fotoOffen} onZu={() => setFotoOffen(null)} />}
     </div>
   );
 }

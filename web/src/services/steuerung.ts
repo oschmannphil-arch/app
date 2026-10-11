@@ -4,8 +4,9 @@ import { planKlausurenAusStunden, type PlanKlausur } from '../logic/aufgaben';
 import { type GesamtPlan, type KursInfo, type TagesPlan, type Zugang, alleKurse, tagesplanFuer } from '../logic/models';
 import { type Datum, heute, plusTage } from '../logic/zeit';
 import { type PlanResult } from './api';
-import { cacheAufraeumen } from './kv';
+import { cacheAufraeumen, fotosAufraeumen } from './kv';
 import {
+  aufgabenAblage,
   ausfallAufraeumen,
   ausfallMerken,
   kursAblage,
@@ -134,6 +135,7 @@ async function hintergrundAbgleich(z: Zugang, kurse: ReadonlySet<string>) {
     planKlausurenSynchronisieren(klausuren);
     ausfallAufraeumen();
     void cacheAufraeumen(21 * 24 * 3600 * 1000);
+    void fotosAufraeumen(aufgabenAblage.get().map((h) => h.id));
   } catch {
     /* Hintergrundarbeit: Fehler sind egal */
   }
