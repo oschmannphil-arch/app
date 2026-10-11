@@ -85,7 +85,6 @@ object Patchnotes {
             titel = "Noten, Wochen und Schnellzugriff",
             punkte = listOf(
                 "Noten: Notenziel pro Fach (wird gespeichert), „Was wäre wenn …\"-Prognose, Vergleich mit dem Vorhalbjahr, Zeugnis-Vorschau und – ab Klasse 11 – ein Abi-Rechner (grobe Schätzung).",
-                "Wochenansicht: Neu „In 2 Wochen\".",
                 "Hausaufgaben: Fortschrittsbalken „x von y erledigt\".",
                 "App-Symbol: Lange drücken öffnet Suche, Noten, Klausuren oder Aufgaben direkt.",
                 "Einstellungen: Unten unter dem Build steht jetzt der Update-Verlauf („Was ist neu?\")."

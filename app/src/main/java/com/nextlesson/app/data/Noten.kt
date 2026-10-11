@@ -166,7 +166,7 @@ object Noten {
     }
 
     /** Gleiche Fächer unabhängig von Groß-/Kleinschreibung zusammenfassen. */
-    fun fachSchluessel(fach: String): String = fach.trim().lowercase()
+    fun fachSchluessel(fach: String): String = FachName.schluessel(fach)
 
     fun nachFach(noten: List<Note>, klausurAnteil: Int = STANDARD_KLAUSUR_ANTEIL): List<FachSchnitt> =
         noten.groupBy { fachSchluessel(it.fach) }

@@ -70,6 +70,8 @@ import com.nextlesson.app.data.DesignStore
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.FreundTeilen
 import com.nextlesson.app.data.KursMigration
+import com.nextlesson.app.data.FachName
+import com.nextlesson.app.data.KursInfo
 import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.Noten
 import com.nextlesson.app.data.NotenSystem
@@ -408,15 +410,15 @@ private fun AppInhalt(
     BackHandler(enabled = zurueckMoeglich) { zurueck() }
 
     // Fächer, für die man in den Einstellungen eine Farbe wählen kann.
-    val fachNamen = remember(zustand, wochenZustand, hausaufgaben, pruefungen) {
+    val fachNamen = remember(zustand, wochenZustand, hausaufgaben, pruefungen, verfuegbareKurse) {
         val ausPlan = (zustand as? UiZustand.Angezeigt)?.plan?.plan?.stunden?.map { it.fach }.orEmpty()
         val ausWoche = (wochenZustand as? WochenZustand.Geladen)?.tage
             ?.flatMap { t -> t.plan?.stunden?.map { it.fach }.orEmpty() }.orEmpty()
-        (ausPlan + ausWoche + hausaufgaben.map { it.fach } + pruefungen.map { it.fach })
-            .map { it.trim() }
-            .filter { f -> f.any { it.isLetter() } }
-            .distinctBy { it.lowercase() }
-            .sortedBy { it.lowercase() }
+        // Auch alle gewählten Kurse – nicht nur die, die gerade im geladenen Tag oder in der Woche vorkommen.
+        val ausKursen = planViewModel.aktuelleKursAuswahl().mapNotNull { id ->
+            id.substringAfter("::", "").takeIf { it.isNotBlank() && it != KursInfo.GANZE_KLASSE }
+        }
+        FachName.zusammen(ausPlan + ausWoche + ausKursen + hausaufgaben.map { it.fach } + pruefungen.map { it.fach })
     }
 
     val offeneAufgaben = hausaufgaben.count { !it.erledigt }

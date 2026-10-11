@@ -292,7 +292,7 @@ fun steckbriefAus(stunden: List<Lesson>): Steckbrief? {
     if (aktiv.isEmpty()) return null
     fun gesammelt(werte: List<String>) = werte.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
     return Steckbrief(
-        faecher = gesammelt(aktiv.map { it.fach }),
+        faecher = FachName.zusammen(aktiv.map { it.fach }),
         jahrgaenge = gesammelt(aktiv.map { Freizeit.jahrgang(it.klasse) }).sortedBy { it.toIntOrNull() ?: Int.MAX_VALUE },
         raeume = gesammelt(aktiv.map { it.raum }).sorted(),
         stunden = aktiv.distinctBy { it.stunde }.size

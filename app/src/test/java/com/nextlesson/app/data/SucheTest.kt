@@ -181,7 +181,7 @@ ${std(3, "09:05", "09:50", "MAT2", "Mei", "226")}
     @Test
     fun steckbriefFasstLehrerTagZusammen() {
         val b = steckbriefAus(schultag().stundenVon(Treffer.Lehrer("Weis")))!!
-        assertEquals(listOf("MAT2", "MA"), b.faecher)
+        assertEquals(listOf("MA", "MAT2"), b.faecher)
         assertEquals(listOf("10", "12"), b.jahrgaenge)
         assertEquals(listOf("121", "226"), b.raeume)
         assertEquals(3, b.stunden)

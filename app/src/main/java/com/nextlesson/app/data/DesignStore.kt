@@ -62,9 +62,10 @@ class DesignStore(context: Context) {
 
     /** [farbe] null = zurück zur automatischen Farbe. */
     fun fachFarbeSetzen(fach: String, farbe: Int?) {
-        val schluessel = fach.trim().lowercase()
+        val schluessel = FachName.schluessel(fach)
         if (schluessel.isEmpty()) return
-        fachFarben = if (farbe == null) fachFarben - schluessel else fachFarben + (schluessel to farbe)
+        // Zurück auf automatisch: auch eine ältere Einstellung mit der genauen Schreibweise entfernen.
+        fachFarben = if (farbe == null) fachFarben - schluessel - fach.trim().lowercase() else fachFarben + (schluessel to farbe)
         prefs.edit().putStringSet(KEY_FARBEN, fachFarben.map { "${it.key}=${it.value}" }.toSet()).apply()
     }
 

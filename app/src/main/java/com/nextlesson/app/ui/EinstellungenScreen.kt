@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
+import com.nextlesson.app.data.FachName
 import com.nextlesson.app.data.DesignModus
 import com.nextlesson.app.data.Patchnotes
 import com.nextlesson.app.ui.theme.FachFarbAuswahl
@@ -582,7 +583,7 @@ private fun FachFarbenDialog(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(fach, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                            if (farben.containsKey(fach.trim().lowercase())) {
+                            if (farben.containsKey(FachName.schluessel(fach)) || farben.containsKey(fach.trim().lowercase())) {
                                 TextButton(onClick = { onFarbe(fach, null) }) { Text("Automatisch") }
                             }
                         }

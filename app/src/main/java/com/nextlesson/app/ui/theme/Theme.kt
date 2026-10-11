@@ -49,8 +49,8 @@ fun NaechsteStundeTheme(
         dynamischeFarben && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (dunkel) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        dunkel -> DunklesSchema.gedreht(farbThema.drehung)
-        else -> HellesSchema.gedreht(farbThema.drehung)
+        dunkel -> DunklesSchema.mitThema(farbThema)
+        else -> HellesSchema.mitThema(farbThema)
     }
 
     MaterialTheme(colorScheme = schema, typography = AppTypografie) {

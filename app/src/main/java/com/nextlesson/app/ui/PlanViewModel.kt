@@ -62,8 +62,7 @@ sealed class WochenZustand {
 enum class WochenAuswahl(val label: String) {
     LETZTE("Vorherige"),
     AKTUELL("Diese Woche"),
-    NAECHSTE("Nächste Woche"),
-    UEBERNAECHSTE("In 2 Wochen")
+    NAECHSTE("Nächste Woche")
 }
 
 private const val TAG_RUECKBLICK = 14L
@@ -296,7 +295,6 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                     WochenAuswahl.LETZTE -> -1
                     WochenAuswahl.AKTUELL -> 0
                     WochenAuswahl.NAECHSTE -> 1
-                    WochenAuswahl.UEBERNAECHSTE -> 2
                 }
             )
             val ergebnisse = repository.holeWoche(creds, referenz, erzwingen)

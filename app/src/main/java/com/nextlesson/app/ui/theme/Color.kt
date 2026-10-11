@@ -6,6 +6,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import com.nextlesson.app.data.FachName
+import com.nextlesson.app.data.Farbton
 import kotlin.math.roundToInt
 
 /*
@@ -109,27 +111,32 @@ val HellesSchema = lightColorScheme(
 )
 
 /**
- * Farbthemen: Das Mocha-Schema wird im Farbkreis gedreht. Helligkeit und Sättigung bleiben, damit
- * Kontraste und Lesbarkeit wie im Original sind; Fehlerfarben bleiben rot.
+ * Farbthemen: Die braune und die schieferblaue Farbfamilie des Mocha-Designs bekommen je einen neuen
+ * Farbton. Helligkeit und Sättigung bleiben, damit Kontraste und Lesbarkeit wie im Original sind;
+ * Fehlerfarben bleiben rot.
  */
-enum class FarbThema(val anzeige: String, val drehung: Float) {
-    MOCHA("Mocha", 0f),
-    OZEAN("Ozean", 180f),
-    WALD("Wald", 95f),
-    ROSE("Rose", 310f),
-    VIOLETT("Violett", 250f)
+enum class FarbThema(val anzeige: String, val warm: Float?, val kalt: Float?) {
+    // warm = Ton der braunen Flächen (Hintergrund, Hauptkarte), kalt = Ton der schieferblauen (Karten, Zeilen)
+    MOCHA("Mocha", null, null),
+    OZEAN("Ozean", 208f, 188f),
+    WALD("Wald", 125f, 150f),
+    ROSE("Rose", 340f, 318f),
+    VIOLETT("Violett", 272f, 250f)
 }
 
-private fun drehen(farbe: Color, grad: Float): Color {
+private fun umfaerben(farbe: Color, warm: Float, kalt: Float): Color {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(farbe.toArgb(), hsv)
-    hsv[0] = (hsv[0] + grad) % 360f
+    // Weiß, Grau und Schwarz haben keinen Farbton und bleiben.
+    if (hsv[1] < 0.04f) return farbe
+    hsv[0] = Farbton.neu(hsv[0], warm, kalt)
     return Color(android.graphics.Color.HSVToColor((farbe.alpha * 255).roundToInt(), hsv))
 }
 
-fun ColorScheme.gedreht(grad: Float): ColorScheme {
-    if (grad == 0f) return this
-    fun d(c: Color) = drehen(c, grad)
+fun ColorScheme.mitThema(thema: FarbThema): ColorScheme {
+    val warm = thema.warm ?: return this
+    val kalt = thema.kalt ?: return this
+    fun d(c: Color) = umfaerben(c, warm, kalt)
     return copy(
         primary = d(primary), onPrimary = d(onPrimary),
         primaryContainer = d(primaryContainer), onPrimaryContainer = d(onPrimaryContainer),
@@ -171,15 +178,19 @@ val FachFarbAuswahl: List<Color> = listOf(
 
 /** Farbe eines Fachs: die in den Einstellungen gewählte, sonst eine feste aus dem Namen. */
 @Composable
-fun fachFarbe(fach: String, dunkel: Boolean): Color =
-    LocalFachFarben.current[fach.trim().lowercase()]?.let { Color(it) } ?: automatischeFachFarbe(fach, dunkel)
+fun fachFarbe(fach: String, dunkel: Boolean): Color {
+    val eigene = LocalFachFarben.current
+    // Erst die genaue Schreibweise (ältere Einstellungen), dann das Fach insgesamt: GEO2 und Geo teilen sich eine Farbe.
+    val gewaehlt = eigene[fach.trim().lowercase()] ?: eigene[FachName.schluessel(fach)]
+    return gewaehlt?.let { Color(it) } ?: automatischeFachFarbe(fach, dunkel)
+}
 
 private fun automatischeFachFarbe(fach: String, dunkel: Boolean): Color {
     if (fach.isBlank()) return if (dunkel) Color(0xFFA08D7B) else Color(0xFF83766A)
     val palette = if (dunkel) FachFarbenDunkel else FachFarbenHell
     // Stabiler, vorzeichenfreier Hash über den Fachnamen.
     var hash = 7
-    for (c in fach.trim().lowercase()) hash = (hash * 31 + c.code) and 0x7FFFFFFF
+    for (c in FachName.schluessel(fach)) hash = (hash * 31 + c.code) and 0x7FFFFFFF
     return palette[hash % palette.size]
 }
 
