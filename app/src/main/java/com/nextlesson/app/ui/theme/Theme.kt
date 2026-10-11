@@ -41,6 +41,7 @@ fun NaechsteStundeTheme(
     dynamischeFarben: Boolean = false,
     fachFarben: Map<String, Int> = emptyMap(),
     fachSymbole: Boolean = true,
+    farbThema: FarbThema = FarbThema.MOCHA,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -48,8 +49,8 @@ fun NaechsteStundeTheme(
         dynamischeFarben && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (dunkel) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        dunkel -> DunklesSchema
-        else -> HellesSchema
+        dunkel -> DunklesSchema.gedreht(farbThema.drehung)
+        else -> HellesSchema.gedreht(farbThema.drehung)
     }
 
     MaterialTheme(colorScheme = schema, typography = AppTypografie) {

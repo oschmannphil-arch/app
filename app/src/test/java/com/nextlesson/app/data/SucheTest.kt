@@ -177,4 +177,14 @@ ${std(3, "09:05", "09:50", "MAT2", "Mei", "226")}
         assertTrue(!t.faelltGanzAus(Treffer.Lehrer("Mei")))
         assertTrue(!t.faelltGanzAus(Treffer.Lehrer("Unbekannt")))   // nicht im Plan ≠ fällt aus
     }
+
+    @Test
+    fun steckbriefFasstLehrerTagZusammen() {
+        val b = steckbriefAus(schultag().stundenVon(Treffer.Lehrer("Weis")))!!
+        assertEquals(listOf("MAT2", "MA"), b.faecher)
+        assertEquals(listOf("10", "12"), b.jahrgaenge)
+        assertEquals(listOf("121", "226"), b.raeume)
+        assertEquals(3, b.stunden)
+        assertNull(steckbriefAus(emptyList()))
+    }
 }

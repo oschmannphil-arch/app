@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.nextlesson.app.ui.theme.FarbThema
 
 enum class DesignModus(val anzeige: String) {
     SYSTEM("System"), HELL("Hell"), DUNKEL("Dunkel")
@@ -29,6 +30,16 @@ class DesignStore(context: Context) {
     fun blockAnsichtSetzen(an: Boolean) {
         blockAnsicht = an
         prefs.edit().putBoolean(KEY_BLOECKE, an).apply()
+    }
+
+    var farbThema by mutableStateOf(
+        runCatching { FarbThema.valueOf(prefs.getString(KEY_THEMA, null) ?: "") }.getOrDefault(FarbThema.MOCHA)
+    )
+        private set
+
+    fun farbThemaSetzen(neu: FarbThema) {
+        farbThema = neu
+        prefs.edit().putString(KEY_THEMA, neu.name).apply()
     }
 
     /** Symbol (Emoji) vor dem Fachnamen. */
@@ -69,5 +80,6 @@ class DesignStore(context: Context) {
         private const val KEY_BLOECKE = "block_ansicht"
         private const val KEY_FARBEN = "fach_farben"
         private const val KEY_SYMBOLE = "fach_symbole"
+        private const val KEY_THEMA = "farb_thema"
     }
 }

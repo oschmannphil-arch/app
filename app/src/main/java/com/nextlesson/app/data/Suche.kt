@@ -277,3 +277,24 @@ fun stundenListe(nummern: List<Int>): String {
     }
     return gruppen.joinToString(", ") { if (it.first == it.last) "${it.first}." else "${it.first}.–${it.last}." } + " Std"
 }
+
+/** Was man über eine Lehrkraft an einem Tag sieht: Fächer, Jahrgänge, Räume und Zahl der Stunden. */
+data class Steckbrief(
+    val faecher: List<String>,
+    val jahrgaenge: List<String>,
+    val raeume: List<String>,
+    val stunden: Int
+)
+
+/** Fasst die (nicht ausgefallenen) [stunden] einer Lehrkraft zusammen; leer, wenn nichts stattfindet. */
+fun steckbriefAus(stunden: List<Lesson>): Steckbrief? {
+    val aktiv = stunden.filter { !it.entfaellt }
+    if (aktiv.isEmpty()) return null
+    fun gesammelt(werte: List<String>) = werte.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
+    return Steckbrief(
+        faecher = gesammelt(aktiv.map { it.fach }),
+        jahrgaenge = gesammelt(aktiv.map { Freizeit.jahrgang(it.klasse) }).sortedBy { it.toIntOrNull() ?: Int.MAX_VALUE },
+        raeume = gesammelt(aktiv.map { it.raum }).sorted(),
+        stunden = aktiv.distinctBy { it.stunde }.size
+    )
+}

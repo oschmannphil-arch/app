@@ -1,5 +1,6 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.ui.theme.FarbThema
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -88,6 +89,8 @@ fun EinstellungenScreen(
     onKurseTeilen: (() -> Unit)? = null,
     modus: DesignModus = DesignModus.SYSTEM,
     onModus: (DesignModus) -> Unit = {},
+    farbThema: FarbThema = FarbThema.MOCHA,
+    onFarbThema: (FarbThema) -> Unit = {},
     fachSymbole: Boolean = true,
     onFachSymbole: (Boolean) -> Unit = {},
     fachNamen: List<String> = emptyList(),
@@ -211,6 +214,15 @@ fun EinstellungenScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DesignModus.entries.forEach { m ->
                         FilterChip(selected = modus == m, onClick = { onModus(m) }, label = { Text(m.anzeige) })
+                    }
+                }
+                Text("Farbthema", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FarbThema.entries.forEach { t ->
+                        FilterChip(selected = farbThema == t, onClick = { onFarbThema(t) }, label = { Text(t.anzeige) })
                     }
                 }
                 OutlinedButton(onClick = { farbDialog = true }, modifier = Modifier.fillMaxWidth()) {

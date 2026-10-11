@@ -1,5 +1,6 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.ui.theme.FarbThema
 import android.Manifest
 import android.content.Intent
 import android.content.Context
@@ -136,7 +137,7 @@ class MainActivity : ComponentActivity() {
                     navigationBarStyle = SystemBarStyle.auto(NAVI_SCHLEIER_HELL, NAVI_SCHLEIER_DUNKEL) { dunkel }
                 )
             }
-            NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben, fachSymbole = design.fachSymbole) {
+            NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben, fachSymbole = design.fachSymbole, farbThema = design.farbThema) {
                 Surface {
                     AppInhalt(planViewModel, aufgabenViewModel, notenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel, sucheOeffnen, bereichOeffnen)
                 }
@@ -567,6 +568,8 @@ private fun AppInhalt(
                         },
                         modus = design.modus,
                         onModus = design::modusSetzen,
+                        farbThema = design.farbThema,
+                        onFarbThema = design::farbThemaSetzen,
                         fachSymbole = design.fachSymbole,
                         onFachSymbole = design::fachSymboleSetzen,
                         fachNamen = fachNamen,

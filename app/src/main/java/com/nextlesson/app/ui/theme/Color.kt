@@ -1,9 +1,12 @@
 package com.nextlesson.app.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import kotlin.math.roundToInt
 
 /*
  * "Mocha": warmes Dunkelbraun als Grund, Karamell für die Hauptkarte,
@@ -104,6 +107,45 @@ val HellesSchema = lightColorScheme(
     outline = Color(0xFF83766A),
     outlineVariant = Color(0xFFD5C6B8)
 )
+
+/**
+ * Farbthemen: Das Mocha-Schema wird im Farbkreis gedreht. Helligkeit und Sättigung bleiben, damit
+ * Kontraste und Lesbarkeit wie im Original sind; Fehlerfarben bleiben rot.
+ */
+enum class FarbThema(val anzeige: String, val drehung: Float) {
+    MOCHA("Mocha", 0f),
+    OZEAN("Ozean", 180f),
+    WALD("Wald", 95f),
+    ROSE("Rose", 310f),
+    VIOLETT("Violett", 250f)
+}
+
+private fun drehen(farbe: Color, grad: Float): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(farbe.toArgb(), hsv)
+    hsv[0] = (hsv[0] + grad) % 360f
+    return Color(android.graphics.Color.HSVToColor((farbe.alpha * 255).roundToInt(), hsv))
+}
+
+fun ColorScheme.gedreht(grad: Float): ColorScheme {
+    if (grad == 0f) return this
+    fun d(c: Color) = drehen(c, grad)
+    return copy(
+        primary = d(primary), onPrimary = d(onPrimary),
+        primaryContainer = d(primaryContainer), onPrimaryContainer = d(onPrimaryContainer),
+        secondary = d(secondary), onSecondary = d(onSecondary),
+        secondaryContainer = d(secondaryContainer), onSecondaryContainer = d(onSecondaryContainer),
+        tertiary = d(tertiary), onTertiary = d(onTertiary),
+        tertiaryContainer = d(tertiaryContainer), onTertiaryContainer = d(onTertiaryContainer),
+        background = d(background), onBackground = d(onBackground),
+        surface = d(surface), onSurface = d(onSurface),
+        surfaceVariant = d(surfaceVariant), onSurfaceVariant = d(onSurfaceVariant),
+        surfaceContainerLowest = d(surfaceContainerLowest), surfaceContainerLow = d(surfaceContainerLow),
+        surfaceContainer = d(surfaceContainer), surfaceContainerHigh = d(surfaceContainerHigh),
+        surfaceContainerHighest = d(surfaceContainerHighest),
+        outline = d(outline), outlineVariant = d(outlineVariant)
+    )
+}
 
 /**
  * Feste Farbtupfer für Fächer. Ein Fach bekommt über seinen Namen immer dieselbe Farbe,

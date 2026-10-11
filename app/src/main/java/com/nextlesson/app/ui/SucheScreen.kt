@@ -1,5 +1,9 @@
 package com.nextlesson.app.ui
 
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Card
+import com.nextlesson.app.data.steckbriefAus
+import com.nextlesson.app.ui.theme.fachAnzeige
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.InputChip
@@ -484,6 +488,24 @@ private fun Detail(
             )
         }
         if (t is Treffer.Lehrer) {
+            val steckbrief = steckbriefAus(tag.stundenVon(t))
+            if (steckbrief != null) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Steckbrief (an diesem Tag)", style = MaterialTheme.typography.labelLarge)
+                            Text("Fächer: ${steckbrief.faecher.joinToString(", ") { fachAnzeige(it) }}", style = MaterialTheme.typography.bodyMedium)
+                            Text("Jahrgänge: ${steckbrief.jahrgaenge.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
+                            Text("Räume: ${steckbrief.raeume.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
+                            Text("${steckbrief.stunden} ${if (steckbrief.stunden == 1) "Stunde" else "Stunden"}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
             item {
                 OutlinedButton(onClick = { wocheOffen = !wocheOffen }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (wocheOffen) "Zurück zum Tag" else "Wann ist ${t.name} diese Woche frei?")
