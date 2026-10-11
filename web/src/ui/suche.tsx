@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { type Freiblock, freiblockStundenText } from '../logic/freizeit';
 import { anzeigeName } from '../logic/hinweis';
 import type { Lesson } from '../logic/models';
-import { raumGruppe, schultagVersetzt, wochenReferenz } from '../logic/raster';
+import { ersterSchultag, raumGruppe, schultagVersetzt, wochenReferenz } from '../logic/raster';
 import {
   type Belegung,
   SchulTag,
@@ -279,12 +279,13 @@ function Startansicht(p: { tag: SchulTag; istHeute: boolean; jetzt: number; ausC
 
 export function Suche() {
   const jetzt = useJetzt();
-  const [datum, setDatum] = useState<Datum>(heuteTag());
+  const [datum, setDatum] = useState<Datum>(ersterSchultag(heuteTag()));
   const [stand, setStand] = useState<TagStand>({ art: 'LAEDT' });
   const [anfrage, setAnfrage] = useState('');
   const [auswahl, setAuswahl] = useState<Treffer | null>(null);
   const heute = heuteTag();
   const istHeute = datum === heute;
+  const start = ersterSchultag(heute);
 
   const laden = (erzwingen = false) => {
     const z = zugangAblage.get();
@@ -314,7 +315,7 @@ export function Suche() {
         <button class="icon-knopf" aria-label="Voriger Tag" onClick={() => setDatum(schultagVersetzt(datum, -1))}><Icon name="links" /></button>
         <div class="mitte">
           <div style={{ fontWeight: 600 }}>{tagText}</div>
-          {!istHeute && <button class="textknopf" onClick={() => setDatum(heute)}>Heute</button>}
+          {datum !== start && <button class="textknopf" onClick={() => setDatum(start)}>{start === heute ? 'Heute' : wochentagName(start)}</button>}
         </div>
         <button class="icon-knopf" aria-label="Nächster Tag" onClick={() => setDatum(schultagVersetzt(datum, 1))}><Icon name="rechts" /></button>
       </div>
