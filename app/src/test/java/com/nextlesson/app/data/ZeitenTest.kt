@@ -1,0 +1,123 @@
+package com.nextlesson.app.data
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+
+class ZeitenTest {
+
+    private val min = 60_000L
+
+    @Test
+    fun dauerMitEinheit() {
+        assertEquals("12 Min", dauerText(12))
+        assertEquals("2 Std", dauerText(120))
+        assertEquals("1 Std 20 Min", dauerText(80))
+    }
+
+    @Test
+    fun countdown() {
+        // Läuft seit 10 Minuten, noch 35 Minuten.
+        assertEquals("läuft noch 35 Min", countdownText(-10 * min, 35 * min))
+        assertEquals("noch 35 Min", countdownText(-10 * min, 35 * min, laeuftPraefix = "noch"))
+        assertEquals("läuft noch 1 Min", countdownText(-44 * min, 30_000L))
+        // Aufrunden: 8 Min 20 s → 9 Min.
+        assertEquals("in 9 Min", countdownText(8 * min + 20_000, 45 * min))
+        assertEquals("in 1 Std 20 Min", countdownText(80 * min, null))
+        assertEquals("jetzt", countdownText(0L, null))
+        assertNull(countdownText(-1L, null))             // vorbei, Ende unbekannt
+        assertNull(countdownText(-1L, -1L))              // vorbei
+        assertNull(countdownText(601 * min, null))       // zu weit weg
+    }
+
+    @Test
+    fun erinnerungAmTagDerZeitumstellung() {
+        val berlin = ZoneId.of("Europe/Berlin")
+        // Sa 24.10.2026 17:00:01 → So 25.10. 17:00 sind 25 Stunden (Ende der Sommerzeit).
+        val jetzt = ZonedDateTime.of(LocalDate.of(2026, 10, 24), LocalTime.of(17, 0, 1), berlin)
+        assertEquals(25 * 3600 - 1L, verzoegerungBis(LocalTime.of(17, 0), jetzt).seconds)
+        // Noch vor 17 Uhr: heute.
+        val frueh = ZonedDateTime.of(LocalDate.of(2026, 10, 24), LocalTime.of(9, 0), berlin)
+        assertEquals(8 * 3600L, verzoegerungBis(LocalTime.of(17, 0), frueh).seconds)
+    }
+}
+
+class ZeitSlotsTest {
+    private val berlin = ZoneId.of("Europe/Berlin")
+    private val slots = listOf(LocalTime.of(7, 0), LocalTime.of(15, 0), LocalTime.of(20, 0))
+    private fun um(h: Int, m: Int, s: Int = 0, tag: Int = 7) =
+        ZonedDateTime.of(LocalDate.of(2026, 10, tag), LocalTime.of(h, m, s), berlin)
+
+    @Test
+    fun naechsterSlotImLaufDesTages() {
+        assertEquals(um(7, 0), naechsterZeitpunkt(slots, um(5, 30)))
+        assertEquals(um(15, 0), naechsterZeitpunkt(slots, um(7, 0, 30)))   // Lauf nach 7:00 → 15:00
+        assertEquals(um(20, 0), naechsterZeitpunkt(slots, um(15, 10)))
+        assertEquals(um(7, 0, tag = 8), naechsterZeitpunkt(slots, um(20, 5)))   // nach 20:00 → morgen 7:00
+    }
+
+    @Test
+    fun einLaufKurzVorSeinerZeitPlantNichtDieselbeZeit() {
+        // 06:59:40: "7:00" wäre keine Minute entfernt → der nächste Slot ist 15:00.
+        assertEquals(um(15, 0), naechsterZeitpunkt(slots, um(6, 59, 40)))
+    }
+
+    @Test
+    fun genauEineMinuteVorherZaehltNochNicht() {
+        assertEquals(um(15, 0), naechsterZeitpunkt(slots, um(6, 59, 0)))   // 7:00 ist genau 60 s weg: zu knapp
+        assertEquals(um(7, 0), naechsterZeitpunkt(slots, um(6, 58, 59)))   // 61 s: ok
+    }
+
+    @Test
+    fun amZeitumstellungstagIstDieVerzoegerungEineStundeLaenger() {
+        // Sa 24.10. 20:05 → So 25.10. 7:00 Ortszeit: 10 h 55 min Uhrzeitdifferenz + 1 h (Ende der Sommerzeit).
+        val jetzt = um(20, 5, tag = 24)
+        assertEquals(11 * 60 + 55L, java.time.Duration.between(jetzt, naechsterZeitpunkt(slots, jetzt)).toMinutes())
+    }
+
+    @Test
+    fun amZeitumstellungstagStimmenDieUhrzeiten() {
+        // So 25.10.2026: Ende der Sommerzeit (3:00 → 2:00). 20:05 am Samstag → 7:00 am Sonntag Ortszeit.
+        val n = naechsterZeitpunkt(slots, um(20, 5, tag = 24))
+        assertEquals(LocalTime.of(7, 0), n.toLocalTime())
+        assertEquals(LocalDate.of(2026, 10, 25), n.toLocalDate())
+    }
+}
+
+class PruefungVorbeiTest {
+
+    private val heute = LocalDate.of(2026, 10, 5)
+    private fun klausur(tag: LocalDate, ende: LocalTime?) = Pruefung(
+        fach = "DEU1", titel = "", datumEpochDay = tag.toEpochDay(),
+        endeSekunden = ende?.toSecondOfDay() ?: Pruefung.KEIN_ENDE
+    )
+
+    @Test
+    fun klausurIstNachIhremEndeVorbei() {
+        val k = klausur(heute, LocalTime.of(8, 45))
+        assertEquals(false, k.istVorbei(heute, LocalTime.of(8, 0)))
+        assertEquals(true, k.istVorbei(heute, LocalTime.of(16, 6)))
+        assertEquals(false, klausur(heute.plusDays(1), LocalTime.of(8, 45)).istVorbei(heute, LocalTime.of(23, 0)))
+        assertEquals(true, klausur(heute.minusDays(1), null).istVorbei(heute, LocalTime.of(0, 1)))
+    }
+
+    @Test
+    fun ohneEndeBleibtDerTagBisMitternacht() {
+        assertEquals(false, klausur(heute, null).istVorbei(heute, LocalTime.of(23, 59)))
+    }
+
+    @Test
+    fun planKlausurMerktSichDasEnde() {
+        val l = Lesson(
+            stunde = 1, beginn = LocalTime.of(7, 15), ende = LocalTime.of(8, 45), fach = "DEU1", fachGeaendert = false,
+            raum = "", raumGeaendert = false, lehrer = "", lehrerGeaendert = false, info = "Klausur!",
+            entfaellt = false, kursKuerzel = "DEU1", klasse = "12/5", istKlausur = true
+        )
+        val p = PlanKlausur.ausStunden(heute, listOf(l)).single().alsPruefung()
+        assertEquals(LocalTime.of(8, 45).toSecondOfDay(), p.endeSekunden)
+    }
+}

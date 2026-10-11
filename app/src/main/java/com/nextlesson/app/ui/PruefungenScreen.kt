@@ -1,7 +1,6 @@
 package com.nextlesson.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,8 +43,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nextlesson.app.data.Pruefung
 import com.nextlesson.app.data.PruefungsArt
+import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -61,11 +63,13 @@ fun PruefungenScreen(
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
     var bearbeitungsPruefung by remember { mutableStateOf<Pruefung?>(null) }
-    val dunkel = isSystemInDarkTheme()
+    val dunkel = istDunkel()
     val heute = LocalDate.now()
+    // Jede Minute neu bewerten: Eine Klausur ist mit dem Ende ihrer Stunde "vorbei".
+    val jetzt by rememberJetzt()
 
-    val kommend = pruefungen.filterNot { it.istVorbei(heute) }
-    val vorbei = pruefungen.filter { it.istVorbei(heute) }
+    val kommend = pruefungen.filterNot { it.istVorbei(heute, jetzt) }
+    val vorbei = pruefungen.filter { it.istVorbei(heute, jetzt) }
 
     Scaffold(
         floatingActionButton = {
@@ -108,7 +112,7 @@ fun PruefungenScreen(
             }
 
             items(kommend, key = { it.id }) { pruefung ->
-                PruefungsKarte(pruefung, heute, dunkel, onLoeschen, onBearbeitenClick = { bearbeitungsPruefung = pruefung })
+                PruefungsKarte(pruefung, heute, jetzt, dunkel, onLoeschen, onBearbeitenClick = { bearbeitungsPruefung = pruefung })
             }
 
             if (vorbei.isNotEmpty()) {
@@ -126,7 +130,7 @@ fun PruefungenScreen(
                     )
                 }
                 items(vorbei, key = { it.id }) { pruefung ->
-                    PruefungsKarte(pruefung, heute, dunkel, onLoeschen, onBearbeitenClick = { bearbeitungsPruefung = pruefung })
+                    PruefungsKarte(pruefung, heute, jetzt, dunkel, onLoeschen, onBearbeitenClick = { bearbeitungsPruefung = pruefung })
                 }
             }
 
@@ -160,12 +164,13 @@ fun PruefungenScreen(
 private fun PruefungsKarte(
     pruefung: Pruefung,
     heute: LocalDate,
+    jetzt: LocalTime,
     dunkel: Boolean,
     onLoeschen: (String) -> Unit,
     onBearbeitenClick: () -> Unit
 ) {
     val tage = pruefung.tageBis(heute)
-    val vorbei = pruefung.istVorbei(heute)
+    val vorbei = pruefung.istVorbei(heute, jetzt)
     val dringend = !vorbei && tage <= 3
     val akzent = when {
         vorbei -> MaterialTheme.colorScheme.outline
@@ -205,7 +210,7 @@ private fun PruefungsKarte(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = pruefung.fach,
+                            text = fachAnzeige(pruefung.fach),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )

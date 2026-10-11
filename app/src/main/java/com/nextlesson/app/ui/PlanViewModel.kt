@@ -1,5 +1,7 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.data.schultagVersetzt
+import com.nextlesson.app.data.Quelle
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +18,8 @@ import com.nextlesson.app.data.PersoenlicherResult
 import com.nextlesson.app.data.PlanResult
 import com.nextlesson.app.data.TagesPlan
 import com.nextlesson.app.data.WidgetDataStore
+import com.nextlesson.app.data.tagesFehler
+import com.nextlesson.app.data.wochenReferenz
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
@@ -23,7 +27,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.DayOfWeek
 import java.time.LocalDate
 
 sealed class UiZustand {
@@ -33,6 +36,13 @@ sealed class UiZustand {
     data class KurseWaehlen(val kurse: List<KursInfo>) : UiZustand()
     data class Angezeigt(val plan: PersoenlicherPlan) : UiZustand()
     data class Fehler(val nachricht: String, val zugangsproblem: Boolean = false) : UiZustand()
+    /**
+     * Für die nächsten Tage gibt es keinen Plan: Ferien oder freie Tage. [naechster] ist der
+     * erste Tag danach mit Plan (null = unbekannt); [gesucht] sagt, ob die Suche schon durch ist.
+     */
+    data class KeinPlan(val naechster: LocalDate?, val gesucht: Boolean) : UiZustand()
+    /** Pläne sind da, aber ohne eine Stunde der gewählten Kurse – meist eine veraltete Kurswahl. */
+    object KeineStunden : UiZustand()
 }
 
 /** Ein einzelner Tag der Wochenansicht. */
@@ -53,6 +63,17 @@ enum class WochenAuswahl(val label: String) {
     LETZTE("Vorherige"),
     AKTUELL("Diese Woche"),
     NAECHSTE("Nächste Woche")
+}
+
+private const val TAG_RUECKBLICK = 14L
+private const val TAG_VORAUS = 28L
+
+/** Ein anderer Tag als der normale, den man mit Wischen oder den Pfeilen gewählt hat. */
+sealed class TagAnsicht {
+    abstract val datum: LocalDate
+    data class Laedt(override val datum: LocalDate) : TagAnsicht()
+    data class Fertig(override val datum: LocalDate, val plan: PersoenlicherPlan) : TagAnsicht()
+    data class Leer(override val datum: LocalDate, val grund: String) : TagAnsicht()
 }
 
 class PlanViewModel(app: Application) : AndroidViewModel(app) {
@@ -78,6 +99,84 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _wochenZustand = MutableStateFlow<WochenZustand>(WochenZustand.NichtGeladen)
     val wochenZustand: StateFlow<WochenZustand> = _wochenZustand.asStateFlow()
+
+    private val _tagAnsicht = MutableStateFlow<TagAnsicht?>(null)
+    /** Null = der normale Tag (heute bzw. der nächste Schultag). */
+    val tagAnsicht: StateFlow<TagAnsicht?> = _tagAnsicht.asStateFlow()
+    private var tagJob: Job? = null
+
+    /**
+     * Wechselt vom gerade gezeigten Tag [aktuell] zum vorigen ([richtung] < 0) oder nächsten Schultag,
+     * auch über Wochengrenzen. [standard] ist der normale Tag; dorthin geht es ohne Nachladen zurück.
+     */
+    /** Der normale Tag zuletzt – nötig, um den angesehenen Tag neu zu laden. */
+    private var letzterStandard: LocalDate? = null
+
+    /** Lädt den gerade angesehenen anderen Tag frisch (Ziehen zum Aktualisieren). */
+    fun tagNeuLaden() {
+        val aktuell = _tagAnsicht.value ?: return
+        tagWaehlen(aktuell.datum, letzterStandard ?: return, erzwingen = true)
+    }
+
+    fun tagWischen(richtung: Int, aktuell: LocalDate, standard: LocalDate) {
+        val ziel = schultagVersetzt(aktuell, richtung)
+        val heute = LocalDate.now()
+        // Nicht endlos in die Vergangenheit oder Zukunft: Pläne gibt es nur für ein paar Wochen.
+        if (ziel.isBefore(heute.minusDays(TAG_RUECKBLICK)) || ziel.isAfter(heute.plusDays(TAG_VORAUS))) return
+        tagWaehlen(ziel, standard)
+    }
+
+    fun tagWaehlen(datum: LocalDate, standard: LocalDate, erzwingen: Boolean = false) {
+        letzterStandard = standard
+        tagJob?.cancel()
+        if (datum == standard) {
+            _tagAnsicht.value = null
+            return
+        }
+        _tagAnsicht.value = TagAnsicht.Laedt(datum)
+        tagJob = viewModelScope.launch {
+            val creds = withContext(Dispatchers.IO) { credentialsStore.laden() }
+            if (creds == null) {
+                _tagAnsicht.value = TagAnsicht.Leer(datum, "Du bist nicht angemeldet.")
+                return@launch
+            }
+            val kurse = kursSelectionStore.laden()
+            val ergebnis = repository.holeTage(creds, datum, anzahl = 1, erzwingen = erzwingen).firstOrNull()?.second
+            val neu = withContext(Dispatchers.Default) {
+                when (ergebnis) {
+                    is PlanResult.Success -> {
+                        val plan = ergebnis.plan.tagesplanFuer(kurse)
+                        if (plan.stunden.isEmpty()) {
+                            TagAnsicht.Leer(datum, "An diesem Tag hast du laut Plan keinen Unterricht.")
+                        } else {
+                            TagAnsicht.Fertig(
+                                datum,
+                                PersoenlicherPlan(
+                                    datum = datum,
+                                    plan = plan,
+                                    naechste = plan.naechsteStunde(java.time.LocalTime.MIN),
+                                    istHeute = false,
+                                    gesamt = ergebnis.plan,
+                                    geprueftUm = ergebnis.geprueftUm,
+                                    ausCache = ergebnis.aus == Quelle.CACHE
+                                )
+                            )
+                        }
+                    }
+                    null -> TagAnsicht.Leer(datum, "Laden fehlgeschlagen.")
+                    is PlanResult.KeinPlanFuerTag -> TagAnsicht.Leer(datum, "Für diesen Tag ist kein Plan veröffentlicht (Ferien oder frei?).")
+                    else -> TagAnsicht.Leer(datum, ergebnis.tagesFehler() ?: "Laden fehlgeschlagen.")
+                }
+            }
+            _tagAnsicht.value = neu
+        }
+    }
+
+    /** Zurück zum normalen Tag. */
+    fun tagZuruecksetzen() {
+        tagJob?.cancel()
+        _tagAnsicht.value = null
+    }
 
     private val _wochenAuswahl = MutableStateFlow(WochenAuswahl.AKTUELL)
     val wochenAuswahl: StateFlow<WochenAuswahl> = _wochenAuswahl.asStateFlow()
@@ -113,8 +212,15 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun anmelden(creds: IndiwareCredentials) {
+        val alteSchule = credentialsStore.laden()?.schulnummer
         credentialsStore.speichern(creds)
         aenderungsTracker.zuruecksetzen()
+        // Die Kurswahl gehört zur Schule: Kurs-IDs einer anderen Schule passen auf nichts und
+        // ließen den Plan leer ("kein Plan gefunden") – dann lieber gleich neu wählen lassen.
+        if (alteSchule != null && alteSchule != creds.schulnummer) {
+            kursSelectionStore.speichern(emptySet())
+            _wochenZustand.value = WochenZustand.NichtGeladen
+        }
         aktualisiere(creds, erzwingen = true)
     }
 
@@ -131,12 +237,18 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun naechsteStundeVon(lesson: Lesson, nach: LocalDate): LocalDate? {
         val creds = withContext(Dispatchers.IO) { credentialsStore.laden() } ?: return null
         val kurse = kursSelectionStore.laden()
-        val tage = repository.holeTage(creds, nach.plusDays(1), anzahl = 14)
-        return withContext(Dispatchers.Default) {
-            tage.firstOrNull { (_, ergebnis) ->
-                ergebnis is PlanResult.Success && ergebnis.plan.tagesplanFuer(kurse).hatStundeVon(lesson)
-            }?.first
+        // Woche für Woche statt 14 Tage auf einmal: Meist liegt die nächste Stunde in den ersten
+        // Tagen – dann spart das Dutzende Abrufe und das Parsen ganzer Schulpläne.
+        for (versatz in 0 until 14 step 4) {
+            val tage = repository.holeTage(creds, nach.plusDays(1L + versatz), anzahl = minOf(4, 14 - versatz))
+            val treffer = withContext(Dispatchers.Default) {
+                tage.firstOrNull { (_, ergebnis) ->
+                    ergebnis is PlanResult.Success && ergebnis.plan.tagesplanFuer(kurse).hatStundeVon(lesson)
+                }?.first
+            }
+            if (treffer != null) return treffer
         }
+        return null
     }
 
     /** Speichert die Kurswahl und lädt den persönlichen Plan neu. */
@@ -191,27 +303,22 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
         
         wochenJob?.cancel()
         wochenJob = viewModelScope.launch {
-            val heute = LocalDate.now()
-
-            // Basis-Woche bestimmen: ab Samstag springen wir standardmäßig in die neue Woche.
-            val base = if (heute.dayOfWeek == DayOfWeek.SATURDAY || heute.dayOfWeek == DayOfWeek.SUNDAY) {
-                heute.plusWeeks(1)
-            } else {
-                heute
-            }
-            
-            val referenz = when (_wochenAuswahl.value) {
-                WochenAuswahl.LETZTE -> base.minusWeeks(1)
-                WochenAuswahl.AKTUELL -> base
-                WochenAuswahl.NAECHSTE -> base.plusWeeks(1)
-            }
-            
-            val tage = repository.holeWoche(creds, referenz, erzwingen).map { (datum, ergebnis) ->
-                when (ergebnis) {
-                    is PlanResult.Success -> WochenTag(datum, ergebnis.plan.tagesplanFuer(kurse))
-                    is PlanResult.AuthFehler -> WochenTag(datum, null, "Login fehlgeschlagen")
-                    is PlanResult.KeinPlanFuerTag -> WochenTag(datum, null, "Kein Plan veröffentlicht")
-                    is PlanResult.NetzwerkFehler -> WochenTag(datum, null, "Netzwerkfehler")
+            // Am Wochenende zählt als "diese Woche" schon die kommende.
+            val referenz = wochenReferenz(
+                when (_wochenAuswahl.value) {
+                    WochenAuswahl.LETZTE -> -1
+                    WochenAuswahl.AKTUELL -> 0
+                    WochenAuswahl.NAECHSTE -> 1
+                }
+            )
+            val ergebnisse = repository.holeWoche(creds, referenz, erzwingen)
+            val tage = withContext(Dispatchers.Default) {
+                ergebnisse.map { (datum, ergebnis) ->
+                    WochenTag(
+                        datum = datum,
+                        plan = (ergebnis as? PlanResult.Success)?.plan?.tagesplanFuer(kurse),
+                        fehlermeldung = ergebnis.tagesFehler()
+                    )
                 }
             }
             _wochenZustand.value = WochenZustand.Geladen(tage)
@@ -247,7 +354,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                     _zustand.value = UiZustand.KurseWaehlen(ergebnis.plan.alleKurse)
                 }
                 is PlanResult.AuthFehler -> _zustand.value = fehlerAuth()
-                is PlanResult.KeinPlanFuerTag -> _zustand.value = fehlerKeinPlan()
+                is PlanResult.KeinPlanFuerTag -> keinPlanZeigen(creds)
                 is PlanResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
             }
             return
@@ -271,7 +378,8 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                 _zustand.value = UiZustand.Angezeigt(ergebnis.plan)
             }
             is PersoenlicherResult.AuthFehler -> _zustand.value = fehlerAuth()
-            is PersoenlicherResult.KeinPlan -> _zustand.value = fehlerKeinPlan()
+            is PersoenlicherResult.KeinPlan -> keinPlanZeigen(creds)
+            is PersoenlicherResult.KeineStunden -> _zustand.value = UiZustand.KeineStunden
             is PersoenlicherResult.NetzwerkFehler -> _zustand.value = fehlerNetz(ergebnis.nachricht)
         }
     }
@@ -282,8 +390,30 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             zugangsproblem = true
         )
 
-    private fun fehlerKeinPlan() =
-        UiZustand.Fehler("Für die nächsten Tage wurde kein Plan gefunden (Ferien?).")
+    /**
+     * Ferien oder freie Tage: zeigt das sofort und sucht dann, wann es weitergeht. Die Suche
+     * (bis zu 4 Wochen voraus) läuft höchstens einmal am Tag; das Ergebnis wird gemerkt.
+     */
+    private suspend fun keinPlanZeigen(creds: IndiwareCredentials) {
+        val prefs = getApplication<Application>().getSharedPreferences("ferien", android.content.Context.MODE_PRIVATE)
+        val heute = LocalDate.now()
+        // Das gemerkte Ergebnis gehört zu Tag UND Schule.
+        val stand = "${heute.toEpochDay()}|${creds.schulnummer}"
+        if (prefs.getString("stand", null) == stand) {
+            val naechster = prefs.getLong("naechster", -1L).takeIf { it >= 0 }?.let(LocalDate::ofEpochDay)
+            _zustand.value = UiZustand.KeinPlan(naechster, gesucht = true)
+            return
+        }
+        _zustand.value = UiZustand.KeinPlan(null, gesucht = false)
+        val suche = repository.ersterTagMitPlan(creds, heute.plusDays(8))
+        // Schlug der Abruf fehl, ist das Ergebnis unbekannt: nichts merken, beim nächsten Mal neu suchen.
+        suche.onSuccess { naechster ->
+            prefs.edit().putString("stand", stand).putLong("naechster", naechster?.toEpochDay() ?: -1L).apply()
+        }
+        if (_zustand.value is UiZustand.KeinPlan) {
+            _zustand.value = UiZustand.KeinPlan(suche.getOrNull(), gesucht = suche.isSuccess)
+        }
+    }
 
     private fun fehlerNetz(nachricht: String) =
         UiZustand.Fehler("Keine Verbindung: $nachricht")

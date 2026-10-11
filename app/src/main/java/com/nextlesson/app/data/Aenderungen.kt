@@ -140,8 +140,7 @@ object AenderungsText {
         }
     }
 
-    private fun name(l: Lesson): String? =
-        l.fach.takeIf { f -> f.any { it.isLetterOrDigit() } } ?: l.kursKuerzel?.takeIf { it.isNotBlank() }
+    private fun name(l: Lesson): String? = l.anzeigeName()
 
     private fun kurzerHinweis(l: Lesson): String? =
         l.info.takeIf { it.isNotBlank() && it.length <= 60 && ';' !in it }

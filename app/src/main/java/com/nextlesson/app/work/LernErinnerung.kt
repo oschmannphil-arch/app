@@ -61,21 +61,12 @@ object LernErinnerung {
             return
         }
 
-        val verzoegerung = verzoegerungBis(einstellung.uhrzeit)
+        val verzoegerung = com.nextlesson.app.data.verzoegerungBis(einstellung.uhrzeit)
         val request = OneTimeWorkRequestBuilder<LernErinnerungWorker>()
             .setInitialDelay(verzoegerung.toMillis(), TimeUnit.MILLISECONDS)
             .build()
 
         workManager.enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
-    }
-
-    /** Zeit bis zum nächsten Auftreten dieser Uhrzeit – heute, sonst morgen. */
-    internal fun verzoegerungBis(ziel: LocalTime, jetzt: LocalDateTime = LocalDateTime.now()): Duration {
-        var zielZeitpunkt = jetzt.toLocalDate().atTime(ziel)
-        if (!zielZeitpunkt.isAfter(jetzt)) {
-            zielZeitpunkt = zielZeitpunkt.plusDays(1)
-        }
-        return Duration.between(jetzt, zielZeitpunkt)
     }
 
     fun melden(context: Context, offeneAufgaben: Int, naechstePruefungInTagen: Long?, pruefungFach: String?) {
@@ -88,7 +79,6 @@ object LernErinnerung {
             } else {
                 "$offeneAufgaben Hausaufgaben offen"
             }
-            naechstePruefungInTagen != null -> "Zeit zum Lernen"
             else -> "Zeit zum Lernen"
         }
 
@@ -107,7 +97,7 @@ object LernErinnerung {
         }.trim()
 
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         val pendingIntent = PendingIntent.getActivity(
             context, 1, intent,

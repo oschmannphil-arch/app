@@ -4,11 +4,16 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nextlesson.app.data.CredentialsStore
+import com.nextlesson.app.data.FavoritenStore
+import com.nextlesson.app.data.SuchVerlauf
 import com.nextlesson.app.data.IndiwareRepository
 import com.nextlesson.app.data.PlanResult
 import com.nextlesson.app.data.Quelle
 import com.nextlesson.app.data.SchulTag
+import com.nextlesson.app.data.Treffer
 import com.nextlesson.app.data.ersterSchultag
+import com.nextlesson.app.data.tagesFehler
+import com.nextlesson.app.data.wochenReferenz
 import com.nextlesson.app.data.schultagVersetzt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,11 +30,51 @@ sealed class SucheZustand {
     data class Fehler(val nachricht: String) : SucheZustand()
 }
 
+/** Ein Schultag der Wochenübersicht einer Lehrkraft (null + [fehler], wenn der Plan fehlt). */
+data class SucheWochenTag(val datum: LocalDate, val tag: SchulTag?, val fehler: String? = null)
+
 /** Lädt den Plan der ganzen Schule für einen Tag und bereitet ihn für die Lehrer-/Raumsuche auf. */
 class SucheViewModel(app: Application) : AndroidViewModel(app) {
 
     private val credentialsStore by lazy { CredentialsStore(app) }
     private val repository = IndiwareRepository(app)
+    private val favoritenStore = FavoritenStore(app)
+    private val verlaufStore = SuchVerlauf(app)
+
+    private val _verlauf = MutableStateFlow<List<Treffer>>(verlaufStore.laden())
+    /** Die zuletzt gewählten Lehrkräfte und Räume, neueste zuerst. */
+    val verlauf: StateFlow<List<Treffer>> = _verlauf.asStateFlow()
+
+    fun gewaehlt(t: Treffer) {
+        _verlauf.value = verlaufStore.merken(t)
+    }
+
+    fun verlaufEntfernen(t: Treffer) {
+        _verlauf.value = verlaufStore.entfernen(t)
+    }
+
+    fun verlaufLeeren() {
+        verlaufStore.leeren()
+        _verlauf.value = emptyList()
+    }
+
+    val favoriten: StateFlow<List<Treffer>> = favoritenStore.favoriten
+
+    fun favoritUmschalten(t: Treffer) = favoritenStore.umschalten(t)
+
+    private val wochenLader = WochenLader<SucheWochenTag>(viewModelScope, repository) { credentialsStore.laden() }
+    val woche: StateFlow<WochenDaten<SucheWochenTag>> = wochenLader.zustand
+
+    /**
+     * Plan der ganzen Schule für Montag–Freitag – Grundlage für "Wann ist Herr X frei?".
+     * Eine geladene Woche gilt für jede Lehrkraft.
+     */
+    fun wocheLaden(naechste: Boolean) {
+        wochenLader.laden(wochenReferenz(if (naechste) 1 else 0), null) { datum, ergebnis ->
+            if (ergebnis is PlanResult.Success) SucheWochenTag(datum, SchulTag(datum, ergebnis.plan))
+            else SucheWochenTag(datum, null, ergebnis.tagesFehler())
+        }
+    }
 
     private val _datum = MutableStateFlow(ersterSchultag(LocalDate.now()))
     val datum: StateFlow<LocalDate> = _datum.asStateFlow()
@@ -63,7 +108,10 @@ class SucheViewModel(app: Application) : AndroidViewModel(app) {
         laden()
     }
 
-    fun aktualisieren() = laden(erzwingen = true)
+    fun aktualisieren() {
+        wochenLader.vergessen()
+        laden(erzwingen = true)
+    }
 
     private fun laden(erzwingen: Boolean = false) {
         ladeJob?.cancel()

@@ -117,4 +117,80 @@ ${std(1, "07:15", "08:00", "DEU3", "Mei", "031", liste)}
         assertEquals(LocalDate.of(2026, 10, 12), ersterSchultag(LocalDate.of(2026, 10, 10)))
         assertEquals(dienstag, ersterSchultag(dienstag))
     }
+
+    @Test
+    fun lehrerWocheLueckenUndUnterricht() {
+        val t = schultag()
+        val weis = Treffer.Lehrer("Weis")
+        // Weis unterrichtet 1., 2. (12/5) und 4. (10/2); dazwischen ist die 3. Stunde frei.
+        assertEquals(listOf(1, 2, 4), t.unterrichtsStunden(weis))
+        assertEquals(listOf("3. Std"), t.luecken(weis).map { it.stundenText })
+        // Luth: nur die 3. Stunde – davor ist nicht "Lücke", sondern noch nicht da.
+        assertTrue(t.luecken(Treffer.Lehrer("Luth")).isEmpty())
+        assertTrue(t.luecken(Treffer.Lehrer("gibtEsNicht")).isEmpty())
+    }
+
+    @Test
+    fun raumGruppenZumFiltern() {
+        assertEquals("Etage 2", raumGruppe("204"))
+        assertEquals("EG", raumGruppe("033"))
+        assertEquals("SH", raumGruppe("SH 1"))
+        assertEquals("A · Etage 1", raumGruppe("A101"))
+        assertEquals("Sonstige", raumGruppe("12"))
+        assertEquals("Sonstige", raumGruppe("Aula"))
+        assertEquals("Sonstige", raumGruppe("Turnhalle"))
+        assertEquals("L:Weis", Treffer.Lehrer("Weis").schluessel)
+        assertEquals("R:204", Treffer.Raum("204").schluessel)
+    }
+
+    @Test
+    fun wochenReferenzSpringtAmWochenende() {
+        val samstag = LocalDate.of(2026, 10, 10)
+        assertEquals(LocalDate.of(2026, 10, 12), wochenReferenz(0, samstag))
+        assertEquals(LocalDate.of(2026, 10, 19), wochenReferenz(1, samstag))
+        assertEquals(LocalDate.of(2026, 10, 5), wochenReferenz(-1, samstag))
+        assertEquals(dienstag, wochenReferenz(0, dienstag))
+    }
+
+    @Test
+    fun freieRaeumeZuStunden() {
+        val t = schultag()
+        // 226: Std 1, 2 belegt; 235: nur Std 3; 121: nur Std 4; 204/205: nur Std 5.
+        assertEquals(listOf("121", "204", "205", "226"), t.freieRaeumeIn(setOf(3)).filter { it != "235" })
+        assertTrue("235" !in t.freieRaeumeIn(setOf(3)))
+        assertTrue("226" !in t.freieRaeumeIn(setOf(1, 3)))   // in der 1. belegt
+        assertTrue("226" in t.freieRaeumeIn(setOf(3, 4)))    // 3. und 4. beide frei
+        assertTrue("121" !in t.freieRaeumeIn(setOf(3, 4)))   // in der 4. belegt
+        assertTrue(t.freieRaeumeIn(emptySet()).isEmpty())
+    }
+
+    @Test
+    fun lehrkraftMitNurAusfaellen() {
+        val xml = """<WplanVp><Kopf><zeitstempel>x</zeitstempel></Kopf><Klassen>
+<Kl><Kurz>12/5</Kurz><Kurse><Ku><KKz>MAT2</KKz></Ku></Kurse><Pl>
+${std(1, "07:15", "08:00", "MAT2", "Weis", "226", "fällt aus")}
+${std(2, "08:00", "08:45", "MAT2", "Weis", "226", "fällt aus")}
+${std(3, "09:05", "09:50", "MAT2", "Mei", "226")}
+</Pl></Kl></Klassen></WplanVp>"""
+        val t = SchulTag(dienstag, IndiwareXmlParser.parse(xml.byteInputStream(), "1")!!)
+        assertTrue(t.faelltGanzAus(Treffer.Lehrer("Weis")))
+        assertTrue(!t.faelltGanzAus(Treffer.Lehrer("Mei")))
+        assertTrue(!t.faelltGanzAus(Treffer.Lehrer("Unbekannt")))   // nicht im Plan ≠ fällt aus
+    }
+
+    @Test
+    fun steckbriefTrenntRaeumeInEinemEintrag() {
+        val l = Lesson(1, null, null, "DE", false, "204 205", false, null, "Schö", false, null, "", false, klasse = "10/2")
+        assertEquals(listOf("204", "205"), steckbriefAus(listOf(l))!!.raeume)
+    }
+
+    @Test
+    fun steckbriefFasstLehrerTagZusammen() {
+        val b = steckbriefAus(schultag().stundenVon(Treffer.Lehrer("Weis")))!!
+        assertEquals(listOf("MA", "MAT2"), b.faecher)
+        assertEquals(listOf("10", "12"), b.jahrgaenge)
+        assertEquals(listOf("121", "226"), b.raeume)
+        assertEquals(3, b.stunden)
+        assertNull(steckbriefAus(emptyList()))
+    }
 }

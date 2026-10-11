@@ -1,16 +1,26 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.ui.theme.FarbThema
 import android.Manifest
 import android.content.Intent
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -23,6 +33,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +46,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -49,16 +62,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.nextlesson.app.data.DesignModus
+import com.nextlesson.app.data.DesignStore
 import com.nextlesson.app.data.Freund
+import com.nextlesson.app.data.FreundTeilen
+import com.nextlesson.app.data.KursMigration
+import com.nextlesson.app.data.FachName
+import com.nextlesson.app.data.KursInfo
 import com.nextlesson.app.data.Lesson
+import com.nextlesson.app.data.Noten
+import com.nextlesson.app.data.NotenSystem
+import com.nextlesson.app.data.Patchnotes
+import com.nextlesson.app.data.anzeigeName
 import com.nextlesson.app.ui.theme.NaechsteStundeTheme
 import com.nextlesson.app.widget.NextLessonWidgetReceiver
 import com.nextlesson.app.work.EntfallNotifier
 import com.nextlesson.app.work.LernErinnerung
 import com.nextlesson.app.work.RefreshScheduler
+import com.nextlesson.app.work.UpdateWorker
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
@@ -67,8 +93,15 @@ class MainActivity : ComponentActivity() {
 
     private val planViewModel: PlanViewModel by viewModels()
     private val aufgabenViewModel: AufgabenViewModel by viewModels()
+    private val notenViewModel: NotenViewModel by viewModels()
     private val sucheViewModel: SucheViewModel by viewModels()
     private val freundeViewModel: FreundeViewModel by viewModels()
+    private val updateViewModel: UpdateViewModel by viewModels()
+    private lateinit var design: DesignStore
+    /** Vom Widget ("Suche") gesetzt: Suche öffnen. Wird von der Oberfläche verbraucht. */
+    private val sucheOeffnen = MutableStateFlow(false)
+    /** Vom Symbol-Menü ("Noten", "Klausuren", "Aufgaben") gesetzt; wird von der Oberfläche verbraucht. */
+    private val bereichOeffnen = MutableStateFlow<String?>(null)
 
     private val benachrichtigungAnfrage =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* Ergebnis egal */ }
@@ -76,25 +109,72 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        design = DesignStore(applicationContext)
+        // Beim Drehen kommt derselbe Intent noch einmal, ebenso beim Öffnen aus "Zuletzt
+        // verwendet" (Android liefert dann den ursprünglichen Link erneut) – nur beim echten
+        // Start auswerten.
+        val ausVerlauf = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (savedInstanceState == null && !ausVerlauf) intentAuswerten(intent)
 
         EntfallNotifier.kanalAnlegen(applicationContext)
         LernErinnerung.kanalAnlegen(applicationContext)
         RefreshScheduler.periodischePruefungEinplanen(applicationContext)
-        benachrichtigungErlaubnisAnfragen()
+        // Nur beim echten Start, nicht bei jedem Drehen.
+        if (savedInstanceState == null) UpdateWorker.einplanen(applicationContext)
+        // Nur beim echten Start fragen – nicht bei jedem Drehen erneut (Android zählt Ablehnungen).
+        if (savedInstanceState == null) benachrichtigungErlaubnisAnfragen()
 
         setContent {
-            NaechsteStundeTheme {
+            val dunkel = when (design.modus) {
+                DesignModus.SYSTEM -> isSystemInDarkTheme()
+                DesignModus.HELL -> false
+                DesignModus.DUNKEL -> true
+            }
+            // Symbole in Status- und Navigationsleiste müssen zum gewählten Design passen.
+            LaunchedEffect(dunkel) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(
+                        android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT
+                    ) { dunkel },
+                    // Mit Schleier wie bei enableEdgeToEdge(): Auf Android 8–9 mit Tasten-
+                    // Navigation lägen die Tasten sonst direkt über dem Inhalt.
+                    navigationBarStyle = SystemBarStyle.auto(NAVI_SCHLEIER_HELL, NAVI_SCHLEIER_DUNKEL) { dunkel }
+                )
+            }
+            NaechsteStundeTheme(dunkel = dunkel, fachFarben = design.fachFarben, fachSymbole = design.fachSymbole, farbThema = design.farbThema) {
                 Surface {
-                    AppInhalt(planViewModel, aufgabenViewModel, sucheViewModel, freundeViewModel)
+                    AppInhalt(planViewModel, aufgabenViewModel, notenViewModel, sucheViewModel, freundeViewModel, design, updateViewModel, sucheOeffnen, bereichOeffnen)
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intentAuswerten(intent)
+    }
+
+    /** Ein angetippter Kurs-Link ("nextlesson://freund?…") wird als Freund vorgeschlagen; "Suche" vom Widget öffnet die Suche. */
+    private fun intentAuswerten(intent: Intent?) {
+        when (val ziel = intent?.getStringExtra(EXTRA_OEFFNE)) {
+            null -> Unit
+            OEFFNE_SUCHE -> sucheOeffnen.value = true
+            else -> bereichOeffnen.value = ziel
+        }
+        if (intent?.action != Intent.ACTION_VIEW) return
+        FreundTeilen.lesen(intent?.dataString)?.let { freundeViewModel.importVorschlagen(it) }
+    }
+
+    companion object {
+        const val EXTRA_OEFFNE = "oeffne"
+        const val OEFFNE_SUCHE = "suche"
     }
 
     /** Beim Öffnen immer frisch nachsehen – nicht auf den 15-Minuten-Takt warten. */
     override fun onResume() {
         super.onResume()
         planViewModel.ladeGespeichertUndAktualisiere()
+        updateViewModel.automatischPruefen()
         // Erst nach ein paar Sekunden: Der Worker lädt sieben Tage und würde sonst Netz und
         // CPU mit dem Laden der sichtbaren Seite teilen – die App wirkte dadurch langsam.
         RefreshScheduler.sofortAktualisieren(applicationContext, verzoegerungSekunden = 5)
@@ -105,6 +185,27 @@ class MainActivity : ComponentActivity() {
         if (EntfallNotifier.darfBenachrichtigen(this)) return
         benachrichtigungAnfrage.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
+}
+
+// Dieselben Schleier wie enableEdgeToEdge() sie standardmäßig für die Navigationsleiste nimmt.
+private val NAVI_SCHLEIER_HELL = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
+private val NAVI_SCHLEIER_DUNKEL = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)
+
+private const val PATCH_GESEHEN = "gesehen"
+
+/**
+ * Bis zu welchem Patchnotes-Eintrag der Nutzer schon alles kennt. Eine frische Installation
+ * (nie aktualisiert) soll keine "Neu in dieser Version"-Hinweise bekommen – sie kennt ja nichts Altes.
+ */
+private fun patchGesehenStart(context: Context, prefs: android.content.SharedPreferences): Int {
+    if (prefs.contains(PATCH_GESEHEN)) return prefs.getInt(PATCH_GESEHEN, 0)
+    val frisch = runCatching {
+        val p = context.packageManager.getPackageInfo(context.packageName, 0)
+        p.firstInstallTime == p.lastUpdateTime
+    }.getOrDefault(false)
+    if (!frisch) return 0
+    prefs.edit().putInt(PATCH_GESEHEN, Patchnotes.neuesteId).apply()
+    return Patchnotes.neuesteId
 }
 
 private enum class Tab(val titel: String, val symbol: ImageVector) {
@@ -123,31 +224,58 @@ private data class FreundEntwurf(val freund: Freund, val neu: Boolean)
 private fun AppInhalt(
     planViewModel: PlanViewModel,
     aufgabenViewModel: AufgabenViewModel,
+    notenViewModel: NotenViewModel,
     sucheViewModel: SucheViewModel,
-    freundeViewModel: FreundeViewModel
+    freundeViewModel: FreundeViewModel,
+    design: DesignStore,
+    updateViewModel: UpdateViewModel,
+    sucheOeffnen: MutableStateFlow<Boolean>,
+    bereichOeffnen: MutableStateFlow<String?>
 ) {
+    val update by updateViewModel.zustand.collectAsState()
+    // Welchen Build der Nutzer im Hinweis auf "Später" gesetzt hat – bis zum nächsten Start Ruhe.
+    var spaeterBuild by rememberSaveable { mutableStateOf(0) }
     val zustand by planViewModel.zustand.collectAsState()
     val wochenZustand by planViewModel.wochenZustand.collectAsState()
     val hausaufgaben by aufgabenViewModel.hausaufgaben.collectAsState()
     val pruefungen by aufgabenViewModel.pruefungen.collectAsState()
     val erinnerung by aufgabenViewModel.erinnerung.collectAsState()
+    val noten by notenViewModel.noten.collectAsState()
+    val fotoVersion by aufgabenViewModel.fotoVersion.collectAsState()
+    val klausurAnteile by notenViewModel.klausurAnteile.collectAsState()
+    val tagAnsicht by planViewModel.tagAnsicht.collectAsState()
+    val notenZiele by notenViewModel.ziele.collectAsState()
     val grosserText by planViewModel.grosserText.collectAsState()
     val aktualisiertGerade by planViewModel.aktualisiertGerade.collectAsState()
     val verfuegbareKurse by planViewModel.verfuegbareKurse.collectAsState()
     val freunde by freundeViewModel.freunde.collectAsState()
     val sucheZustand by sucheViewModel.zustand.collectAsState()
     val sucheDatum by sucheViewModel.datum.collectAsState()
-    val uebersicht = remember(hausaufgaben, pruefungen) {
-        Uebersicht.berechne(hausaufgaben, pruefungen)
+    val favoriten by sucheViewModel.favoriten.collectAsState()
+    val verlauf by sucheViewModel.verlauf.collectAsState()
+    val sucheVomWidget by sucheOeffnen.collectAsState()
+    val bereichZiel by bereichOeffnen.collectAsState()
+    var sucheFokus by remember { mutableStateOf(false) }
+    val sucheWoche by sucheViewModel.woche.collectAsState()
+    val importVorschlag by freundeViewModel.importVorschlag.collectAsState()
+    val freundeWoche by freundeViewModel.woche.collectAsState()
+    // Mit der Uhrzeit neu rechnen: Eine geschriebene Klausur soll nicht bis Mitternacht "heute" bleiben.
+    val minute by rememberJetzt()
+    val uebersicht = remember(hausaufgaben, pruefungen, minute) {
+        Uebersicht.berechne(hausaufgaben, pruefungen, jetzt = minute)
     }
 
     // Saveable: Beim Drehen des Handys bleibt man im gewählten Reiter bzw. Dialog.
     var tab by rememberSaveable { mutableStateOf(Tab.HEUTE) }
     var zeigeEinstellungen by rememberSaveable { mutableStateOf(false) }
     var zeigeKurse by rememberSaveable { mutableStateOf(false) }
+    var zeigeNoten by rememberSaveable { mutableStateOf(false) }
     var freundAnsicht by rememberSaveable { mutableStateOf<String?>(null) }
     // ID des Freundes, der gerade angelegt/bearbeitet wird – als ID, damit sie saveable ist.
     var entwurfId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Gemeinsame Freistunden der Woche: offen? und welche Freunde sind anfangs gewählt?
+    var gruppeOffen by rememberSaveable { mutableStateOf(false) }
+    var gruppeStart by rememberSaveable(stateSaver = KursAuswahlSaver) { mutableStateOf<Set<String>>(emptySet()) }
 
     // Hausaufgabe direkt aus einer angetippten Stunde: Stunde + Tag, an dem sie stattfindet.
     var aufgabeAusStunde by remember { mutableStateOf<Pair<Lesson, LocalDate>?>(null) }
@@ -162,6 +290,55 @@ private fun AppInhalt(
         } catch (e: Exception) {
             null
         }
+    }
+
+    // Ein angetippter Freund-Link öffnet das Formular mit den Kursen des Freundes – aber erst,
+    // wenn gerade nichts anderes bearbeitet wird (anderer Freund, Kurswahl), sonst gingen
+    // ungespeicherte Eingaben verloren. Danach öffnet es sich von selbst.
+    val bearbeitetGerade = entwurfId != null || zeigeKurse || zustand is UiZustand.KurseWaehlen
+    LaunchedEffect(importVorschlag, bearbeitetGerade) {
+        if (bearbeitetGerade) return@LaunchedEffect
+        importVorschlag?.let {
+            zeigeEinstellungen = false
+            zeigeKurse = false
+            zeigeNoten = false
+            freundAnsicht = null
+            gruppeOffen = false
+            entwurfId = it.id
+        }
+    }
+
+    // Schnellaktion am App-Symbol: Noten, Klausuren oder Aufgaben direkt öffnen – außer es wird gerade etwas bearbeitet.
+    LaunchedEffect(bereichZiel, zustand) {
+        val ziel = bereichZiel ?: return@LaunchedEffect
+        if (zustand is UiZustand.Laedt) return@LaunchedEffect
+        if (entwurfId == null && !zeigeKurse && zustand !is UiZustand.KurseWaehlen && zustand !is UiZustand.LoginNoetig) {
+            zeigeEinstellungen = false
+            freundAnsicht = null
+            gruppeOffen = false
+            zeigeNoten = ziel == "noten"
+            when (ziel) {
+                "klausuren" -> tab = Tab.PRUEFUNGEN
+                "aufgaben" -> tab = Tab.HAUSAUFGABEN
+            }
+        }
+        bereichOeffnen.value = null
+    }
+
+    // "Suche" im Widget: in die Suche wechseln und ins Suchfeld – außer es wird gerade etwas bearbeitet.
+    LaunchedEffect(sucheVomWidget, zustand) {
+        if (!sucheVomWidget) return@LaunchedEffect
+        // Beim Kaltstart ist der Zustand noch "lädt": abwarten, sonst landet man nach der Einrichtung in der Suche.
+        if (zustand is UiZustand.Laedt) return@LaunchedEffect
+        if (entwurfId == null && !zeigeKurse && zustand !is UiZustand.KurseWaehlen && zustand !is UiZustand.LoginNoetig) {
+            zeigeEinstellungen = false
+            zeigeNoten = false
+            freundAnsicht = null
+            gruppeOffen = false
+            tab = Tab.SUCHE
+            sucheFokus = true
+        }
+        sucheOeffnen.value = false
     }
 
     // Nach einer Kursänderung oder einem Neu-Laden steht die Woche auf "nicht geladen".
@@ -186,26 +363,45 @@ private fun AppInhalt(
         scope.launch { NextLessonWidgetReceiver.alleWidgetsAktualisieren(context) }
     }
 
+    // Meldungen wie "Anna ist schon gespeichert".
+    val hinweis by freundeViewModel.hinweis.collectAsState()
+    LaunchedEffect(hinweis) {
+        hinweis?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            freundeViewModel.hinweisGezeigt()
+        }
+    }
+
     // Einrichtung geht immer vor: erst Zugang, dann Kurse.
     val brauchtZugang = zustand is UiZustand.LoginNoetig
     val brauchtKurse = zustand is UiZustand.KurseWaehlen
     // Unbekannte ID = neuer Freund, der noch nicht gespeichert ist.
     val entwurf = entwurfId?.let { id ->
         freunde.firstOrNull { it.id == id }?.let { FreundEntwurf(it, neu = false) }
-            ?: FreundEntwurf(Freund(id = id, name = "", kurse = emptySet()), neu = true)
+            ?: FreundEntwurf(
+                importVorschlag?.takeIf { it.id == id } ?: Freund(id = id, name = "", kurse = emptySet()),
+                neu = true
+            )
     }
     // Gelöschter Freund → Ansicht schließt sich von selbst.
     val angezeigterFreund = freundAnsicht?.let { id -> freunde.firstOrNull { it.id == id } }
     // Überlagernde Ansichten verdecken die Reiter und lassen sich mit "Zurück" schließen.
-    val overlay = zeigeEinstellungen || zeigeKurse || entwurf != null || angezeigterFreund != null
+    val overlay = zeigeEinstellungen || zeigeKurse || zeigeNoten || entwurf != null || gruppeOffen || angezeigterFreund != null
     val einrichtung = brauchtZugang || brauchtKurse || overlay
 
     // Die Zurück-Taste schloss vorher die ganze App, auch aus den Einstellungen heraus.
+    fun entwurfSchliessen() {
+        entwurfId = null
+        freundeViewModel.importVerwerfen()
+    }
+
     fun zurueck() {
         when {
-            entwurfId != null -> entwurfId = null
+            entwurfId != null -> entwurfSchliessen()
             zeigeKurse -> zeigeKurse = false
             zeigeEinstellungen -> zeigeEinstellungen = false
+            zeigeNoten -> zeigeNoten = false
+            gruppeOffen -> gruppeOffen = false
             freundAnsicht != null -> freundAnsicht = null
             tab != Tab.HEUTE -> tab = Tab.HEUTE
         }
@@ -213,13 +409,27 @@ private fun AppInhalt(
     val zurueckMoeglich = !brauchtZugang && (overlay || (!brauchtKurse && tab != Tab.HEUTE))
     BackHandler(enabled = zurueckMoeglich) { zurueck() }
 
+    // Fächer, für die man in den Einstellungen eine Farbe wählen kann.
+    val fachNamen = remember(zustand, wochenZustand, hausaufgaben, pruefungen, verfuegbareKurse) {
+        val ausPlan = (zustand as? UiZustand.Angezeigt)?.plan?.plan?.stunden?.map { it.fach }.orEmpty()
+        val ausWoche = (wochenZustand as? WochenZustand.Geladen)?.tage
+            ?.flatMap { t -> t.plan?.stunden?.map { it.fach }.orEmpty() }.orEmpty()
+        // Auch alle gewählten Kurse – nicht nur die, die gerade im geladenen Tag oder in der Woche vorkommen.
+        val ausKursen = planViewModel.aktuelleKursAuswahl().mapNotNull { id ->
+            id.substringAfter("::", "").takeIf { it.isNotBlank() && it != KursInfo.GANZE_KLASSE }
+        }
+        FachName.zusammen(ausPlan + ausWoche + ausKursen + hausaufgaben.map { it.fach } + pruefungen.map { it.fach })
+    }
+
     val offeneAufgaben = hausaufgaben.count { !it.erledigt }
 
     val titel = when {
         brauchtZugang -> "Einstellungen"
         entwurf != null -> if (entwurf.neu) "Freund hinzufügen" else entwurf.freund.name
         zeigeEinstellungen -> "Einstellungen"
+        zeigeNoten -> "Noten"
         brauchtKurse || zeigeKurse -> "Deine Kurse"
+        gruppeOffen -> "Gemeinsam frei"
         angezeigterFreund != null -> angezeigterFreund.name
         else -> tab.titel
     }
@@ -250,6 +460,7 @@ private fun AppInhalt(
                             } else {
                                 planViewModel.aktualisieren()
                                 if (tab == Tab.WOCHE) planViewModel.wocheLaden(erzwingen = true)
+                                if (tab == Tab.HEUTE) planViewModel.tagNeuLaden()
                                 widgetAktualisieren()
                             }
                         }) {
@@ -258,17 +469,18 @@ private fun AppInhalt(
                     }
                     val angezeigt = zustand as? UiZustand.Angezeigt
                     if (!einrichtung && tab == Tab.HEUTE && angezeigt != null) {
-                        IconButton(onClick = {
-                            val senden = Intent(Intent.ACTION_SEND)
-                                .setType("text/plain")
-                                .putExtra(Intent.EXTRA_TEXT, planAlsText(angezeigt.plan))
-                            runCatching { context.startActivity(Intent.createChooser(senden, "Plan teilen")) }
-                        }) {
+                        IconButton(onClick = { teilen(context, planAlsText(angezeigt.plan), "Plan teilen") }) {
                             Icon(Icons.Filled.Share, contentDescription = "Plan teilen")
+                        }
+                    }
+                    if (!einrichtung && (tab == Tab.HEUTE || tab == Tab.PRUEFUNGEN)) {
+                        IconButton(onClick = { zeigeNoten = true }) {
+                            Icon(Icons.Filled.Star, contentDescription = "Noten")
                         }
                     }
                     if (!brauchtZugang && !brauchtKurse && entwurf == null) {
                         IconButton(onClick = {
+                            zeigeNoten = false
                             zeigeKurse = false
                             zeigeEinstellungen = !zeigeEinstellungen
                         }) {
@@ -320,13 +532,13 @@ private fun AppInhalt(
                             verfuegbareKurse = verfuegbareKurse,
                             onSpeichern = { f ->
                                 freundeViewModel.speichern(f)
-                                entwurfId = null
+                                entwurfSchliessen()
                             },
                             onLoeschen = {
                                 freundeViewModel.loeschen(entwurf.freund.id)
-                                entwurfId = null
+                                entwurfSchliessen()
                             },
-                            onAbbrechen = { entwurfId = null }
+                            onAbbrechen = { entwurfSchliessen() }
                         )
                     }
                 }
@@ -355,7 +567,45 @@ private fun AppInhalt(
                             zeigeKurse = true
                         },
                         freunde = freunde,
-                        onFreundBearbeiten = { f -> entwurfId = f?.id ?: UUID.randomUUID().toString() }
+                        onFreundBearbeiten = { f -> entwurfId = f?.id ?: UUID.randomUUID().toString() },
+                        onLinkImportieren = { freundeViewModel.importVorschlagen(it.copy(id = UUID.randomUUID().toString())) },
+                        // Ohne gespeicherte Kurse gibt es nichts zu teilen – dann kein Knopf.
+                        onKurseTeilen = planViewModel.aktuelleKursAuswahl().takeIf { it.isNotEmpty() }?.let { kurse ->
+                            { teilen(context, FreundTeilen.nachricht("", kurse), "Kurse teilen") }
+                        },
+                        modus = design.modus,
+                        onModus = design::modusSetzen,
+                        farbThema = design.farbThema,
+                        onFarbThema = design::farbThemaSetzen,
+                        fachSymbole = design.fachSymbole,
+                        onFachSymbole = design::fachSymboleSetzen,
+                        fachNamen = fachNamen,
+                        fachFarben = design.fachFarben,
+                        onFachFarbe = design::fachFarbeSetzen,
+                        update = update,
+                        installierterBuild = updateViewModel.installiert,
+                        onUpdatePruefen = { updateViewModel.pruefen() },
+                        onUpdateLaden = updateViewModel::herunterladen,
+                        onUpdateInstallieren = { updateViewModel.installieren(context) }
+                    )
+                }
+
+                // Notentracker
+                zeigeNoten && !brauchtKurse -> {
+                    // Klasse 5–10: Noten 1–6, ab Klasse 11: Punkte 0–15 – nach den gewählten Kursen.
+                    val notenSystem = remember { NotenSystem.ausKursIds(planViewModel.aktuelleKursAuswahl()) }
+                    NotenScreen(
+                        system = notenSystem,
+                        noten = noten.filter { it.system == notenSystem },
+                        klausurAnteil = klausurAnteile[notenSystem] ?: Noten.STANDARD_KLAUSUR_ANTEIL,
+                        pruefungen = pruefungen,
+                        fachVorschlaege = fachNamen,
+                        onAnteil = { notenViewModel.anteilSetzen(notenSystem, it) },
+                        ziele = notenZiele,
+                        onZiel = { fach, wert -> notenViewModel.zielSetzen(notenSystem, fach, wert) },
+                        onHinzufuegen = { f, p, a, d, n -> notenViewModel.hinzufuegen(notenSystem, f, p, a, d, n) },
+                        onBearbeiten = notenViewModel::bearbeiten,
+                        onLoeschen = notenViewModel::loeschen
                     )
                 }
 
@@ -383,6 +633,16 @@ private fun AppInhalt(
                     )
                 }
 
+                // Gemeinsame Freistunden der Woche (du + gewählte Freunde)
+                gruppeOffen && !brauchtZugang -> {
+                    GemeinsamFreiScreen(
+                        freunde = freunde,
+                        startAuswahl = gruppeStart,
+                        woche = freundeWoche,
+                        onWocheLaden = freundeViewModel::wocheLaden
+                    )
+                }
+
                 // 3. Tag eines Freundes
                 angezeigterFreund != null -> {
                     val angezeigt = zustand as? UiZustand.Angezeigt
@@ -390,7 +650,13 @@ private fun AppInhalt(
                         FreundTagScreen(
                             freund = angezeigterFreund,
                             persoenlich = angezeigt.plan,
-                            onBearbeiten = { entwurfId = angezeigterFreund.id }
+                            onWoche = {
+                                gruppeStart = setOf(angezeigterFreund.id)
+                                gruppeOffen = true
+                            },
+                            onBearbeiten = { entwurfId = angezeigterFreund.id },
+                            blockAnsicht = design.blockAnsicht,
+                            onBlockAnsicht = design::blockAnsichtSetzen
                         )
                     } else {
                         LadeScreen()
@@ -402,22 +668,66 @@ private fun AppInhalt(
                         isRefreshing = aktualisiertGerade,
                         onRefresh = {
                             planViewModel.aktualisieren()
+                            // Zeigt man gerade einen anderen Tag, soll auch der neu geladen werden.
+                            planViewModel.tagNeuLaden()
                             widgetAktualisieren()
                         },
                         modifier = Modifier.fillMaxSize()
                     ) {
                         when (val z = zustand) {
                             is UiZustand.Laedt -> LadeScreen()
-                            is UiZustand.Angezeigt -> HomeScreen(
-                                persoenlich = z.plan,
-                                uebersicht = uebersicht,
-                                aktualisiertGerade = aktualisiertGerade,
-                                onOeffneAufgaben = { tab = Tab.HAUSAUFGABEN },
-                                onOeffnePruefungen = { tab = Tab.PRUEFUNGEN },
-                                onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to z.plan.datum },
-                                freunde = freunde,
-                                onFreund = { freundAnsicht = it.id },
-                                onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
+                            is UiZustand.Angezeigt -> {
+                                // Anderer Tag per Wischen/Pfeil? Dann dessen Plan statt des normalen.
+                                val abweichend = tagAnsicht?.takeIf { it.datum != z.plan.datum }
+                                val angezeigtesDatum = abweichend?.datum ?: z.plan.datum
+                                val persoenlichAnzeige = (abweichend as? TagAnsicht.Fertig)?.plan ?: z.plan
+                                fun wischen(richtung: Int) = planViewModel.tagWischen(richtung, angezeigtesDatum, z.plan.datum)
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    TagesLeiste(
+                                        datum = angezeigtesDatum,
+                                        abweichend = abweichend != null,
+                                        basisText = if (z.plan.datum == LocalDate.now()) "Zurück zu heute" else "Zurück",
+                                        onZurueck = { wischen(-1) },
+                                        onVor = { wischen(1) },
+                                        onBasis = planViewModel::tagZuruecksetzen
+                                    )
+                                    TagWischen(
+                                        onVor = { wischen(1) },
+                                        onZurueck = { wischen(-1) },
+                                        modifier = Modifier.weight(1f).fillMaxWidth()
+                                    ) {
+                                        when (abweichend) {
+                                            is TagAnsicht.Laedt -> LadeScreen()
+                                            is TagAnsicht.Leer -> TagLeerHinweis(abweichend.grund)
+                                            else -> HomeScreen(
+                                    persoenlich = persoenlichAnzeige,
+                                    uebersicht = uebersicht,
+                                    aktualisiertGerade = aktualisiertGerade,
+                                    onOeffneAufgaben = { tab = Tab.HAUSAUFGABEN },
+                                    onOeffnePruefungen = { tab = Tab.PRUEFUNGEN },
+                                    onStundeAntippen = { lesson -> aufgabeAusStunde = lesson to persoenlichAnzeige.datum },
+                                    freunde = freunde,
+                                    onFreund = { freundAnsicht = it.id },
+                                    onFreundeWoche = {
+                                        gruppeStart = freunde.map { it.id }.toSet()
+                                        gruppeOffen = true
+                                    },
+                                    blockAnsicht = design.blockAnsicht,
+                                    onBlockAnsicht = design::blockAnsichtSetzen,
+                                    onTagVorbei = { planViewModel.ladeGespeichertUndAktualisiere() }
+                                )
+                                        }
+                                    }
+                                }
+                            }
+                            is UiZustand.KeineStunden -> KeineStundenScreen(
+                                onKurseAendern = { zeigeKurse = true },
+                                onNeuPruefen = { planViewModel.aktualisieren() }
+                            )
+                            is UiZustand.KeinPlan -> KeinPlanScreen(
+                                naechster = z.naechster,
+                                gesucht = z.gesucht,
+                                onNeuPruefen = { planViewModel.aktualisieren() }
                             )
                             is UiZustand.Fehler -> FehlerScreen(
                                 nachricht = z.nachricht,
@@ -442,7 +752,9 @@ private fun AppInhalt(
                             WochenScreen(
                                 zustand = wochenZustand,
                                 auswahl = auswahl,
-                                onAuswahlChange = planViewModel::setWochenAuswahl
+                                onAuswahlChange = planViewModel::setWochenAuswahl,
+                                blockAnsicht = design.blockAnsicht,
+                                onBlockAnsicht = design::blockAnsichtSetzen
                             )
                         }
                     }
@@ -458,7 +770,17 @@ private fun AppInhalt(
                             datum = sucheDatum,
                             onBlaettern = sucheViewModel::blaettern,
                             onHeute = sucheViewModel::zuHeute,
-                            onNeuLaden = sucheViewModel::aktualisieren
+                            onNeuLaden = sucheViewModel::aktualisieren,
+                            favoriten = favoriten,
+                            onFavorit = sucheViewModel::favoritUmschalten,
+                            woche = sucheWoche,
+                            onWocheLaden = sucheViewModel::wocheLaden,
+                            verlauf = verlauf,
+                            onGewaehlt = sucheViewModel::gewaehlt,
+                            onVerlaufEntfernen = sucheViewModel::verlaufEntfernen,
+                            onVerlaufLeeren = sucheViewModel::verlaufLeeren,
+                            fokusAnfordern = sucheFokus,
+                            onFokusErledigt = { sucheFokus = false }
                         )
                     }
 
@@ -467,7 +789,8 @@ private fun AppInhalt(
                         onUmschalten = aufgabenViewModel::hausaufgabeUmschalten,
                         onLoeschen = aufgabenViewModel::hausaufgabeLoeschen,
                         onHinzufuegen = aufgabenViewModel::hausaufgabeHinzufuegen,
-                        onBearbeiten = aufgabenViewModel::hausaufgabeBearbeiten
+                        onBearbeiten = aufgabenViewModel::hausaufgabeBearbeiten,
+                        fotoVersion = fotoVersion
                     )
 
                     Tab.PRUEFUNGEN -> PruefungenScreen(
@@ -480,14 +803,141 @@ private fun AppInhalt(
             }
         }
     }
+    // Patchnotes: einmalig nach einem Update. "Gesehen" wird erst beim Schließen gemerkt.
+    val patchPrefs = remember { context.getSharedPreferences("patchnotes", Context.MODE_PRIVATE) }
+    var patchGesehen by rememberSaveable { mutableStateOf(patchGesehenStart(context, patchPrefs)) }
+    val patchEintraege = remember(patchGesehen) { Patchnotes.ungesehen(patchGesehen) }
+
+    // Hinweis auf einen neuen Build – nicht mitten in der Einrichtung und nur einmal pro Start.
+    val gefundenerBuild = when (val u = update) {
+        is UpdateZustand.Verfuegbar -> u.build
+        is UpdateZustand.Laedt -> u.build
+        is UpdateZustand.Bereit -> u.build
+        is UpdateZustand.Fehler -> u.wiederholbar?.build ?: 0
+        else -> 0
+    }
+    val updateDialogOffen = gefundenerBuild != 0 && gefundenerBuild != spaeterBuild && !einrichtung
+    fun patchGesehenMerken() {
+        patchPrefs.edit().putInt(PATCH_GESEHEN, Patchnotes.neuesteId).apply()
+        patchGesehen = Patchnotes.neuesteId
+    }
+    if (patchEintraege.isNotEmpty() && !einrichtung && !updateDialogOffen) {
+        AlertDialog(
+            onDismissRequest = { patchGesehenMerken() },
+            title = { Text(patchEintraege.first().titel) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    patchEintraege.forEachIndexed { index, eintrag ->
+                        // Der neueste Eintrag steht im Titel; ältere, noch ungesehene, bekommen eine Überschrift.
+                        if (index > 0) Text(eintrag.titel, style = MaterialTheme.typography.titleSmall)
+                        eintrag.punkte.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { patchGesehenMerken() }) { Text("Verstanden") } }
+        )
+    }
+    // Kurse, die es in der aktuellen Kursliste nicht mehr gibt (z. B. nach dem Halbjahreswechsel).
+    val kursPrefs = remember { context.getSharedPreferences("kurs_hinweis", Context.MODE_PRIVATE) }
+    val kursMigration = remember(verfuegbareKurse, zustand, zeigeKurse) {
+        KursMigration.pruefen(planViewModel.aktuelleKursAuswahl(), verfuegbareKurse)
+    }
+    val kursSignatur = remember(kursMigration) { (kursMigration.ersetzt.entries.map { "${it.key}>${it.value}" } + kursMigration.fehlend).sorted().joinToString("|") }
+    var kursHinweisAus by rememberSaveable { mutableStateOf(false) }
+    // Die Kursliste stammt aus dem Plan eines einzelnen Tages – ein Ausreißer soll keinen Fehlalarm geben.
+    // Darum erst melden, wenn derselbe Befund schon beim vorigen Öffnen der App auftrat.
+    var kursBefundBestaetigt by remember { mutableStateOf(false) }
+    LaunchedEffect(kursSignatur) {
+        if (kursSignatur.isEmpty()) {
+            kursPrefs.edit().remove("verdacht").apply()
+            kursBefundBestaetigt = false
+        } else if (kursPrefs.getString("verdacht", "") == kursSignatur) {
+            kursBefundBestaetigt = true
+        } else {
+            kursPrefs.edit().putString("verdacht", kursSignatur).apply()
+        }
+    }
+    val kursHinweisOffen = kursMigration.hatAenderung && kursBefundBestaetigt && !einrichtung && !updateDialogOffen &&
+        patchEintraege.isEmpty() && !kursHinweisAus && kursPrefs.getString("ignoriert", "") != kursSignatur
+    if (kursHinweisOffen) {
+        fun spaeter() {
+            kursPrefs.edit().putString("ignoriert", kursSignatur).apply()
+            kursHinweisAus = true
+        }
+        AlertDialog(
+            onDismissRequest = { spaeter() },
+            title = { Text("Deine Kurse haben sich geändert") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (kursMigration.ersetzt.isNotEmpty()) {
+                        Text("Diese Kurse gibt es nicht mehr – ein Nachfolger passt:", style = MaterialTheme.typography.bodyMedium)
+                        kursMigration.ersetzt.forEach { (alt, neu) ->
+                            Text("• ${alt.substringAfter("::")} → ${neu.substringAfter("::")}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    if (kursMigration.fehlend.isNotEmpty()) {
+                        Text("Diese Kurse stehen nicht mehr in der Kursliste:", style = MaterialTheme.typography.bodyMedium)
+                        kursMigration.fehlend.forEach {
+                            Text("• ${it.substringAfter("::")} (${it.substringBefore("::")})", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Text("Wähle sie neu aus, damit dein Plan wieder stimmt.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    // Nur Nachfolger einsetzen – die fehlenden Kurse nimmt man in der Kurswahl selbst heraus.
+                    val neu = kursMigration.mitNachfolgern(planViewModel.aktuelleKursAuswahl())
+                    if (kursMigration.ersetzt.isNotEmpty()) planViewModel.kursAuswahlSpeichern(neu)
+                    kursHinweisAus = true
+                    if (kursMigration.fehlend.isNotEmpty()) zeigeKurse = true
+                }) { Text(if (kursMigration.fehlend.isNotEmpty()) "Kurse wählen" else "Übernehmen") }
+            },
+            dismissButton = { TextButton(onClick = { spaeter() }) { Text("Später") } }
+        )
+    }
+    if (updateDialogOffen) {
+        AlertDialog(
+            onDismissRequest = { spaeterBuild = gefundenerBuild },
+            title = { Text("Neue Version") },
+            text = {
+                Text(
+                    when (val u = update) {
+                        is UpdateZustand.Laedt -> "Lade Build ${u.build} … ${u.prozent} %"
+                        is UpdateZustand.Bereit -> "Build ${u.build} ist heruntergeladen und bereit zum Installieren."
+                        is UpdateZustand.Fehler -> u.nachricht
+                        else -> "Build $gefundenerBuild ist verfügbar (du hast ${updateViewModel.installiert})."
+                    }
+                )
+            },
+            confirmButton = {
+                when (update) {
+                    is UpdateZustand.Verfuegbar ->
+                        TextButton(onClick = { updateViewModel.herunterladen() }) { Text("Herunterladen") }
+                    is UpdateZustand.Fehler ->
+                        TextButton(onClick = { updateViewModel.herunterladen() }) { Text("Erneut versuchen") }
+                    is UpdateZustand.Bereit ->
+                        TextButton(onClick = { updateViewModel.installieren(context) }) { Text("Installieren") }
+                    else -> Unit
+                }
+            },
+            dismissButton = { TextButton(onClick = { spaeterBuild = gefundenerBuild }) { Text("Später") } }
+        )
+    }
+
     aufgabeAusStunde?.let { (lesson, _) ->
         HausaufgabeDialog(
-            vorschlagFach = lesson.fach.takeIf { f -> f.any { it.isLetterOrDigit() } }
-                ?: lesson.kursKuerzel.orEmpty(),
+            vorschlagFach = lesson.anzeigeName().orEmpty(),
             naechsteStunde = naechsteStunde,
             onAbbrechen = { aufgabeAusStunde = null },
-            onSpeichern = { fach, text, faellig ->
-                aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig)
+            onSpeichern = { fach, text, faellig, foto ->
+                aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig, foto)
                 aufgabeAusStunde = null
             }
         )

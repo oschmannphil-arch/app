@@ -6,7 +6,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
+
+/** Ist das Design dunkel? Vom Theme gesetzt – gilt auch, wenn es abweichend vom System gewählt ist. */
+val LocalDunkel = staticCompositionLocalOf { false }
+
+/** Eigene Fachfarben (Fach klein geschrieben → ARGB) aus den Einstellungen. */
+val LocalFachFarben = compositionLocalOf<Map<String, Int>> { emptyMap() }
+
+/** Soll vor dem Fachnamen ein Symbol stehen? */
+val LocalFachSymbole = staticCompositionLocalOf { true }
+
+/** Fachname für die Anzeige, je nach Einstellung mit Symbol. */
+@Composable
+fun fachAnzeige(fach: String): String =
+    if (LocalFachSymbole.current) com.nextlesson.app.data.FachSymbole.mitSymbol(fach) else fach
 
 /**
  * Das Mocha-Design.
@@ -22,6 +39,9 @@ import androidx.compose.ui.platform.LocalContext
 fun NaechsteStundeTheme(
     dunkel: Boolean = isSystemInDarkTheme(),
     dynamischeFarben: Boolean = false,
+    fachFarben: Map<String, Int> = emptyMap(),
+    fachSymbole: Boolean = true,
+    farbThema: FarbThema = FarbThema.MOCHA,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -29,13 +49,16 @@ fun NaechsteStundeTheme(
         dynamischeFarben && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (dunkel) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        dunkel -> DunklesSchema
-        else -> HellesSchema
+        dunkel -> DunklesSchema.mitThema(farbThema, hell = false)
+        else -> HellesSchema.mitThema(farbThema, hell = true)
     }
 
-    MaterialTheme(
-        colorScheme = schema,
-        typography = AppTypografie,
-        content = content
-    )
+    MaterialTheme(colorScheme = schema, typography = AppTypografie) {
+        CompositionLocalProvider(
+            LocalDunkel provides dunkel,
+            LocalFachFarben provides fachFarben,
+            LocalFachSymbole provides fachSymbole,
+            content = content
+        )
+    }
 }

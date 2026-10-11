@@ -91,10 +91,13 @@ data class KlassenPlan(
 )
 
 /** Ganze Wörter (Buchstaben/Ziffern) – dient dem Erkennen von Kurskürzeln in Hinweistexten. */
-private val WORT = Regex("[\\p{L}\\p{N}]+")
+internal val WORT = Regex("[\\p{L}\\p{N}]+")
 
 /** Sieht aus wie ein Kurskürzel ("DEU3", "MAT2"), auch wenn es in keiner Kursliste steht. */
-private val KURS_MUSTER = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
+internal val KURS_MUSTER = Regex("(?<![\\p{L}\\p{N}])\\p{L}{2,5}\\d{1,2}(?![\\p{L}\\p{N}])")
+
+/** Grenze zwischen zwei Aussagen in einem Hinweis: ";" oder ein freistehender Strich. */
+internal val SATZ_GRENZE = Regex(";|\\s+[–—-]\\s+")
 
 private fun nurStriche(s: String) = s.isNotEmpty() && s.all { !it.isLetterOrDigit() }
 
@@ -112,14 +115,46 @@ private fun Lesson.findetStatt(klausur: Boolean) = copy(
     }
 )
 
+/**
+ * Eine Klausur laut Klausurliste des Plans ("Klausur 09:05: ENG2, Jg. 12 (180 min.)"). Das ist
+ * die verlässlichste Quelle: Stunden dieses Kurses im Zeitraum sind Klausur – auch wenn der Plan
+ * sie zugleich als "fällt aus" aufführt, weil der normale Unterricht der Klausur weicht.
+ */
+data class KlausurTermin(
+    val jahrgang: String,
+    val kurs: String,
+    val beginn: LocalTime,
+    val dauerMinuten: Int
+) {
+    /** Ende der Klausur; wäre es nach Mitternacht, gilt Mitternacht. */
+    val ende: LocalTime
+        get() = beginn.plusMinutes(dauerMinuten.toLong()).takeIf { !it.isBefore(beginn) } ?: LocalTime.MAX
+
+    /** Gehört [l] zu dieser Klausur: gleicher Kurs und Jahrgang, und die Stunde liegt im Zeitraum. */
+    fun betrifft(l: Lesson): Boolean {
+        val kurs = l.kursKuerzel?.trim().orEmpty()
+        if (!kurs.equals(this.kurs.trim(), ignoreCase = true)) return false
+        if (jahrgang.isNotBlank() && !Freizeit.jahrgang(l.klasse).equals(jahrgang.trim(), ignoreCase = true) &&
+            !l.klasse.equals(jahrgang.trim(), ignoreCase = true)
+        ) return false
+        val b = l.beginn ?: return false
+        val e = l.ende ?: return false
+        return b.isBefore(ende) && e.isAfter(beginn)
+    }
+}
+
 /** Alles, was in einer PlanKl-Datei steht – alle Klassen der Schule für diesen Tag. */
 data class GesamtPlan(
     val kopf: PlanKopf,
-    val klassen: List<KlassenPlan>
+    val klassen: List<KlassenPlan>,
+    val klausuren: List<KlausurTermin> = emptyList()
 ) {
+    /** Zeitraster der ganzen Schule an diesem Tag – daraus ergeben sich die Freistunden. */
+    val zeitraster: List<Zeitfenster> by lazy { zeitraster(klassen.flatMap { it.stunden }) }
+
     /** Alle Kurse der ganzen Schule, für die Auswahlliste ("ganze Klasse" jeweils zuerst). */
     val alleKurse: List<KursInfo>
-        get() = klassen.flatMap { it.kurse }.sortedWith(
+        get() = klassen.flatMap { it.kurse }.distinctBy { it.id }.sortedWith(
             compareBy({ it.klasse }, { !it.istGanzeKlasse }, { it.kuerzel })
         )
 
@@ -152,13 +187,16 @@ data class GesamtPlan(
             return kuerzel.filter { it.equals(fach, ignoreCase = true) }.singleOrNull()
         }
 
+        // Nur ganze Klassen gewählt (Suche nach Lehrern/Räumen): die Stunden der anderen
+        // Klassen müssen nicht durchsucht werden – sonst wäre es Klassen × alle Stunden.
+        val nurGanzeKlassen = gewaehlteKursIds.all { it.endsWith("::${KursInfo.GANZE_KLASSE}") }
         val betroffene = klassen.filter { kp ->
-            ganzeKlasseGewaehlt(kp.klasse) ||
+            ganzeKlasseGewaehlt(kp.klasse) || (!nurGanzeKlassen && (
                 kp.kurse.any { it.id in gewaehlteKursIds } ||
                 kp.stunden.any { l ->
                     val kurs = kursVon(kp, l)
                     kurs != null && "${kp.klasse}::$kurs" in gewaehlteKursIds
-                }
+                }))
         }
 
         val rohStunden = betroffene.flatMap { kp ->
@@ -197,20 +235,24 @@ data class GesamtPlan(
         // damit ein anderes, wirklich ausgefallenes Fach nicht zur Klausur wird.
         // Quellen: Tageshinweise der Schule UND die Info-Texte der eigenen Stunden (die Schule
         // hängt "Klausur!; BIO3 … fällt aus; …" teils direkt an die Stunden).
+        // Sätze trennen: an ";" und an Gedankenstrichen ("Klausur DEU1, DEU2 – BIO3 fällt aus"),
+        // damit Klausur- und Ausfall-Teil desselben Hinweises getrennt bewertet werden.
         val segmente = (kopf.zusatzInfo + rohStunden.map { it.info })
-            .flatMap { it.split(';') }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
-        fun istAusfallText(s: String) = listOf("fällt aus", "faellt aus", "entfällt", "entfaellt")
-            .any { s.contains(it, ignoreCase = true) }
+            .flatMap { it.split(SATZ_GRENZE) }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        fun istAusfallText(s: String) = nenntAusfall(s)
+        // Ein Satz mit "fällt aus" meldet einen Ausfall – auch wenn er die Klausur als Grund
+        // nennt ("SPO1 fällt aus wegen Klausur"). Sonst würde der genannte Kurs zur Klausur.
         val klausurSegmente = segmente.filter {
-            it.contains("klausur", ignoreCase = true) || it.contains("klassenarbeit", ignoreCase = true)
+            (it.contains("klausur", ignoreCase = true) || it.contains("klassenarbeit", ignoreCase = true)) &&
+                !istAusfallText(it)
         }
-        val ausfallSegmente = segmente.filter { it !in klausurSegmente && istAusfallText(it) }
+        val ausfallSegmente = segmente.filter { istAusfallText(it) }
         fun praefix(kuerzel: String) = kuerzel.takeWhile { it.isLetter() }.lowercase()
         val klausurWoerter = klausurSegmente.flatMapTo(HashSet()) { s -> WORT.findAll(s).map { it.value }.toList() }
         val ausfallWoerter = ausfallSegmente.flatMapTo(HashSet()) { s -> WORT.findAll(s).map { it.value }.toList() }
         val genannteFaecher = if (klausurSegmente.isEmpty()) emptySet() else
             alleKuerzel.filter { it in klausurWoerter || it in ausfallWoerter }.map { praefix(it) }.toSet()
-        val stunden = if (klausurSegmente.isEmpty()) rohStunden else rohStunden.map { l ->
+        val bewertet = if (klausurSegmente.isEmpty()) rohStunden else rohStunden.map { l ->
             val kurs = l.kursKuerzel
             if (kurs == null || !(l.entfaellt || l.istKlausur)) return@map l
             // Sagt die Stunde selbst "… fällt aus", ohne einen anderen Kurs zu nennen, bleibt es Ausfall.
@@ -231,6 +273,21 @@ data class GesamtPlan(
                 // sagen, also normal anzeigen (der Hinweistext bleibt sichtbar).
                 l.istKlausur && l.entfaellt && !nurStriche(l.fach) && l.lehrer != "---" ->
                     l.findetStatt(klausur = false)
+                else -> l
+            }
+        }
+        // Was ausfällt, ist keine Klausur – egal, ob "Klausur" irgendwo im Hinweis stand.
+        val vermutet = bewertet.map { if (it.entfaellt && it.istKlausur) it.copy(istKlausur = false) else it }
+
+        // Die Klausurliste des Plans geht vor: Stunden eines Kurses im Klausurzeitraum sind
+        // Klausur, auch wenn der Plan denselben Kurs zugleich unter "fällt aus" nennt.
+        val stunden = if (klausuren.isEmpty()) vermutet else vermutet.mapIndexed { i, l ->
+            when {
+                klausuren.any { it.betrifft(l) } ->
+                    if (l.entfaellt || !l.istKlausur) l.findetStatt(klausur = true) else l
+                // Die Liste kennt diesen Kurs nicht: Eine nur aus dem Hinweistext erratene Klausur
+                // zurücknehmen – der Plan selbst hatte die Stunde als Ausfall geführt.
+                l.istKlausur && !l.entfaellt && rohStunden[i].entfaellt -> rohStunden[i].copy(istKlausur = false)
                 else -> l
             }
         }

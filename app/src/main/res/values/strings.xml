@@ -1,4 +1,8 @@
 <resources>
     <string name="app_name">Nächste Stunde</string>
+    <string name="shortcut_suche">Suche</string>
+    <string name="shortcut_noten">Noten</string>
+    <string name="shortcut_klausuren">Klausuren</string>
+    <string name="shortcut_aufgaben">Aufgaben</string>
     <string name="widget_beschreibung">Zeigt deine nächste Stunde mit Raum, Zeit und Lehrer.</string>
 </resources>

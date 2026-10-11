@@ -8,8 +8,13 @@ import com.nextlesson.app.data.ErinnerungsStore
 import com.nextlesson.app.data.Hausaufgabe
 import com.nextlesson.app.data.Pruefung
 import com.nextlesson.app.data.PruefungsArt
+import com.nextlesson.app.data.FotoAenderung
+import com.nextlesson.app.data.TafelFotos
 import com.nextlesson.app.work.LernErinnerung
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.time.LocalDate
@@ -37,25 +42,55 @@ class AufgabenViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         store.beimStartAufraeumen()
+        TafelFotos.aufraeumen(app, store.hausaufgaben.value.map { it.id }.toSet())
         // Falls die App länger zu war: Termin wieder scharf stellen.
         LernErinnerung.neuPlanen(app)
     }
 
     // ---------- Hausaufgaben ----------
 
-    fun hausaufgabeHinzufuegen(fach: String, text: String, faellig: LocalDate?) {
+    fun hausaufgabeHinzufuegen(fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung = FotoAenderung.KEINE) {
         if (text.isBlank()) return
-        store.hausaufgabeHinzufuegen(fach, text, faellig)
+        val id = store.hausaufgabeHinzufuegen(fach, text, faellig)
+        fotoAnwenden(id, foto)
     }
 
-    fun hausaufgabeBearbeiten(id: String, fach: String, text: String, faellig: LocalDate?) {
+    fun hausaufgabeBearbeiten(id: String, fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung = FotoAenderung.KEINE) {
         if (text.isBlank()) return
         store.hausaufgabeBearbeiten(id, fach, text, faellig)
+        fotoAnwenden(id, foto)
     }
+
+    private fun fotoAnwenden(id: String, aenderung: FotoAenderung) {
+        when (aenderung) {
+            FotoAenderung.KEINE -> Unit
+            FotoAenderung.ENTFERNEN -> {
+                TafelFotos.loeschen(kontext, id)
+                _fotoVersion.value += 1
+            }
+            FotoAenderung.NEU -> {
+                // Erst sofort sichern (der Dialog räumt beim Schließen die Zwischendatei weg), dann im
+                // Hintergrund verkleinern.
+                if (TafelFotos.sichern(kontext, id)) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        TafelFotos.uebernehmen(kontext, id)
+                        _fotoVersion.value += 1
+                    }
+                }
+            }
+        }
+    }
+
+    private val _fotoVersion = MutableStateFlow(0)
+    /** Zählt hoch, wenn ein Foto fertig gespeichert ist – damit die Liste das 📷 zeigt. */
+    val fotoVersion: StateFlow<Int> = _fotoVersion.asStateFlow()
 
     fun hausaufgabeUmschalten(id: String) = store.hausaufgabeUmschalten(id)
 
-    fun hausaufgabeLoeschen(id: String) = store.hausaufgabeLoeschen(id)
+    fun hausaufgabeLoeschen(id: String) {
+        store.hausaufgabeLoeschen(id)
+        TafelFotos.loeschen(kontext, id)
+    }
 
     // ---------- Prüfungen ----------
 

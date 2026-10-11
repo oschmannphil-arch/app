@@ -14,6 +14,22 @@ data class Zeitfenster(val stunde: Int, val beginn: LocalTime?, val ende: LocalT
 sealed class Treffer : java.io.Serializable {
     abstract val name: String
 
+    /** Eindeutig über Lehrer und Räume ("L:Weis", "R:204") – zum Speichern und als Listen-Key. */
+    val schluessel: String get() = (if (this is Lehrer) "L:" else "R:") + name
+
+    companion object {
+        /** Gegenstück zu [schluessel]; null bei Unlesbarem. */
+        fun ausSchluessel(s: String): Treffer? {
+            val name = s.drop(2)
+            return when {
+                name.isBlank() -> null
+                s.startsWith("L:") -> Lehrer(name)
+                s.startsWith("R:") -> Raum(name)
+                else -> null
+            }
+        }
+    }
+
     data class Lehrer(override val name: String) : Treffer()
     data class Raum(override val name: String) : Treffer()
 }
@@ -42,20 +58,11 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
      */
     val stunden: List<Lesson> = gesamt.klassen.flatMap { kp ->
         gesamt.tagesplanFuer(setOf("${kp.klasse}::${KursInfo.GANZE_KLASSE}")).stunden
-    }
+        // Ein Kurs, der in mehreren Klassenblöcken steht, kommt je Block vor – nur einmal zählen.
+    }.distinctBy { Freizeit.zusammenKey(it) + "|" + it.raum + "|" + it.entfaellt }
 
     /** Zeitraster: je Stundennummer die häufigste Beginn/Ende-Kombination. */
-    val raster: List<Zeitfenster> = stunden.filter { it.stunde > 0 }
-        .groupBy { it.stunde }
-        .map { (nr, ls) ->
-            val zeit = ls.filter { it.beginn != null && it.ende != null }
-                .groupingBy { it.beginn to it.ende }
-                .eachCount()
-                .maxByOrNull { it.value }
-                ?.key
-            Zeitfenster(nr, zeit?.first, zeit?.second)
-        }
-        .sortedBy { it.stunde }
+    val raster: List<Zeitfenster> = zeitraster(stunden)
 
     private val nachLehrer: Map<String, List<Lesson>> = index { lehrerVon(it.lehrer) }
     private val nachRaum: Map<String, List<Lesson>> = index { raeumeVon(it.raum) }
@@ -151,10 +158,36 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
         }
     }
 
+    /** Räume ohne Unterricht in ALLEN der Stunden [stunden] (Ausfall zählt als frei) – z.B. 3. und 4. Stunde. */
+    fun freieRaeumeIn(stunden: Set<Int>): List<String> {
+        if (stunden.isEmpty()) return emptyList()
+        return raeume.filter { r -> stundenVon(Treffer.Raum(r)).none { !it.entfaellt && it.stunde in stunden } }
+    }
+
+    /** Hat die Lehrkraft an diesem Tag Stunden im Plan, aber keine findet statt? */
+    fun faelltGanzAus(t: Treffer): Boolean {
+        val alle = stundenVon(t)
+        return alle.isNotEmpty() && alle.all { it.entfaellt }
+    }
+
+    /** Stundennummern, in denen [t] an diesem Tag Unterricht hat (ohne Ausfall). */
+    fun unterrichtsStunden(t: Treffer): List<Int> =
+        stundenVon(t).filter { !it.entfaellt }.map { it.stunde }.distinct().sorted()
+
+    /**
+     * Lücken im Tag einer Lehrkraft bzw. eines Raums: Zeiten im Zeitraster ohne Unterricht
+     * zwischen der ersten und der letzten Stunde. Ausgefallene Stunden zählen als frei.
+     */
+    fun luecken(t: Treffer): List<Freiblock> =
+        Freizeit.freiBloecke(
+            TagesPlan(PlanKopf("", "", ""), "", stundenVon(t)), raster,
+            ausfallIstFrei = true, abErsterStunde = true
+        )
+
     companion object {
         /** Lehrerkürzel eines Eintrags; mehrere (Team-Teaching) stehen durch Leerzeichen o.ä. getrennt. */
         internal fun lehrerVon(feld: String): List<String> =
-            feld.split(Regex("[\\s,;/+]+"))
+            feld.split(LEHRER_TRENNER)
                 .map { it.trim { c -> !c.isLetterOrDigit() } }
                 .filter { k -> k.any { it.isLetter() } }
 
@@ -166,10 +199,13 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
             feld.split(',', ';', '/')
                 .flatMap { teil ->
                     val t = teil.trim()
-                    val woerter = t.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    val woerter = t.split(WHITESPACE).filter { it.isNotEmpty() }
                     if (woerter.size > 1 && woerter.all { w -> w.any { it.isDigit() } }) woerter else listOf(t)
                 }
                 .filter { r -> r.any { it.isLetterOrDigit() } }
+
+        private val LEHRER_TRENNER = Regex("[\\s,;/+]+")
+        private val WHITESPACE = Regex("\\s+")
 
         private val RAUM_REIHENFOLGE =
             compareBy<String>({ it.takeWhile(Char::isDigit).toIntOrNull() ?: Int.MAX_VALUE }, { it })
@@ -182,6 +218,19 @@ class SchulTag(val datum: LocalDate, gesamt: GesamtPlan) {
     }
 }
 
+/** Zeitraster der Schule: je Stundennummer die häufigste Beginn/Ende-Kombination. */
+fun zeitraster(stunden: List<Lesson>): List<Zeitfenster> = stunden.filter { it.stunde > 0 }
+    .groupBy { it.stunde }
+    .map { (nr, ls) ->
+        val zeit = ls.filter { it.beginn != null && it.ende != null }
+            .groupingBy { it.beginn to it.ende }
+            .eachCount()
+            .maxByOrNull { it.value }
+            ?.key
+        Zeitfenster(nr, zeit?.first, zeit?.second)
+    }
+    .sortedBy { it.stunde }
+
 /** Nächster Schultag (Mo–Fr) in Richtung [richtung]; Feiertage und Ferien kennt die App nicht. */
 fun schultagVersetzt(datum: LocalDate, richtung: Int): LocalDate {
     val schritt = if (richtung < 0) -1L else 1L
@@ -190,6 +239,63 @@ fun schultagVersetzt(datum: LocalDate, richtung: Int): LocalDate {
     return d
 }
 
+/**
+ * Ein Tag in der Woche, die angezeigt werden soll: [versatz] 0 = diese Woche (am Wochenende
+ * schon die kommende), 1 = die danach, -1 = die davor. Für [IndiwareRepository.holeWoche].
+ */
+fun wochenReferenz(versatz: Int, heute: LocalDate = LocalDate.now()): LocalDate =
+    ersterSchultag(heute).plusWeeks(versatz.toLong())
+
 /** Heute – oder am Wochenende der kommende Montag. */
 fun ersterSchultag(heute: LocalDate): LocalDate =
     if (heute.dayOfWeek == DayOfWeek.SATURDAY || heute.dayOfWeek == DayOfWeek.SUNDAY) schultagVersetzt(heute, 1) else heute
+
+/**
+ * Gruppe eines Raums zum Filtern: führende Buchstaben als Haus ("A101" → "A", "SH 1" → "SH"),
+ * bei Nummern ab drei Ziffern die erste Ziffer als Etage ("204" → "Etage 2", "033" → "EG").
+ */
+fun raumGruppe(raum: String): String {
+    val r = raum.trim()
+    // Nur Buchstaben vor einer Nummer sind ein Haus ("A101", "SH 1") – "Aula" oder "Mensa" nicht.
+    val haus = r.takeWhile { it.isLetter() }.takeIf { r.drop(it.length).trimStart().firstOrNull()?.isDigit() == true }.orEmpty()
+    val ziffern = r.drop(haus.length).trimStart().takeWhile { it.isDigit() }
+    val etage = if (ziffern.length >= 3) ziffern.first() else null
+    val teile = listOfNotNull(
+        haus.takeIf { it.isNotEmpty() },
+        etage?.let { if (it == '0') "EG" else "Etage $it" }
+    )
+    return if (teile.isEmpty()) "Sonstige" else teile.joinToString(" · ")
+}
+
+/** [1, 2, 5] → "1.–2., 5. Std" */
+fun stundenListe(nummern: List<Int>): String {
+    val gruppen = ArrayList<IntRange>()
+    for (n in nummern.distinct().sorted()) {
+        val letzte = gruppen.lastOrNull()
+        if (letzte != null && letzte.last + 1 == n) gruppen[gruppen.lastIndex] = letzte.first..n
+        else gruppen += n..n
+    }
+    return gruppen.joinToString(", ") { if (it.first == it.last) "${it.first}." else "${it.first}.–${it.last}." } + " Std"
+}
+
+/** Was man über eine Lehrkraft an einem Tag sieht: Fächer, Jahrgänge, Räume und Zahl der Stunden. */
+data class Steckbrief(
+    val faecher: List<String>,
+    val jahrgaenge: List<String>,
+    val raeume: List<String>,
+    val stunden: Int
+)
+
+/** Fasst die (nicht ausgefallenen) [stunden] einer Lehrkraft zusammen; leer, wenn nichts stattfindet. */
+fun steckbriefAus(stunden: List<Lesson>): Steckbrief? {
+    val aktiv = stunden.filter { !it.entfaellt }
+    if (aktiv.isEmpty()) return null
+    fun gesammelt(werte: List<String>) = werte.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
+    return Steckbrief(
+        faecher = FachName.zusammen(aktiv.map { it.fach }),
+        jahrgaenge = gesammelt(aktiv.map { Freizeit.jahrgang(it.klasse) }).sortedBy { it.toIntOrNull() ?: Int.MAX_VALUE },
+        // Ein Eintrag wie "204 205" sind zwei Räume.
+        raeume = gesammelt(aktiv.flatMap { it.raum.split(' ', ',', ';', '/') }).sorted(),
+        stunden = aktiv.distinctBy { it.stunde }.size
+    )
+}

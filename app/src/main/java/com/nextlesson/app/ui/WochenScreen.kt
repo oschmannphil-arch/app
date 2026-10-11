@@ -1,7 +1,8 @@
 package com.nextlesson.app.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,8 +46,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.LessonStatus
+import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import java.time.LocalDate
+import com.nextlesson.app.data.FEHLER_KEIN_PLAN
+import com.nextlesson.app.data.alsEintraege
+import com.nextlesson.app.data.hinweisKurz
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -58,10 +64,13 @@ private val zeitFormat = DateTimeFormatter.ofPattern("HH:mm")
 fun WochenScreen(
     zustand: WochenZustand,
     auswahl: WochenAuswahl,
-    onAuswahlChange: (WochenAuswahl) -> Unit
+    onAuswahlChange: (WochenAuswahl) -> Unit,
+    blockAnsicht: Boolean = false,
+    onBlockAnsicht: (Boolean) -> Unit = {}
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         WochenAuswahlLeiste(auswahl, onAuswahlChange)
+        AnsichtUmschalter(blockAnsicht, onBlockAnsicht, Modifier.padding(horizontal = 16.dp))
 
         when (zustand) {
             is WochenZustand.NichtGeladen, is WochenZustand.Laedt -> {
@@ -70,7 +79,7 @@ fun WochenScreen(
                 }
             }
             is WochenZustand.Geladen -> {
-                val dunkel = isSystemInDarkTheme()
+                val dunkel = istDunkel()
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -78,8 +87,16 @@ fun WochenScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item { Spacer(Modifier.height(4.dp)) }
+                    if (zustand.tage.all { it.plan == null && it.fehlermeldung == FEHLER_KEIN_PLAN } && zustand.tage.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Für diese Woche ist noch kein Plan veröffentlicht – Ferien oder schulfrei?",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
                     items(zustand.tage, key = { it.datum.toString() }) { tag ->
-                        TagKarte(tag, dunkel)
+                        TagKarte(tag, dunkel, blockAnsicht)
                     }
                     item { Spacer(Modifier.height(12.dp)) }
                 }
@@ -96,6 +113,7 @@ private fun WochenAuswahlLeiste(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -116,7 +134,7 @@ private fun WochenAuswahlLeiste(
 }
 
 @Composable
-private fun TagKarte(tag: WochenTag, dunkel: Boolean) {
+private fun TagKarte(tag: WochenTag, dunkel: Boolean, blockAnsicht: Boolean) {
     val heute = tag.datum == LocalDate.now()
     val stunden = tag.plan?.stunden.orEmpty()
     
@@ -207,9 +225,10 @@ private fun TagKarte(tag: WochenTag, dunkel: Boolean) {
                     Spacer(Modifier.height(10.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(Modifier.height(6.dp))
-                    stunden.forEachIndexed { index, lesson ->
-                        WochenStundenZeile(lesson, dunkel)
-                        if (index < stunden.lastIndex) Spacer(Modifier.height(4.dp))
+                    val eintraege = remember(stunden, blockAnsicht) { stunden.alsEintraege(blockAnsicht) }
+                    eintraege.forEachIndexed { index, block ->
+                        WochenStundenZeile(block.zusammengefasst, dunkel, if (blockAnsicht) block.stundenKurz else null)
+                        if (index < eintraege.lastIndex) Spacer(Modifier.height(4.dp))
                     }
                 }
             }
@@ -228,7 +247,7 @@ private fun Hinweis(text: String) {
 }
 
 @Composable
-private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
+private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean, stundenKurz: String? = null) {
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
     val istVertretung = status == LessonStatus.VERTRETUNG
@@ -245,7 +264,7 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
     val alpha = if (istEntfall) 0.4f else 1.0f
 
     val desc = buildString {
-        append("${lesson.stunde}. Stunde: ${lesson.fach.ifBlank { "Unbekannt" }}")
+        append("${stundenKurz?.let { "$it Stunde" } ?: "${lesson.stunde}. Stunde"}: ${lesson.fach.ifBlank { "Unbekannt" }}")
         when (status) {
             LessonStatus.ENTFALL -> append(", fällt aus")
             LessonStatus.VERTRETUNG -> append(", Vertretung durch ${lesson.lehrer}")
@@ -286,10 +305,10 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "${lesson.stunde}.",
+                text = stundenKurz ?: "${lesson.stunde}.",
                 style = MaterialTheme.typography.labelMedium,
                 color = neben,
-                modifier = Modifier.widthIn(min = 22.dp)
+                modifier = Modifier.widthIn(min = 22.dp).padding(end = if (stundenKurz != null) 4.dp else 0.dp)
             )
             Box(
                 modifier = Modifier
@@ -300,7 +319,7 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = lesson.fach.ifBlank { "—" },
+                    text = fachAnzeige(lesson.fach.ifBlank { "—" }),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (lesson.hatAenderung) FontWeight.SemiBold else FontWeight.Normal,
                     textDecoration = if (istEntfall) TextDecoration.LineThrough else null,
@@ -327,9 +346,10 @@ private fun WochenStundenZeile(lesson: Lesson, dunkel: Boolean) {
                         maxLines = 1
                     )
                 }
-                if (lesson.info.isNotBlank()) {
+                val hinweisText = lesson.hinweisKurz()
+                if (hinweisText.isNotBlank()) {
                     Text(
-                        text = lesson.info,
+                        text = hinweisText,
                         style = MaterialTheme.typography.labelSmall,
                         color = neben,
                         maxLines = 2,

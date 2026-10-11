@@ -51,19 +51,41 @@ object IndiwareXmlParser {
      * sonst träfen sie "Freitag", "Evangelisch" oder Namen wie "Evers". "Hausaufgaben"
      * zählt nicht, weil "aufgab" nur am Wortanfang gesucht wird.
      */
-    private val ENTFALL_WOERTER = Regex(
+    private const val STICHWOERTER_AM_WORTANFANG =
         """(?<![\p{L}\p{N}])(selbst|eigenv|aufgab|moodle|online|distanz|zuhause|homeoffice|""" +
-            """stillarbeit|freiarbeit|lernzeit)|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
+            """stillarbeit|freiarbeit|lernzeit)"""
+    private val ENTFALL_WOERTER = Regex(
+        STICHWOERTER_AM_WORTANFANG + """|(?<![\p{L}\p{N}])(eva|frei)(?![\p{L}\p{N}])"""
     )
+
+    /**
+     * Fürs Lehrer-Feld nur die langen Stichwörter: "Frei" oder "Eva" sind dort Nachnamen bzw.
+     * Vornamen, keine Ausfall-Meldung.
+     */
+    private val ENTFALL_WOERTER_LEHRER = Regex(STICHWOERTER_AM_WORTANFANG)
+
+    /** Platzhalter statt echter Namen ("LeAe", "LeÄnderung", "LeGeaendert") – kein Lehrer. */
+    private val LEHRER_PLATZHALTER = Regex("""(?i)^le\s*(ae|änd\w*)$""")
+
+    private fun istPlatzhalter(text: String): Boolean {
+        val t = text.trim()
+        return t.contains("geaendert", ignoreCase = true) || t.contains("geändert", ignoreCase = true) ||
+            LEHRER_PLATZHALTER.matches(t)
+    }
+
+    // Kein Wortanfang-Test: gesamtText hängt die Felder einer Stunde ohne Trennzeichen aneinander.
+
+    /** "kein Unterricht", "keinen Unterricht" – nicht "Vertretungsunterricht, keine Pause". */
+    private val KEIN_UNTERRICHT = Regex("""kein(e|en)?\s+unterricht""")
+
+    /** "fällt aus", "fällt heute aus" – aber nicht "fällt … Hausaufgaben". */
+    private val FAELLT_AUS = Regex("""f(ä|ae)llt(?![\p{L}\p{N}]).{0,30}(?<![\p{L}\p{N}])aus(?![\p{L}\p{N}])""")
 
     /** Hinweise auf eine Klausur im Infotext der Stunde. */
     private val KLAUSUR_WOERTER = Regex("klausur|klassenarbeit")
 
     /** Eindeutige Wendungen – hier reicht ein Teilstring. */
-    private val ENTFALL_PHRASEN = listOf(
-        "entfällt", "entfaellt", "fällt aus", "faellt aus", "ausfall", "absage", "abgesagt",
-        "zu hause"
-    )
+    private val ENTFALL_PHRASEN = AUSFALL_PHRASEN + listOf("ausfall", "absage", "abgesagt", "zu hause")
 
     fun parse(input: InputStream, schulnummerFallback: String): GesamtPlan? {
         val doc = try {
@@ -98,8 +120,32 @@ object IndiwareXmlParser {
 
         if (kopf.zeitstempel.isBlank() && klassen.isEmpty()) return null
 
-        return GesamtPlan(kopf = kopf, klassen = klassen)
+        return GesamtPlan(kopf = kopf, klassen = klassen, klausuren = klausurTermine(root))
     }
+
+    /**
+     * Die Klausurliste: <Klausur> mit Kurs, Jahrgang, Beginn und Dauer (Minuten). Die Feldnamen
+     * tragen je nach Schule ein Präfix ("KlKurs", "KlBeginn" …), darum zählt nur das Ende des
+     * Namens. Fehlt der Jahrgang, kommt er aus der umgebenden Klasse.
+     */
+    private fun klausurTermine(root: Element): List<KlausurTermin> =
+        root.nachfahren("Klausur").mapNotNull { el ->
+            fun feld(ende: String) = el.kinder()
+                .firstOrNull { it.tagName.endsWith(ende, ignoreCase = true) }.textOrEmpty()
+
+            val kurs = feld("Kurs")
+            val beginn = parseUhrzeit(feld("Beginn"))
+            val dauer = feld("Dauer").toIntOrNull()
+            if (kurs.isBlank() || beginn == null || dauer == null || dauer <= 0) return@mapNotNull null
+
+            var jahrgang = feld("Jahrgang")
+            if (jahrgang.isBlank()) {
+                var eltern = el.parentNode
+                while (eltern != null && !(eltern is Element && eltern.tagName in KLASSE_TAGS)) eltern = eltern.parentNode
+                jahrgang = (eltern as? Element).kind("Kurz").textOrEmpty()
+            }
+            KlausurTermin(jahrgang, kurs, beginn, dauer)
+        }.distinct()
 
     private fun klasseElement(kl: Element): KlassenPlan? {
         val name = kl.kind("Kurz").textOrEmpty()
@@ -154,8 +200,8 @@ object IndiwareXmlParser {
             
             val lehrerRoh = lehrerEl.textOrEmpty()
             // Technische Platzhalter wie "LeGeaendert" ausfiltern, die sehen in der App hässlich aus.
-            val lehrer = if (lehrerRoh.contains("Geaendert", ignoreCase = true) || 
-                            lehrerRoh.contains("Änd", ignoreCase = true)) "" else lehrerRoh
+            // (Nicht über "Änd" suchen: "Händel", "Brändle" … sind echte Lehrernamen.)
+            val lehrer = if (istPlatzhalter(lehrerRoh)) "" else lehrerRoh
 
             if (stText.isBlank() && fach.isBlank() && info.isBlank()) return@mapNotNull null
 
@@ -171,11 +217,10 @@ object IndiwareXmlParser {
             // träfen sie "Freitag", "Evangelisch", Lehrernamen wie "Evers" usw. und markierten
             // normalen Unterricht fälschlich als Entfall.
             val hatEntfallInfo = ENTFALL_WOERTER.containsMatchIn(infoText) ||
-                                 ENTFALL_WOERTER.containsMatchIn(lehrerRoh.lowercase()) ||
+                                 ENTFALL_WOERTER_LEHRER.containsMatchIn(lehrerRoh.lowercase()) ||
                                  ENTFALL_PHRASEN.any { infoText.contains(it) || gesamtText.contains(it) } ||
-                                 (gesamtText.contains("kein") && gesamtText.contains("unterricht")) ||
-                                 (gesamtText.contains("fällt") && gesamtText.contains("aus")) ||
-                                 (gesamtText.contains("faellt") && gesamtText.contains("aus"))
+                                 KEIN_UNTERRICHT.containsMatchIn(gesamtText) ||
+                                 FAELLT_AUS.containsMatchIn(gesamtText)
 
             // Priorität 2: "---" in Fach oder Lehrer (ENTFALL)
             val hatStrich = fach == "---" || lehrer == "---"

@@ -1,5 +1,25 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.ui.theme.fachAnzeige
+import com.nextlesson.app.data.Noten
+import com.nextlesson.app.data.AusfallStatistik
+import com.nextlesson.app.ui.theme.FarbThema
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
+import com.nextlesson.app.data.FachName
+import com.nextlesson.app.data.DesignModus
+import com.nextlesson.app.data.Patchnotes
+import com.nextlesson.app.ui.theme.FachFarbAuswahl
+import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,6 +64,7 @@ import java.time.ZoneId
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,10 +88,29 @@ fun EinstellungenScreen(
     onGrosserTextSetzen: (Boolean) -> Unit,
     onKurseAendern: () -> Unit,
     freunde: List<Freund> = emptyList(),
-    onFreundBearbeiten: (Freund?) -> Unit = {}
+    onFreundBearbeiten: (Freund?) -> Unit = {},
+    onLinkImportieren: (Freund) -> Unit = {},
+    onKurseTeilen: (() -> Unit)? = null,
+    modus: DesignModus = DesignModus.SYSTEM,
+    onModus: (DesignModus) -> Unit = {},
+    farbThema: FarbThema = FarbThema.MOCHA,
+    onFarbThema: (FarbThema) -> Unit = {},
+    fachSymbole: Boolean = true,
+    onFachSymbole: (Boolean) -> Unit = {},
+    fachNamen: List<String> = emptyList(),
+    fachFarben: Map<String, Int> = emptyMap(),
+    onFachFarbe: (String, Int?) -> Unit = { _, _ -> },
+    update: UpdateZustand = UpdateZustand.Unbekannt,
+    installierterBuild: Int = 0,
+    onUpdatePruefen: () -> Unit = {},
+    onUpdateLaden: () -> Unit = {},
+    onUpdateInstallieren: () -> Unit = {}
 ) {
-    var schulnummer by remember { mutableStateOf(credentials?.schulnummer.orEmpty()) }
-    var benutzer by remember { mutableStateOf(credentials?.benutzername.orEmpty()) }
+    var farbDialog by rememberSaveable { mutableStateOf(false) }
+    // Schulnummer und Benutzername überstehen Drehen und App-Wechsel; das Passwort bewusst nicht,
+    // damit es nicht im gespeicherten Bildschirmzustand landet.
+    var schulnummer by rememberSaveable { mutableStateOf(credentials?.schulnummer.orEmpty()) }
+    var benutzer by rememberSaveable { mutableStateOf(credentials?.benutzername.orEmpty()) }
     var passwort by remember { mutableStateOf(credentials?.passwort.orEmpty()) }
     var zeitDialog by remember { mutableStateOf(false) }
 
@@ -142,29 +182,85 @@ fun EinstellungenScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Deine Kurse", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = "Legt fest, welche Stunden angezeigt werden.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Deine Kurse", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Legt fest, welche Stunden angezeigt werden.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(onClick = onKurseAendern) { Text("Ändern") }
                 }
-                OutlinedButton(onClick = onKurseAendern) { Text("Ändern") }
+                if (onKurseTeilen != null) {
+                    OutlinedButton(onClick = onKurseTeilen, modifier = Modifier.fillMaxWidth()) {
+                        Text("Meine Kurse als Link teilen")
+                    }
+                }
             }
         }
+
+        // --- Darstellung ---
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Darstellung", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DesignModus.entries.forEach { m ->
+                        FilterChip(selected = modus == m, onClick = { onModus(m) }, label = { Text(m.anzeige) })
+                    }
+                }
+                Text("Farbthema", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FarbThema.entries.forEach { t ->
+                        FilterChip(selected = farbThema == t, onClick = { onFarbThema(t) }, label = { Text(t.anzeige) })
+                    }
+                }
+                OutlinedButton(onClick = { farbDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Farbe pro Fach anpassen")
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Fach-Symbole", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = "Ein Symbol vor dem Fach, z. B. 🔢 Mathe.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = fachSymbole, onCheckedChange = onFachSymbole)
+                }
+            }
+        }
+
+        // --- Statistik ---
+        AusfallKarte()
 
         // --- Freunde ---
         // Braucht die Kursliste der Schule – also erst, wenn ein Zugang gespeichert ist.
         if (credentials != null) {
-            FreundeEinstellungenKarte(freunde = freunde, onBearbeiten = onFreundBearbeiten)
+            FreundeEinstellungenKarte(
+                freunde = freunde,
+                onBearbeiten = onFreundBearbeiten,
+                onLinkImportieren = onLinkImportieren
+            )
         }
 
         // --- Widget ---
@@ -244,7 +340,18 @@ fun EinstellungenScreen(
             Text("Zugang speichern")
         }
 
+        UpdateKarte(update, installierterBuild, onUpdatePruefen, onUpdateLaden, onUpdateInstallieren)
+        VersionsZeile()
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (farbDialog) {
+        FachFarbenDialog(
+            faecher = fachNamen,
+            farben = fachFarben,
+            onFarbe = onFachFarbe,
+            onFertig = { farbDialog = false }
+        )
     }
 
     if (zeitDialog) {
@@ -313,6 +420,28 @@ private fun BenachrichtigungenKarte() {
                         }
                     )
                 }
+            }
+
+            var freundFrei by remember { mutableStateOf(einstellungen.freundFrei) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Freund hat auch frei",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Meldet, wenn du und ein Freund plötzlich gleichzeitig frei habt.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = freundFrei,
+                    onCheckedChange = { an ->
+                        einstellungen.freundFrei = an
+                        freundFrei = an
+                    }
+                )
             }
 
             StatusZeile(
@@ -418,4 +547,209 @@ private fun ZeitDialog(
             TextButton(onClick = onAbbrechen) { Text("Abbrechen") }
         }
     )
+}
+
+/** Pro Fach eine eigene Farbe wählen (oder zurück zur automatischen). */
+@Composable
+private fun FachFarbenDialog(
+    faecher: List<String>,
+    farben: Map<String, Int>,
+    onFarbe: (String, Int?) -> Unit,
+    onFertig: () -> Unit
+) {
+    val dunkel = istDunkel()
+    AlertDialog(
+        onDismissRequest = onFertig,
+        title = { Text("Farbe pro Fach") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                if (faecher.isEmpty()) {
+                    Text(
+                        text = "Sobald dein Plan geladen ist, erscheinen hier deine Fächer.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                faecher.forEach { fach ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(14.dp)
+                                    .clip(CircleShape)
+                                    .background(fachFarbe(fach, dunkel))
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(fach, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            if (farben.containsKey(FachName.schluessel(fach)) || farben.containsKey(fach.trim().lowercase())) {
+                                TextButton(onClick = { onFarbe(fach, null) }) { Text("Automatisch") }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FachFarbAuswahl.forEach { farbe ->
+                                Box(
+                                    Modifier
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(farbe)
+                                        .clickable { onFarbe(fach, farbe.toArgb()) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onFertig) { Text("Fertig") } }
+    )
+}
+
+/** Zeigt, welcher Build installiert ist – so sieht man, ob ein Update angekommen ist. */
+@Composable
+private fun VersionsZeile() {
+    val context = LocalContext.current
+    val info = remember {
+        runCatching {
+            val p = context.packageManager.getPackageInfo(context.packageName, 0)
+            val build = if (android.os.Build.VERSION.SDK_INT >= 28) p.longVersionCode else @Suppress("DEPRECATION") p.versionCode.toLong()
+            "Build $build · Version ${p.versionName}"
+        }.getOrDefault("Build unbekannt")
+    }
+    var verlauf by remember { mutableStateOf(false) }
+    TextButton(onClick = { verlauf = true }, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "$info · Was ist neu?",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+    if (verlauf) {
+        AlertDialog(
+            onDismissRequest = { verlauf = false },
+            title = { Text("Update-Verlauf") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Patchnotes.alle.sortedByDescending { it.id }.forEach { eintrag ->
+                        Text(eintrag.titel, style = MaterialTheme.typography.titleSmall)
+                        eintrag.punkte.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { verlauf = false }) { Text("Schließen") } }
+        )
+    }
+}
+
+/** App-Update: neuen Build suchen, herunterladen und installieren. */
+@Composable
+private fun UpdateKarte(
+    update: UpdateZustand,
+    installiert: Int,
+    onPruefen: () -> Unit,
+    onLaden: () -> Unit,
+    onInstallieren: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("App-Update", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = when (update) {
+                    is UpdateZustand.Unbekannt -> "Du hast Build $installiert."
+                    is UpdateZustand.Sucht -> "Suche nach Updates …"
+                    is UpdateZustand.Aktuell -> "Build $installiert ist der neueste."
+                    is UpdateZustand.Verfuegbar -> "Build ${update.build} ist verfügbar (du hast $installiert)."
+                    is UpdateZustand.Laedt -> "Lade Build ${update.build} … ${update.prozent} %"
+                    is UpdateZustand.Bereit -> "Build ${update.build} ist heruntergeladen."
+                    is UpdateZustand.Fehler -> update.nachricht
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (update is UpdateZustand.Fehler) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            when (update) {
+                is UpdateZustand.Verfuegbar -> Button(onClick = onLaden, modifier = Modifier.fillMaxWidth()) {
+                    Text("Herunterladen")
+                }
+                is UpdateZustand.Bereit -> Button(onClick = onInstallieren, modifier = Modifier.fillMaxWidth()) {
+                    Text("Installieren")
+                }
+                is UpdateZustand.Sucht, is UpdateZustand.Laedt -> Unit
+                else -> OutlinedButton(onClick = onPruefen, modifier = Modifier.fillMaxWidth()) {
+                    Text("Nach Update suchen")
+                }
+            }
+        }
+    }
+}
+
+
+/** Wie viele Stunden fielen in diesem Halbjahr aus – ab dem Moment, an dem die App den Plan sah. */
+@Composable
+private fun AusfallKarte() {
+    val context = LocalContext.current
+    var offen by remember { mutableStateOf(false) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Ausfall-Statistik", style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(onClick = { offen = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Ausgefallene Stunden anzeigen")
+            }
+        }
+    }
+    if (offen) {
+        val heute = remember { java.time.LocalDate.now() }
+        val (von, bis) = remember { Noten.halbjahrGrenzen(heute) }
+        val ergebnis = remember { AusfallStatistik(context).auswerten(von, bis, heute) }
+        AlertDialog(
+            onDismissRequest = { offen = false },
+            title = { Text("Ausfälle · ${Noten.halbjahr(heute)}") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (ergebnis.tage == 0 && ergebnis.kommend == 0) {
+                        Text("Noch keine Daten – die App merkt sich den Plan, sobald sie ihn lädt.")
+                    } else {
+                        Text(
+                            "${ergebnis.ausgefallen} von ${ergebnis.stundenGesamt} Stunden fielen aus (${ergebnis.anteilProzent} %) – an ${ergebnis.tage} Schultagen.",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        if (ergebnis.kommend > 0) Text("Dazu kommen ${ergebnis.kommend} angekündigte Ausfälle.")
+                        ergebnis.proFach.forEach { (fach, anzahl) ->
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(fachAnzeige(fach))
+                                Text("$anzahl", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Text(
+                        "Gezählt wird ab dem ersten Mal, dass die App den Plan geladen hat – Tage davor fehlen. Klausuren zählen nicht als Ausfall.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { offen = false }) { Text("Schließen") } }
+        )
+    }
 }

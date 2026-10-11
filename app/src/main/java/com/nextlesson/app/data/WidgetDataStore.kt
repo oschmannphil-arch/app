@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.callbackFlow
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -63,8 +64,6 @@ class WidgetDataStore(context: Context) {
             editor.putLong(KEY_BEGINN_MILLIS, 0L)
             editor.putLong(KEY_ENDE_MILLIS, 0L)
         }
-        val grosserText = prefs.getBoolean(KEY_GROSSER_TEXT, false)
-        editor.putBoolean(KEY_GROSSER_TEXT, grosserText)
         editor.apply()
     }
 
@@ -103,25 +102,11 @@ class WidgetDataStore(context: Context) {
         /** Countdown, beim Zeichnen des Widgets berechnet. */
         fun countdown(jetztMillis: Long = System.currentTimeMillis()): String? {
             if (beginnMillis <= 0L) return null
-            if (endeMillis > 0L && jetztMillis in beginnMillis until endeMillis) {
-                // Aufgerundet, damit Widget und App dieselbe Minute zeigen.
-                val restMin = (endeMillis - jetztMillis + 59_999) / 60_000
-                return if (restMin <= 0) "endet gleich" else "noch ${dauer(restMin)}"
-            }
-            if (beginnMillis < jetztMillis) return null
-            val bisMin = (beginnMillis - jetztMillis + 59_999) / 60_000
-            return when {
-                bisMin == 0L -> "jetzt"
-                bisMin > 600 -> null
-                else -> "in ${dauer(bisMin)}"
-            }
-        }
-
-        private fun dauer(minuten: Long): String {
-            if (minuten < 60) return "$minuten Min"
-            val std = minuten / 60
-            val min = minuten % 60
-            return if (min == 0L) "$std Std" else "$std Std $min"
+            return countdownText(
+                bisBeginnMs = beginnMillis - jetztMillis,
+                bisEndeMs = if (endeMillis > 0L) endeMillis - jetztMillis else null,
+                laeuftPraefix = "noch"
+            )
         }
     }
 
@@ -157,7 +142,8 @@ class WidgetDataStore(context: Context) {
         prefs.registerOnSharedPreferenceChangeListener(listener)
         trySend(laden())
         awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
+        // Ein Speichern ändert viele Schlüssel nacheinander – gleiche Stände nicht mehrfach melden.
+    }.distinctUntilChanged()
 
     fun grosserTextSetzen(aktiv: Boolean) {
         prefs.edit().putBoolean(KEY_GROSSER_TEXT, aktiv).apply()

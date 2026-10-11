@@ -1,5 +1,6 @@
 package com.nextlesson.app.work
 
+import com.nextlesson.app.data.AusfallStatistik
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -7,6 +8,9 @@ import com.nextlesson.app.data.AufgabenStore
 import com.nextlesson.app.data.CredentialsStore
 import com.nextlesson.app.data.PlanKlausur
 import com.nextlesson.app.data.Aenderung
+import com.nextlesson.app.data.Freizeit
+import com.nextlesson.app.data.FreundFreiTracker
+import com.nextlesson.app.data.FreundeStore
 import com.nextlesson.app.data.AenderungsTracker
 import com.nextlesson.app.data.BenachrichtigungsEinstellungen
 import com.nextlesson.app.data.IndiwareRepository
@@ -60,12 +64,29 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         val heute = LocalDate.now()
         val jetzt = LocalTime.now()
         aenderungsTracker.aufraeumen(heute)
+        val freundFreiTracker = FreundFreiTracker(applicationContext)
+        freundFreiTracker.aufraeumen(heute)
+        val freundFreiAn = BenachrichtigungsEinstellungen(applicationContext).freundFrei
+        // Der Stand wird auch bei abgeschalteter Meldung mitgeführt – beim Einschalten kommt so
+        // keine Flut alter "neuer" Freistunden (wie beim AenderungsTracker).
+        val freunde = FreundeStore(applicationContext).freunde.value
         val repository = IndiwareRepository(applicationContext)
         repository.aufraeumen()
 
         // Heute + die nächsten Tage – anzahl = 7 stellt sicher, dass man am Wochenende
         // (Freitagabend) bereits den Entfall für Montagmorgen sieht.
-        val tage = repository.holeTage(creds, heute, anzahl = 7)
+        // Stundenwechsel-Läufe (NUR_GESPEICHERT) zeichnen nur das Widget neu – ohne Netz. Fehlt
+        // der gespeicherte Plan, wird doch normal geladen.
+        val gespeichert = if (inputData.getBoolean(NUR_GESPEICHERT, false)) {
+            repository.holeTageAusCache(creds, heute, anzahl = 7)
+        } else {
+            null
+        }
+        val tage = if (gespeichert != null && gespeichert.any { it.second is PlanResult.Success }) {
+            gespeichert
+        } else {
+            repository.holeTage(creds, heute, anzahl = 7)
+        }
 
         if (tage.any { it.second is PlanResult.AuthFehler }) {
             hinweisSchreiben("Login fehlgeschlagen")
@@ -84,6 +105,8 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         var anzeigeGeprueftUm: Long = System.currentTimeMillis()
         var naechsteGrenzzeitMillis: Long = Long.MAX_VALUE
         val klausurenProTag = HashMap<LocalDate, List<PlanKlausur>>()
+        val ausfallStatistik = AusfallStatistik(applicationContext)
+        ausfallStatistik.aufraeumen()
 
         tage.forEach { (datum, ergebnis) ->
             val success = ergebnis as? PlanResult.Success ?: return@forEach
@@ -111,6 +134,23 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
 
                 // Klausuren aus dem Plan (nur eigene Kurse, da der Plan schon gefiltert ist).
                 klausurenProTag[datum] = PlanKlausur.ausStunden(datum, plan.stunden)
+
+                // Für die Ausfall-Statistik (Einstellungen).
+                ausfallStatistik.merken(datum, plan.stunden)
+
+                // Neue gemeinsame Freistunde mit einem Freund (z.B. weil bei ihm etwas ausfällt).
+                // Nur rechnen, wenn sich der Plan dieses Tages oder die Auswahl geändert hat: Das
+                // Filtern des Schulplans je Freund ist aufwendig, der Lauf kommt alle 15 Minuten.
+                val tagesStand = "${gesamt.kopf.zeitstempel}|${kurse.hashCode()}|${freunde.map { it.id to it.kurse }.hashCode()}"
+                if (freunde.isNotEmpty() && !freundFreiTracker.tagUnveraendert(datum, tagesStand)) {
+                    freunde.forEach { f ->
+                        val frei = Freizeit.gemeinsamFrei(plan, gesamt.tagesplanFuer(f.kurse), gesamt.zeitraster)
+                        val stand = 31 * kurse.hashCode() + f.kurse.hashCode()
+                        val neu = freundFreiTracker.neueBloecke(datum, f.id, stand, frei)
+                            .filter { datum.isAfter(heute) || it.ende.isAfter(jetzt) }
+                        if (freundFreiAn) FreundNotifier.melden(applicationContext, datum, f, neu)
+                    }
+                }
             }
 
             // 2. Erste passende Stunde für das Widget suchen.
@@ -172,5 +212,10 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         }
 
         return Result.success()
+    }
+
+    companion object {
+        /** Eingabe: nur aus dem gespeicherten Plan arbeiten (Stundenwechsel), nicht ins Netz. */
+        const val NUR_GESPEICHERT = "nur_gespeichert"
     }
 }

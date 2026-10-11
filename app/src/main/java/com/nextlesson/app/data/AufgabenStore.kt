@@ -61,11 +61,19 @@ class AufgabenStore(context: Context) {
                     tage.keys.any { p.id.startsWith("${PlanKlausur.PLAN_PREFIX}$it|") } &&
                     tage.values.flatten().none { it.id == p.id }
             }
+            val frisch = tage.values.flatten().associateBy { it.id }
+            // Bestehende Plan-Klausuren bekommen das (ggf. neue) Ende, sonst bliebe eine schon
+            // geschriebene Klausur bis Mitternacht "heute".
+            val aktualisiert = behalten.map { p ->
+                val f = frisch[p.id] ?: return@map p
+                val ende = f.ende?.toSecondOfDay() ?: Pruefung.KEIN_ENDE
+                if (p.endeSekunden == ende) p else p.copy(endeSekunden = ende)
+            }
             val vorhandeneIds = behalten.map { it.id }.toSet()
-            val neu = tage.values.flatten()
+            val neu = frisch.values
                 .filter { it.id !in geloescht && it.id !in vorhandeneIds }
                 .map { it.alsPruefung() }
-            behalten + neu
+            aktualisiert + neu
         }
     }
 
@@ -79,12 +87,13 @@ class AufgabenStore(context: Context) {
         val aktuell = pruefungenLesen()
         val ergebnis = aenderung(aktuell).sortedBy { it.datumEpochDay }
         _pruefungen.value = ergebnis
-        if (ergebnis != aktuell) pruefungenSchreiben()
+        if (ergebnis != aktuell) pruefungenSchreiben(ergebnis)
     }
 
     // ---------- Hausaufgaben ----------
 
-    fun hausaufgabeHinzufuegen(fach: String, text: String, faellig: LocalDate?) {
+    /** Legt die Aufgabe an und gibt ihre ID zurück. */
+    fun hausaufgabeHinzufuegen(fach: String, text: String, faellig: LocalDate?): String {
         val neu = Hausaufgabe(
             fach = fach.trim(),
             text = text.trim(),
@@ -92,6 +101,7 @@ class AufgabenStore(context: Context) {
         )
         _hausaufgaben.value = (_hausaufgaben.value + neu).sortiert()
         hausaufgabenSchreiben()
+        return neu.id
     }
 
     fun hausaufgabeBearbeiten(id: String, fach: String, text: String, faellig: LocalDate?) {
@@ -243,9 +253,9 @@ class AufgabenStore(context: Context) {
         }.getOrDefault(emptyList()).sortiert()
     }
 
-    private fun pruefungenSchreiben() {
+    private fun pruefungenSchreiben(liste: List<Pruefung>) {
         val array = JSONArray()
-        _pruefungen.value.forEach { p ->
+        liste.forEach { p ->
             array.put(
                 JSONObject().apply {
                     put("id", p.id)
@@ -254,6 +264,7 @@ class AufgabenStore(context: Context) {
                     put("datum", p.datumEpochDay)
                     put("art", p.art.name)
                     put("notiz", p.notiz)
+                    put("ende", p.endeSekunden)
                 }
             )
         }
@@ -276,7 +287,8 @@ class AufgabenStore(context: Context) {
                     titel = o.optString("titel"),
                     datumEpochDay = tag,
                     art = PruefungsArt.ausName(o.optString("art")),
-                    notiz = o.optString("notiz")
+                    notiz = o.optString("notiz"),
+                    endeSekunden = o.optInt("ende", Pruefung.KEIN_ENDE)
                 )
             }
         }.getOrDefault(emptyList()).sortedBy { it.datumEpochDay }

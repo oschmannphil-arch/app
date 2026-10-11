@@ -1,12 +1,16 @@
 package com.nextlesson.app.ui
 
+import com.nextlesson.app.data.Ferien
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
+import com.nextlesson.app.data.Freiblock
+import com.nextlesson.app.data.alsEintraege
+import com.nextlesson.app.data.hinweisKurz
+import com.nextlesson.app.data.Freizeit
 import com.nextlesson.app.data.Freund
 import com.nextlesson.app.data.Hausaufgabe
 import com.nextlesson.app.data.Pruefung
@@ -54,7 +58,9 @@ import com.nextlesson.app.data.Lesson
 import com.nextlesson.app.data.LessonStatus
 import com.nextlesson.app.data.NaechsteStundeErgebnis
 import com.nextlesson.app.data.PersoenlicherPlan
+import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.ui.theme.fachFarbe
+import com.nextlesson.app.ui.theme.istDunkel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -108,6 +114,81 @@ fun FehlerScreen(
     }
 }
 
+/** Ferien oder freie Tage: freundlicher als eine Fehlermeldung, mit dem nächsten Planstand, wenn bekannt. */
+@Composable
+fun KeinPlanScreen(naechster: LocalDate?, gesucht: Boolean, onNeuPruefen: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "Schulfrei?", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Für die nächsten Tage ist kein Plan veröffentlicht – vermutlich Ferien oder ein freier Tag.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Ferien.text(LocalDate.now())?.let { ferienText ->
+            Text(
+                text = "🏖️ $ferienText (ohne Gewähr)",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        Spacer(Modifier.height(12.dp))
+        when {
+            naechster != null -> Text(
+                text = "Der nächste Plan steht für ${naechster.format(tagFormat)} bereit.",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            gesucht -> Text(
+                text = "In den nächsten vier Wochen ist noch keiner eingestellt. Sobald die Schule einen veröffentlicht, erscheint er hier.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            else -> Text(
+                text = "Ich schaue nach, wann es weitergeht …",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = onNeuPruefen) { Text("Erneut prüfen") }
+    }
+}
+
+/** Pläne sind da, aber ohne eine Stunde der gewählten Kurse – meist hat sich die Kursliste geändert. */
+@Composable
+fun KeineStundenScreen(onKurseAendern: () -> Unit, onNeuPruefen: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "Keine Stunden gefunden", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Die Schule hat Pläne veröffentlicht, aber in deinen gewählten Kursen steht in den nächsten Tagen nichts. " +
+                "Haben sich Kurse geändert oder umbenannt, wähle sie neu aus.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onKurseAendern) { Text("Kurse ändern") }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onNeuPruefen) { Text("Erneut prüfen") }
+    }
+}
+
 /** Zusammenfassung von Hausaufgaben und nächster Klausur für die Startseite. */
 data class Uebersicht(
     val offeneAufgaben: Int,
@@ -119,7 +200,8 @@ data class Uebersicht(
         fun berechne(
             hausaufgaben: List<Hausaufgabe>,
             pruefungen: List<Pruefung>,
-            heute: LocalDate = LocalDate.now()
+            heute: LocalDate = LocalDate.now(),
+            jetzt: LocalTime = LocalTime.now()
         ): Uebersicht {
             val offen = hausaufgaben.filter { !it.erledigt }
             return Uebersicht(
@@ -131,7 +213,7 @@ data class Uebersicht(
                 },
                 // Nur was in den nächsten zwei Wochen ansteht – alles Weitere wäre Rauschen.
                 naechstePruefung = pruefungen
-                    .filter { !it.istVorbei(heute) && it.tageBis(heute) <= 14 }
+                    .filter { !it.istVorbei(heute, jetzt) && it.tageBis(heute) <= 14 }
                     .minByOrNull { it.datumEpochDay }
             )
         }
@@ -148,19 +230,34 @@ fun HomeScreen(
     onStundeAntippen: (Lesson) -> Unit = {},
     freunde: List<Freund> = emptyList(),
     onFreund: (Freund) -> Unit = {},
+    onFreundeWoche: () -> Unit = {},
+    blockAnsicht: Boolean = false,
+    onBlockAnsicht: (Boolean) -> Unit = {},
     onTagVorbei: () -> Unit = {}
 ) {
     val jetzt by rememberJetzt(aktualisiertGerade)
     val plan = persoenlich.plan
     // Heute wird "nächste Stunde" mit der tickenden Uhr neu bestimmt. Sonst bliebe bei
     // geöffneter App die beim Laden ermittelte Stunde stehen, obwohl sie längst vorbei ist.
-    val naechste = if (persoenlich.istHeute) plan.naechsteStunde(jetzt) else persoenlich.naechste
-    val dunkel = isSystemInDarkTheme()
+    // "Heute" nur, solange der geladene Tag wirklich der heutige ist: Bleibt die App über
+    // Mitternacht offen, wäre sonst um 00:30 die erste Stunde von gestern "als Nächstes".
+    val heuteDatum = remember(jetzt) { LocalDate.now() }
+    val istHeute = persoenlich.istHeute && persoenlich.datum == heuteDatum
+    LaunchedEffect(heuteDatum, persoenlich.datum) {
+        if (persoenlich.istHeute && persoenlich.datum != heuteDatum) onTagVorbei()
+    }
+    val naechste = if (istHeute) plan.naechsteStunde(jetzt) else persoenlich.naechste
+    val dunkel = istDunkel()
+    // Freistunden im Zeitraster der Schule (auch vor der ersten Stunde), je an der Stelle der
+    // Stunde, die danach kommt.
+    val freiVor = remember(persoenlich) { Freizeit.freiVor(plan, persoenlich.gesamt.zeitraster) }
+
+    val eintraege = remember(plan, blockAnsicht) { plan.stunden.alsEintraege(blockAnsicht) }
 
     // Endet die letzte Stunde, während die App offen ist, einmal neu laden: Dann springt die
     // Ansicht auf den nächsten Schultag, statt "kein Unterricht in den nächsten Tagen" zu zeigen.
     // Höchstens einmal je Tag, damit es keine Endlosschleife gibt, falls wirklich nichts kommt.
-    val tagVorbei = persoenlich.istHeute && naechste == null
+    val tagVorbei = istHeute && naechste == null
     var nachgeladenFuer by remember { mutableStateOf<LocalDate?>(null) }
     LaunchedEffect(tagVorbei, persoenlich.datum) {
         if (tagVorbei && nachgeladenFuer != persoenlich.datum) {
@@ -182,10 +279,21 @@ fun HomeScreen(
             }
         }
 
+        Ferien.text(LocalDate.now())?.let { ferienText ->
+            item {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "🏖️ $ferienText (ohne Gewähr)",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
         item {
             Spacer(Modifier.height(4.dp))
             if (naechste != null) {
-                HeroKarte(naechste, persoenlich.istHeute, persoenlich.datum, jetzt, dunkel)
+                HeroKarte(naechste, istHeute, persoenlich.datum, jetzt, dunkel)
             } else {
                 LeerKarte(tagVorbei = tagVorbei, laedt = aktualisiertGerade)
             }
@@ -194,7 +302,7 @@ fun HomeScreen(
         if (plan.hinweise.isNotEmpty()) {
             item {
                 UebersichtKarte(
-                    titel = "Hinweise für ${if (persoenlich.istHeute) "heute" else "diesen Tag"}",
+                    titel = "Hinweise für ${if (istHeute) "heute" else "diesen Tag"}",
                     text = plan.hinweise.joinToString("\n"),
                     hervorgehoben = plan.hinweise.any { it.contains("klausur", ignoreCase = true) },
                     onClick = null
@@ -224,7 +332,7 @@ fun HomeScreen(
         }
 
         if (freunde.isNotEmpty()) {
-            item { FreundeKarte(freunde, persoenlich, onFreund) }
+            item { FreundeKarte(freunde, persoenlich, onFreund, onFreundeWoche) }
         }
 
         item {
@@ -238,7 +346,7 @@ fun HomeScreen(
                 Text(
                     text = buildString {
                         append(
-                            if (persoenlich.istHeute) "Heute" else
+                            if (istHeute) "Heute" else
                                 persoenlich.datum.format(kurzTagFormat).replaceFirstChar { it.uppercase() }
                         )
                         plan.schluss()?.let { append(" · Schluss ${it.format(zeitFormat)}") }
@@ -253,18 +361,21 @@ fun HomeScreen(
             }
         }
 
+        item { AnsichtUmschalter(blockAnsicht, onBlockAnsicht) }
+
         // Bewusst ohne key: bei mehreren gewählten Kursblöcken können zwei Stunden
         // dieselbe Nummer und dasselbe Fach haben, und doppelte Keys lassen LazyColumn abstürzen.
-        val freiVor = plan.freistunden().associate { (index, von, bis) -> index to (von to bis) }
-        itemsIndexed(plan.stunden) { index, lesson ->
+        itemsIndexed(eintraege) { _, block ->
+            val lesson = block.zusammengefasst
             Column {
-                freiVor[index]?.let { (von, bis) -> FreistundenZeile(von, bis) }
+                freiVor[block.ersteIndex]?.let { FreistundenZeile(it) }
                 StundenZeile(
                     lesson = lesson,
-                    istNaechste = lesson.stunde == naechste?.lesson?.stunde,
-                    laeuftGerade = persoenlich.istHeute && laeuft(lesson, jetzt),
+                    istNaechste = block.stunden.any { it.stunde == naechste?.lesson?.stunde },
+                    laeuftGerade = istHeute && laeuft(lesson, jetzt),
                     dunkel = dunkel,
-                    onClick = { onStundeAntippen(lesson) }
+                    onClick = { onStundeAntippen(block.erste) },
+                    stundenText = if (blockAnsicht) block.stundenText else null
                 )
             }
         }
@@ -352,11 +463,12 @@ private fun pruefungText(p: Pruefung): String {
     return if (name.isBlank()) wann.replaceFirstChar { it.uppercase() } else "$name · $wann"
 }
 
-/** Dezente Zeile für eine Lücke im Tag, damit man Freistunden auf einen Blick sieht. */
+/** Dezente Zeile für eine Freistunde, damit man freie Zeit auf einen Blick sieht. */
 @Composable
-private fun FreistundenZeile(von: LocalTime, bis: LocalTime) {
+internal fun FreistundenZeile(block: Freiblock) {
+    val zeit = "${block.beginn.format(zeitFormat)}–${block.ende.format(zeitFormat)}"
     Text(
-        text = "Frei · ${von.format(zeitFormat)}–${bis.format(zeitFormat)}",
+        text = listOfNotNull("Freistunde", block.stundenText, zeit).joinToString(" · "),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 14.dp, bottom = 10.dp)
@@ -401,14 +513,20 @@ private fun HeroKarte(
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
     val istVertretung = status == LessonStatus.VERTRETUNG
-    val gestoert = status != LessonStatus.NORMAL
+    val klausur = lesson.istKlausur && !istEntfall
+    // Bei einer Klausur ist ein anderer Name unter "Lehrer" die Aufsicht, keine Vertretung.
+    val aufsicht = klausur && istVertretung
+    val gestoert = status != LessonStatus.NORMAL && !aufsicht
+    // Rot und beschriftet: Ausfall, Änderung oder Klausur – alles, was man nicht übersehen soll.
+    val warnung = gestoert || klausur
 
-    val akzent = when (status) {
-        LessonStatus.ENTFALL -> MaterialTheme.colorScheme.outline
-        LessonStatus.VERTRETUNG -> Color(0xFFFF9800)
-        LessonStatus.RAUMAENDERUNG -> Color(0xFFFF9800)
+    val akzent = when {
+        klausur -> MaterialTheme.colorScheme.error
+        status == LessonStatus.ENTFALL -> MaterialTheme.colorScheme.outline
+        status == LessonStatus.VERTRETUNG || status == LessonStatus.RAUMAENDERUNG -> Color(0xFFFF9800)
         else -> fachFarbe(lesson.fach, dunkel)
     }
+    val hinweis = lesson.hinweisKurz().ifBlank { if (gestoert) "Änderung zum Regelplan" else "" }
 
     val kopf = when {
         !istHeute -> {
@@ -425,7 +543,7 @@ private fun HeroKarte(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (gestoert) MaterialTheme.colorScheme.errorContainer
+            containerColor = if (warnung) MaterialTheme.colorScheme.errorContainer
             else MaterialTheme.colorScheme.primaryContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -452,7 +570,7 @@ private fun HeroKarte(
                     Text(
                         text = kopf,
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (gestoert) MaterialTheme.colorScheme.onErrorContainer
+                        color = if (warnung) MaterialTheme.colorScheme.onErrorContainer
                         else MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     if (countdown != null) {
@@ -469,13 +587,21 @@ private fun HeroKarte(
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    text = lesson.fach.ifBlank { "—" },
+                    text = fachAnzeige(lesson.fach.ifBlank { "—" }),
                     style = MaterialTheme.typography.displaySmall,
-                    color = if (gestoert) MaterialTheme.colorScheme.onErrorContainer
+                    color = if (warnung) MaterialTheme.colorScheme.onErrorContainer
                     else MaterialTheme.colorScheme.onPrimaryContainer,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (klausur || istEntfall) {
+                    Spacer(Modifier.height(6.dp))
+                    StatusBadge(
+                        text = if (klausur) "Klausur" else "Fällt aus",
+                        hintergrund = MaterialTheme.colorScheme.error,
+                        vordergrund = MaterialTheme.colorScheme.onError
+                    )
+                }
 
                 Spacer(Modifier.height(10.dp))
 
@@ -487,7 +613,7 @@ private fun HeroKarte(
                     InfoBlock(
                         titel = "Raum",
                         wert = if (istEntfall) "—" else lesson.raum.ifBlank { "—" },
-                        gestoert = gestoert,
+                        gestoert = warnung,
                         originalWert = if (lesson.raumGeaendert) lesson.originalRoom else null,
                         modifier = Modifier.weight(1f)
                     )
@@ -501,16 +627,16 @@ private fun HeroKarte(
                             } else {
                                 beginn.format(zeitFormat)
                             },
-                            gestoert = gestoert,
+                            gestoert = warnung,
                             modifier = Modifier.weight(1.2f) // Etwas mehr Platz für die Zeitspanne
                         )
                     }
                     if (lesson.lehrer.isNotBlank()) {
                         InfoBlock(
-                            titel = "Lehrer",
+                            titel = if (aufsicht) "Aufsicht" else "Lehrer",
                             wert = lesson.lehrer,
-                            gestoert = gestoert,
-                            originalWert = if (istVertretung) lesson.originalTeacher else null,
+                            gestoert = warnung,
+                            originalWert = if (istVertretung && !aufsicht) lesson.originalTeacher else null,
                             modifier = Modifier.weight(1f)
                         )
                     } else {
@@ -519,10 +645,10 @@ private fun HeroKarte(
                     }
                 }
 
-                if (gestoert) {
+                if (hinweis.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = lesson.info.ifBlank { "Änderung zum Regelplan" },
+                        text = hinweis,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onErrorContainer
@@ -612,7 +738,8 @@ internal fun StundenZeile(
     istNaechste: Boolean,
     laeuftGerade: Boolean,
     dunkel: Boolean,
-    onClick: (() -> Unit)?
+    onClick: (() -> Unit)?,
+    stundenText: String? = null
 ) {
     val status = lesson.status
     val istEntfall = status == LessonStatus.ENTFALL
@@ -638,7 +765,7 @@ internal fun StundenZeile(
     val alpha = if (istEntfall) 0.4f else 1.0f
 
     val desc = buildString {
-        append("${lesson.stunde}. Stunde: ${lesson.fach.ifBlank { "Unbekannt" }}")
+        append("${stundenText ?: "${lesson.stunde}. Stunde"}: ${lesson.fach.ifBlank { "Unbekannt" }}")
         when (status) {
             LessonStatus.ENTFALL -> append(", fällt aus")
             LessonStatus.VERTRETUNG -> append(", Vertretung durch ${lesson.lehrer}")
@@ -693,6 +820,13 @@ internal fun StundenZeile(
                 style = MaterialTheme.typography.labelSmall,
                 color = textNeben
             )
+            if (stundenText != null) {
+                Text(
+                    text = stundenText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = textNeben
+                )
+            }
         }
 
         // Farbpunkt als Fachkennung
@@ -708,7 +842,7 @@ internal fun StundenZeile(
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = lesson.fach.ifBlank { "—" },
+                    text = fachAnzeige(lesson.fach.ifBlank { "—" }),
                     style = MaterialTheme.typography.titleMedium,
                     textDecoration = if (istEntfall) TextDecoration.LineThrough else null,
                     color = if (istEntfall) textNeben else textHaupt,
@@ -747,9 +881,10 @@ internal fun StundenZeile(
                 }
             }
             // Hinweis des Plans (z.B. "Klausur!", "Aufgaben in Moodle") – so sieht man, warum.
-            if (lesson.info.isNotBlank()) {
+            val hinweisText = lesson.hinweisKurz()
+            if (hinweisText.isNotBlank()) {
                 Text(
-                    text = lesson.info,
+                    text = hinweisText,
                     style = MaterialTheme.typography.labelSmall,
                     color = textNeben,
                     maxLines = 2,
