@@ -12,11 +12,15 @@ object TextErkennung {
 
     /** [fertig] bekommt den erkannten Text oder null, wenn nichts erkannt wurde bzw. es einen Fehler gab. */
     fun aus(context: Context, datei: File, fertig: (String?) -> Unit) {
-        val bild = runCatching { InputImage.fromFilePath(context, Uri.fromFile(datei)) }.getOrNull()
-        if (bild == null) {
+        val original = runCatching { InputImage.fromFilePath(context, Uri.fromFile(datei)) }.getOrNull()
+        if (original == null) {
             fertig(null)
             return
         }
+        // Erst das Bild aufbereiten (Tafel umkehren, Licht ausgleichen, Kontrast); klappt das nicht, gilt das Original.
+        val bild = original.bitmapInternal?.let { roh ->
+            runCatching { InputImage.fromBitmap(BildAufbereitung.fuerTexterkennung(roh), 0) }.getOrNull()
+        } ?: original
         val erkenner = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         erkenner.process(bild)
             .addOnSuccessListener { ergebnis ->
