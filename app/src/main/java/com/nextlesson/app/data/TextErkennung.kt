@@ -19,7 +19,14 @@ object TextErkennung {
         }
         val erkenner = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         erkenner.process(bild)
-            .addOnSuccessListener { fertig(it.text.trim().ifEmpty { null }) }
+            .addOnSuccessListener { ergebnis ->
+                // Mit Positionen der Wörter: Tabellen bleiben Tabellen. Fehlen sie, gilt der rohe Text.
+                val woerter = ergebnis.textBlocks.flatMap { b -> b.lines.flatMap { l -> l.elements } }.mapNotNull { e ->
+                    e.boundingBox?.let { r -> TabellenText.Wort(e.text, r.left, r.right, r.top, r.bottom) }
+                }
+                val text = (if (woerter.isNotEmpty()) TabellenText.aufbereiten(woerter) else ergebnis.text).trim()
+                fertig(text.ifEmpty { null })
+            }
             .addOnFailureListener { fertig(null) }
     }
 }

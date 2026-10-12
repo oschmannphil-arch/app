@@ -251,11 +251,10 @@ private fun AufgabenZeile(
                         )
                     }
                 }
-                Text(
+                TextMitTabelle(
                     text = aufgabe.text,
-                    style = MaterialTheme.typography.bodyLarge,
-                    textDecoration = if (aufgabe.erledigt) TextDecoration.LineThrough else null,
-                    color = if (aufgabe.erledigt) MaterialTheme.colorScheme.onSurfaceVariant
+                    durchgestrichen = aufgabe.erledigt,
+                    farbe = if (aufgabe.erledigt) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.onSurface
                 )
                 aufgabe.faellig?.let { datum ->
@@ -517,6 +516,45 @@ fun LeerHinweis(text: String) {
     }
 }
 
+
+/** Aufgabentext; Zeilen der Form "A | B | C" erscheinen als Tabelle. */
+@Composable
+private fun TextMitTabelle(text: String, durchgestrichen: Boolean, farbe: androidx.compose.ui.graphics.Color) {
+    val deko = if (durchgestrichen) TextDecoration.LineThrough else null
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        com.nextlesson.app.data.TabellenText.abschnitte(text).forEach { abschnitt ->
+            when (abschnitt) {
+                is com.nextlesson.app.data.TabellenText.Abschnitt.Normal ->
+                    Text(abschnitt.text, style = MaterialTheme.typography.bodyLarge, textDecoration = deko, color = farbe)
+                is com.nextlesson.app.data.TabellenText.Abschnitt.Tabelle -> {
+                    val spalten = abschnitt.zeilen.maxOf { it.size }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f))
+                    ) {
+                        abschnitt.zeilen.forEachIndexed { i, zeile ->
+                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                for (c in 0 until spalten) {
+                                    Text(
+                                        text = zeile.getOrElse(c) { "" },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (i == 0) FontWeight.Bold else FontWeight.Normal,
+                                        textDecoration = deko,
+                                        color = farbe,
+                                        modifier = Modifier.weight(1f).padding(end = 6.dp)
+                                    )
+                                }
+                            }
+                            if (i < abschnitt.zeilen.size - 1) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /** Alle Tafelfotos, nach Fach gruppiert; ein Tipp öffnet das Foto groß. */
 @Composable

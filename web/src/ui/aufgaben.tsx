@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { type Hausaufgabe, type Pruefung, type PruefungsArt, istUeberfaellig, pruefungIstVorbei, pruefungsArtText, tageBis } from '../logic/aufgaben';
 import { FachName } from '../logic/fachname';
+import { abschnitte } from '../logic/tabellentext';
 import { type Datum, deutschesDatum, heute as heuteTag, langesDatum, plusTage } from '../logic/zeit';
 import { aufgabenAblage, hausaufgabeBearbeiten, hausaufgabeHinzufuegen, hausaufgabeLoeschen, hausaufgabeUmschalten, pruefungBearbeiten, pruefungHinzufuegen, pruefungLoeschen, pruefungenAblage } from '../services/daten';
 import { fotoIds, fotoLesen, fotoLoeschen, fotoSpeichern, fotoVerkleinern } from '../services/kv';
@@ -238,7 +239,23 @@ function AufgabenZeile(p: { h: Hausaufgabe; heute: Datum; hatFoto: boolean; onBe
             <span class="sehr-klein">{anzeige(h.fach)}</span>
           </div>
         )}
-        <div class={h.erledigt ? 'durch' : ''} style={{ fontSize: 16, color: h.erledigt ? 'var(--on-surface-variant)' : 'var(--on-surface)', whiteSpace: 'pre-wrap' }}>{h.text}</div>
+        <div class={h.erledigt ? 'durch' : ''} style={{ fontSize: 16, color: h.erledigt ? 'var(--on-surface-variant)' : 'var(--on-surface)', whiteSpace: 'pre-wrap' }}>
+          {abschnitte(h.text).map((a, i) =>
+            a.art === 'NORMAL' ? (
+              <div key={i}>{a.text}</div>
+            ) : (
+              <table key={i} class="aufgaben-tabelle">
+                <tbody>
+                  {a.zeilen.map((z, r) => (
+                    <tr key={r}>
+                      {z.map((c, k) => (r === 0 ? <th key={k}>{c}</th> : <td key={k}>{c}</td>))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+        </div>
         {h.faellig && (
           <div class="sehr-klein" style={{ fontWeight: ueber ? 700 : 400, color: ueber ? 'var(--error)' : undefined }}>{faelligkeitText(h.faellig, p.heute)}</div>
         )}
