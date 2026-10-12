@@ -83,6 +83,9 @@ dependencies {
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // Texterkennung auf dem Gerät (Tafelfoto → Text); das Modell steckt in der App, kein Netz nötig.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
     // Background refresh
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 

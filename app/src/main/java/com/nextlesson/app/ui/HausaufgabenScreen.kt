@@ -1,5 +1,8 @@
 package com.nextlesson.app.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import com.nextlesson.app.data.FotoAenderung
@@ -76,6 +79,9 @@ fun HausaufgabenScreen(
     fotoVersion: Int = 0
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
+    var galerieOffen by remember { mutableStateOf(false) }
+    val kontext = LocalContext.current
+    val mitFoto = remember(aufgaben, fotoVersion) { aufgaben.filter { TafelFotos.vorhanden(kontext, it.id) } }
     var bearbeitungsAufgabe by remember { mutableStateOf<Hausaufgabe?>(null) }
     val dunkel = istDunkel()
     val heute = LocalDate.now()
@@ -107,6 +113,9 @@ fun HausaufgabenScreen(
                         if (it > 0) "$it überfällig" else null
                     }
                 )
+                if (mitFoto.isNotEmpty()) {
+                    TextButton(onClick = { galerieOffen = true }) { Text("📷 Tafelfotos (${mitFoto.size})") }
+                }
                 if (aufgaben.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
                     LinearProgressIndicator(
@@ -166,6 +175,10 @@ fun HausaufgabenScreen(
 
             item { Spacer(Modifier.height(88.dp)) }
         }
+    }
+
+    if (galerieOffen) {
+        FotoGalerie(mitFoto, onSchliessen = { galerieOffen = false })
     }
 
     if (dialogOffen) {
@@ -307,6 +320,16 @@ internal fun HausaufgabeDialog(
     val kamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) { neuesFoto = true; fotoEntfernen = false } }
     var fach by remember { mutableStateOf(bestehendeAufgabe?.fach ?: vorschlagFach ?: "") }
     var text by remember { mutableStateOf(bestehendeAufgabe?.text ?: "") }
+    // Diktieren: die Spracherkennung des Geräts liefert Text, der ans Feld angehängt wird.
+    var sprachFehler by remember { mutableStateOf(false) }
+    val diktat = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val gesagt = r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (r.resultCode == android.app.Activity.RESULT_OK && !gesagt.isNullOrBlank()) {
+            text = if (text.isBlank()) gesagt else text.trimEnd() + " " + gesagt
+        }
+    }
+    // Text aus dem Foto lesen (frisches Kamerabild oder das gespeicherte Foto der Aufgabe).
+    var ocrStatus by remember { mutableStateOf<String?>(null) }
     // Neue Aufgabe: ab morgen; bestehende behält ihr Datum – auch "ohne Datum".
     var faellig by remember {
         mutableStateOf<LocalDate?>(if (bestehendeAufgabe != null) bestehendeAufgabe.faellig else LocalDate.now().plusDays(1))
@@ -337,6 +360,43 @@ internal fun HausaufgabeDialog(
                     label = { Text("Was ist zu tun?") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AssistChip(
+                        onClick = {
+                            sprachFehler = false
+                            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "de-DE")
+                                putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Was ist zu tun?")
+                            }
+                            runCatching { diktat.launch(intent) }.onFailure { sprachFehler = true }
+                        },
+                        label = { Text("🎤 Diktieren") }
+                    )
+                    if (neuesFoto || (hatAltesFoto && !fotoEntfernen)) {
+                        AssistChip(
+                            onClick = {
+                                ocrStatus = "Text wird gelesen …"
+                                val datei = if (neuesFoto) TafelFotos.zwischendatei(context)
+                                else TafelFotos.datei(context, bestehendeAufgabe!!.id)
+                                com.nextlesson.app.data.TextErkennung.aus(context, datei) { erkannt ->
+                                    if (erkannt == null) {
+                                        ocrStatus = "Kein Text erkannt."
+                                    } else {
+                                        text = if (text.isBlank()) erkannt else text.trimEnd() + "\n" + erkannt
+                                        ocrStatus = "Text übernommen – bitte prüfen."
+                                    }
+                                }
+                            },
+                            label = { Text("🔍 Text aus Foto") }
+                        )
+                    }
+                }
+                if (sprachFehler) {
+                    Text("Auf diesem Gerät ist keine Spracheingabe verfügbar.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                ocrStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 
                 AssistChip(
                     onClick = { kamera.launch(TafelFotos.uriFuerKamera(context)) },
@@ -457,6 +517,49 @@ fun LeerHinweis(text: String) {
     }
 }
 
+
+/** Alle Tafelfotos, nach Fach gruppiert; ein Tipp öffnet das Foto groß. */
+@Composable
+private fun FotoGalerie(aufgaben: List<Hausaufgabe>, onSchliessen: () -> Unit) {
+    var gross by remember { mutableStateOf<String?>(null) }
+    val gruppen = remember(aufgaben) {
+        aufgaben.groupBy { com.nextlesson.app.data.FachName.schluessel(it.fach) }
+            .values.sortedBy { it.first().fach.lowercase() }
+    }
+    AlertDialog(
+        onDismissRequest = onSchliessen,
+        title = { Text("Tafelfotos") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                gruppen.forEach { liste ->
+                    Text(
+                        com.nextlesson.app.ui.theme.fachAnzeige(liste.first().fach.ifBlank { "Ohne Fach" }),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        liste.sortedByDescending { it.erstelltAm }.forEach { a ->
+                            val context = LocalContext.current
+                            val vorschau by produceState<ImageBitmap?>(null, a.id) {
+                                value = withContext(Dispatchers.IO) { TafelFotos.laden(context, a.id, maxKante = 256)?.asImageBitmap() }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { gross = a.id }
+                            ) {
+                                vorschau?.let { Image(bitmap = it, contentDescription = "Foto: ${a.text}", contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } }
+    )
+    gross?.let { FotoDialog(it) { gross = null } }
+}
 
 @Composable
 private fun FotoDialog(id: String, onSchliessen: () -> Unit) {
