@@ -12,6 +12,7 @@ import { schultagVersetzt } from '../logic/raster';
 import { type Datum, countdownText, heute as heuteTag, kurzesDatum, langesDatum, plusTage, uhrzeitText, wochentagName } from '../logic/zeit';
 import { aenderungenSeitGestern, aufgabenAblage, designAendern, designAblage, freundeAblage, pruefungenAblage } from '../services/daten';
 import type { PersoenlicherPlan } from '../services/repo';
+import { hatEigeneDaten, sicherungAblage, sicherungAlterText, sicherungFaellig, sicherungSpaeter, sicherungSpeichern } from '../services/sicherung';
 import { useAblage } from '../services/speicher';
 import { type TagAnsicht, tagNeuLaden, tagWischen, tagZuruecksetzen } from '../services/steuerung';
 import { Badge, Chip, Icon, Karte, Laden, useFach, useHeute, useJetzt } from './basis';
@@ -255,6 +256,7 @@ function Tagesplan(p: {
   const aufgaben = useAblage(aufgabenAblage);
   const pruefungen = useAblage(pruefungenAblage);
   const freunde = useAblage(freundeAblage);
+  const sicherung = useAblage(sicherungAblage);
   const { pp } = p;
   const plan = pp.plan;
   const istHeute = pp.istHeute && pp.datum === heute;
@@ -277,6 +279,18 @@ function Tagesplan(p: {
       {pp.ausCache && (
         <Karte art="info">
           Gespeicherter Stand von {zeitstempel} · {p.aktualisiert ? 'wird aktualisiert …' : 'keine Verbindung, Plan kann veraltet sein'}
+        </Karte>
+      )}
+      {sicherungFaellig(Date.now(), sicherung, hatEigeneDaten()) && (
+        <Karte art="info">
+          <div style={{ fontWeight: 600 }}>Sicherung fällig</div>
+          <div>
+            {sicherung.letzte === 0 ? 'Du hast noch keine Sicherung gemacht.' : `Deine letzte Sicherung war ${sicherungAlterText(sicherung.letzte, Date.now())}.`} Speichere sie als Datei, falls der Browser seine Daten verliert.
+          </div>
+          <div class="zeile" style={{ paddingTop: 6 }}>
+            <button class="textknopf" onClick={sicherungSpeichern}>Jetzt sichern</button>
+            <button class="textknopf" onClick={sicherungSpaeter}>Später</button>
+          </div>
         </Karte>
       )}
       {ferien && <div class="klein" style={{ fontWeight: 600 }}>🏖️ {ferien} (ohne Gewähr)</div>}

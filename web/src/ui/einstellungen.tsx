@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { auswerten as ausfallAuswerten, anteilProzent } from '../logic/ausfall';
 import { FachName } from '../logic/fachname';
 import type { Freund } from '../logic/freizeit';
@@ -8,6 +8,7 @@ import type { Zugang } from '../logic/models';
 import { halbjahr, halbjahrGrenzen } from '../logic/noten';
 import { heute } from '../logic/zeit';
 import { type DesignModus, type FarbThemaName, ausfallAblage, designAblage, designAendern, kursAblage, zugangAblage } from '../services/daten';
+import { type SpeicherStatus, sicherungAblage, sicherungAlterText, sicherungSpeichern, speicherAnfragen, speicherStatus } from '../services/sicherung';
 import { useAblage } from '../services/speicher';
 import { FACH_FARB_AUSWAHL, THEMEN } from '../theme';
 import { Chip, Dialog, Karte, Schalter, teilen, useFach } from './basis';
@@ -80,27 +81,21 @@ function AusfallKarte() {
 /** Alle Daten dieser App als Datei sichern bzw. zurückspielen – falls der Browser seinen Speicher einmal leert. */
 function SicherungKarte() {
   const [meldung, setMeldung] = useState('');
+  const s = useAblage(sicherungAblage);
+  const [status, setStatus] = useState<SpeicherStatus>('UNBEKANNT');
+  useEffect(() => {
+    void speicherStatus().then(setStatus);
+  }, []);
   const sichern = () => {
-    const daten: Record<string, string> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)!;
-      // Das Passwort bleibt bewusst draußen: Die Sicherung ist eine Datei, die man leicht weitergibt.
-      if (k.startsWith('nl.') && k !== 'nl.zugang') daten[k] = localStorage.getItem(k)!;
-    }
-    const blob = new Blob([JSON.stringify({ app: 'nextlesson-web', version: 1, daten }, null, 1)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `nextlesson-sicherung-${heute()}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    setMeldung('Sicherung gespeichert (ohne Passwort).');
+    sicherungSpeichern();
+    setMeldung('Sicherung gespeichert (ohne Passwort und Fotos).');
   };
   const einspielen = async (datei: File | undefined) => {
     if (!datei) return;
     try {
       const j = JSON.parse(await datei.text()) as { app?: string; daten?: Record<string, string> };
       if (j.app !== 'nextlesson-web' || !j.daten) throw new Error('falsch');
-      for (const [k, v] of Object.entries(j.daten)) if (k.startsWith('nl.') && k !== 'nl.zugang') localStorage.setItem(k, v);
+      for (const [k, v] of Object.entries(j.daten)) if (k.startsWith('nl.') && k !== 'nl.zugang' && k !== 'nl.sicherung') localStorage.setItem(k, v);
       setMeldung('Sicherung eingespielt – die Seite lädt neu.');
       setTimeout(() => location.reload(), 800);
     } catch {
@@ -112,12 +107,18 @@ function SicherungKarte() {
       <div class="stapel">
         <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--on-surface)' }}>Sicherung</div>
         <div class="klein">Hausaufgaben, Noten, Freunde und Einstellungen liegen nur in diesem Browser. Sichere sie als Datei, falls du das Handy wechselst.</div>
+        <div class="klein">Letzte Sicherung: {sicherungAlterText(s.letzte, Date.now())}</div>
         <button class="knopf breit" onClick={sichern}>Sicherung speichern</button>
         <label class="knopf breit" style={{ textAlign: 'center', cursor: 'pointer' }}>
           Sicherung einspielen
           <input type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={(e) => einspielen((e.target as HTMLInputElement).files?.[0])} />
         </label>
         {meldung && <div class="klein">{meldung}</div>}
+        <hr />
+        <div class="klein">
+          Speicher: {status === 'DAUERHAFT' ? 'dauerhaft gesichert ✓' : status === 'NORMAL' ? 'kann vom Browser gelöscht werden' : 'Status unbekannt'}
+        </div>
+        {status === 'NORMAL' && <button class="knopf breit" onClick={async () => setStatus(await speicherAnfragen())}>Jetzt anfragen</button>}
       </div>
     </Karte>
   );

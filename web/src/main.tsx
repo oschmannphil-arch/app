@@ -4,6 +4,7 @@ import './styles.css';
 import { beimStartAufraeumen, designAblage, zugangAblage } from './services/daten';
 import { konfigurationLaden } from './services/api';
 import { useAblage } from './services/speicher';
+import { speicherAnfragen } from './services/sicherung';
 import { aktualisieren } from './services/steuerung';
 import { paletteAnwenden } from './theme';
 import { useDunkel } from './ui/basis';
@@ -19,6 +20,7 @@ function Huelle() {
 }
 
 beimStartAufraeumen();
+void speicherAnfragen();
 void konfigurationLaden().then(() => {
   if (zugangAblage.get()) void aktualisieren();
   else void aktualisieren();
