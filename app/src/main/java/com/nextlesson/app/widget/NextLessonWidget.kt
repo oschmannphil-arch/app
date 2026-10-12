@@ -76,6 +76,11 @@ class NextLessonWidget : GlanceAppWidget() {
         val niedrig = groesse.height < 130.dp
 
         val alarm = inhalt.hatAenderung || inhalt.entfaellt
+        val kontext = LocalContext.current
+        // Tippen aufs Widget öffnet die App (Aktualisieren geht über den ↻-Knopf im Kopf).
+        val oeffnen = Intent(kontext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
         val hintergrund = if (alarm) R.drawable.widget_bg_alarm else R.drawable.widget_bg
 
         Column(
@@ -83,7 +88,7 @@ class NextLessonWidget : GlanceAppWidget() {
                 .fillMaxSize()
                 .background(ImageProvider(hintergrund))
                 .padding(horizontal = if (kompakt) 12.dp else 16.dp, vertical = 12.dp)
-                .clickable(actionRunCallback<RefreshAction>()),
+                .clickable(actionStartActivity(oeffnen)),
             horizontalAlignment = Alignment.Start
         ) {
             val scaling = if (inhalt.grosserText) 1.4f else 1.0f
@@ -186,9 +191,23 @@ class NextLessonWidget : GlanceAppWidget() {
                             .padding(horizontal = 9.dp, vertical = 3.dp)
                     )
                 }
+                AktualisierenKnopf(scaled)
                 SucheKnopf(scaled)
             }
         }
+    }
+
+    /** "↻": holt den Plan neu, ohne die App zu öffnen. */
+    @Composable
+    private fun AktualisierenKnopf(scaled: (Int) -> TextUnit) {
+        Text(
+            text = "↻",
+            style = TextStyle(color = TextStark, fontSize = scaled(14), fontWeight = FontWeight.Bold),
+            maxLines = 1,
+            modifier = GlanceModifier
+                .padding(start = 10.dp, top = 0.dp, bottom = 0.dp)
+                .clickable(actionRunCallback<RefreshAction>())
+        )
     }
 
     /** "Suche": öffnet die App direkt in der Lehrer-/Raumsuche, Tastatur auf. */
