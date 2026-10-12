@@ -6,6 +6,7 @@ import { type Datum, heute, plusTage } from '../logic/zeit';
 import { type PlanResult } from './api';
 import { cacheAufraeumen, fotosAufraeumen } from './kv';
 import {
+  aenderungsVerlaufAblage,
   aufgabenAblage,
   ausfallAufraeumen,
   ausfallMerken,
@@ -212,7 +213,10 @@ export function anmelden(z: Zugang): void {
   const alt = zugangAblage.get();
   zugangAblage.set(z);
   // Die Kurswahl gehört zur Schule: Kurs-IDs einer anderen Schule passen auf nichts.
-  if (alt && alt.schulnummer !== z.schulnummer) kursAblage.set([]);
+  if (alt && alt.schulnummer !== z.schulnummer) {
+    kursAblage.set([]);
+    aenderungsVerlaufAblage.set({});
+  }
   store.set({ woche: { art: 'NICHT_GELADEN' }, tag: null, ui: { art: 'LAEDT' } });
   void aktualisieren(true);
 }
@@ -220,11 +224,14 @@ export function anmelden(z: Zugang): void {
 export function abmelden(): void {
   zugangAblage.set(null);
   kursAblage.set([]);
+  aenderungsVerlaufAblage.set({});
   store.set({ ui: { art: 'LOGIN' }, tag: null, woche: { art: 'NICHT_GELADEN' }, kursliste: [] });
 }
 
 export function kurseSpeichern(ids: string[]): void {
   kursAblage.set(ids);
+  // Der Vergleich "seit gestern" gilt nur für die bisherigen Kurse.
+  aenderungsVerlaufAblage.set({});
   store.set({ woche: { art: 'NICHT_GELADEN' }, tag: null });
   if (ids.length === 0) {
     store.set({ ui: { art: 'KURSE', kurse: store.get().kursliste } });

@@ -58,7 +58,7 @@ object BildAufbereitung {
         }
 
         // Örtliches Licht: das Graubild stark verkleinern und wieder vergrößern (weichzeichnen).
-        val grauBild = Bitmap.createBitmap(grau.map { Color.rgb(it, it, it) }.toIntArray(), b, h, Bitmap.Config.ARGB_8888)
+        val grauBild = Bitmap.createBitmap(IntArray(grau.size) { Color.rgb(grau[it], grau[it], grau[it]) }, b, h, Bitmap.Config.ARGB_8888)
         val klein1 = Bitmap.createScaledBitmap(grauBild, maxOf(1, b / 4), maxOf(1, h / 4), true)
         val klein2 = Bitmap.createScaledBitmap(klein1, maxOf(1, b / 16), maxOf(1, h / 16), true)
         val gross = Bitmap.createScaledBitmap(klein2, b, h, true)
