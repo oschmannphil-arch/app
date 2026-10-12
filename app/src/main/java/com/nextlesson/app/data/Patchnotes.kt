@@ -132,6 +132,17 @@ object Patchnotes {
                 "Einstellungen: aufklappbare Bereiche statt einer langen Liste.",
                 "Neu: Web-App für iPhone und Browser – Link in den Einstellungen unter „App, Update & Statistik“."
             )
+        ),
+        PatchEintrag(
+            id = 13,
+            titel = "Diktieren, Foto-Texterkennung, mehr Anpassung",
+            punkte = listOf(
+                "Hausaufgaben: Text diktieren (Mikrofon) und Text aus dem Tafelfoto lesen lassen.",
+                "Tafelfotos: Galerie nach Fach sortiert.",
+                "Darstellung: eigenes Farbthema mit Farbton-Regler, Stundenliste kompakt/normal/groß, eigene Fachnamen.",
+                "Tablets und Querformat: Karten links, Stundenliste rechts.",
+                "Offline-Modus: Hinweis mit Alter des gespeicherten Plans, rot ab 12 Stunden."
+            )
         )
     )
 

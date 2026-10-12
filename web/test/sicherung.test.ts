@@ -24,3 +24,17 @@ describe('Sicherungs-Erinnerung', () => {
     expect(sicherungAlterText(jetzt - 5 * TAG, jetzt)).toBe('vor 5 Tagen');
   });
 });
+
+import { alterText } from '../src/logic/zeit';
+
+describe('Alter eines gespeicherten Stands', () => {
+  const jetzt = 1_000_000_000_000;
+  it('formuliert Minuten, Stunden und Tage', () => {
+    expect(alterText(jetzt - 10_000, jetzt)).toBe('gerade eben');
+    expect(alterText(jetzt - 5 * 60_000, jetzt)).toBe('vor 5 Min');
+    expect(alterText(jetzt - 130 * 60_000, jetzt)).toBe('vor 2 Std 10 Min');
+    expect(alterText(jetzt - 120 * 60_000, jetzt)).toBe('vor 2 Std');
+    expect(alterText(jetzt - 24 * 3600_000, jetzt)).toBe('vor 1 Tag');
+    expect(alterText(jetzt - 3 * 24 * 3600_000, jetzt)).toBe('vor 3 Tagen');
+  });
+});

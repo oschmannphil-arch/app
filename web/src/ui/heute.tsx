@@ -9,7 +9,7 @@ import { freiVor, freiblockStundenText, type Freiblock } from '../logic/freizeit
 import { hinweisKurz } from '../logic/hinweis';
 import { type Lesson, type NaechsteStundeErgebnis, hatAenderung, naechsteStunde, schluss } from '../logic/models';
 import { schultagVersetzt } from '../logic/raster';
-import { type Datum, countdownText, heute as heuteTag, kurzesDatum, langesDatum, plusTage, uhrzeitText, wochentagName } from '../logic/zeit';
+import { alterText, type Datum, countdownText, heute as heuteTag, kurzesDatum, langesDatum, plusTage, uhrzeitText, wochentagName } from '../logic/zeit';
 import { aenderungenSeitGestern, aufgabenAblage, designAendern, designAblage, freundeAblage, pruefungenAblage } from '../services/daten';
 import type { PersoenlicherPlan } from '../services/repo';
 import { hatEigeneDaten, sicherungAblage, sicherungAlterText, sicherungFaellig, sicherungSpaeter, sicherungSpeichern } from '../services/sicherung';
@@ -275,10 +275,13 @@ function Tagesplan(p: {
   const seitGestern = useMemo(() => aenderungenSeitGestern(pp.datum, plan.stunden), [pp.datum, plan]);
 
   return (
-    <div class="seite">
+    <div class="seite zwei">
+      <div class="spalte">
       {pp.ausCache && (
-        <Karte art="info">
-          Gespeicherter Stand von {zeitstempel} · {p.aktualisiert ? 'wird aktualisiert …' : 'keine Verbindung, Plan kann veraltet sein'}
+        // Ab 12 Stunden Alter wird der Hinweis rot: Dann ist der Plan mit hoher Wahrscheinlichkeit überholt.
+        <Karte art={Date.now() - pp.geprueftUm > 12 * 3600_000 ? 'warn' : 'info'}>
+          <div style={{ fontWeight: 600 }}>Offline-Modus</div>
+          Gespeicherter Stand von {zeitstempel} ({alterText(pp.geprueftUm)}) · {p.aktualisiert ? 'wird aktualisiert …' : 'keine Verbindung, Plan kann veraltet sein'}
         </Karte>
       )}
       {sicherungFaellig(Date.now(), sicherung, hatEigeneDaten()) && (
@@ -328,7 +331,9 @@ function Tagesplan(p: {
         />
       )}
       {freunde.length > 0 && <FreundeKarte freunde={freunde} persoenlich={pp} onFreund={p.onFreund} onWoche={p.onGemeinsam} />}
+      </div>
 
+      <div class="spalte">
       <div class="zeile zwischen" style={{ paddingTop: 6 }}>
         <span style={{ fontWeight: 600, fontSize: 16 }}>
           {istHeute ? 'Heute' : wochentagName(pp.datum).slice(0, 2) + '., ' + kurzesDatum(pp.datum)}
@@ -362,6 +367,7 @@ function Tagesplan(p: {
         {plan.kopf.zeitstempel && <div>Plan der Schule: {plan.kopf.zeitstempel}</div>}
         <div>Tipp: Stunde antippen, um eine Hausaufgabe bis zur nächsten Stunde einzutragen.</div>
         <div>App zuletzt geprüft: {zeitstempel}</div>
+      </div>
       </div>
     </div>
   );

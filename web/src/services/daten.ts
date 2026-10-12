@@ -22,7 +22,7 @@ export const kursAblage = ablage<string[]>('kurse', []);
 // ---------- Darstellung ----------
 
 export type DesignModus = 'SYSTEM' | 'HELL' | 'DUNKEL';
-export type FarbThemaName = 'MOCHA' | 'OZEAN' | 'WALD' | 'ROSE' | 'VIOLETT';
+export type FarbThemaName = 'MOCHA' | 'OZEAN' | 'WALD' | 'ROSE' | 'VIOLETT' | 'EIGEN';
 
 export interface Design {
   modus: DesignModus;
@@ -31,7 +31,16 @@ export interface Design {
   fachFarben: Record<string, string>;
   symbole: boolean;
   bloecke: boolean;
+  /** Farbton (0–360°) des eigenen Farbthemas. */
+  eigenerTon?: number;
+  /** Abstand der Stundenliste. */
+  dichte?: Dichte;
+  /** Eigene Anzeigenamen: Fach (Schlüssel) → Name. */
+  fachNamen?: Record<string, string>;
 }
+
+export type Dichte = 'KOMPAKT' | 'NORMAL' | 'GROSS';
+export const DICHTE_PX: Record<Dichte, number> = { KOMPAKT: 5, NORMAL: 10, GROSS: 16 };
 
 export const designAblage = ablage<Design>('design', { modus: 'SYSTEM', thema: 'MOCHA', fachFarben: {}, symbole: true, bloecke: false });
 export const designAendern = (teil: Partial<Design>) => designAblage.set((d) => ({ ...d, ...teil }));

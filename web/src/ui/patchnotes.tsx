@@ -8,6 +8,7 @@ export function Patchnotes() {
       <div>• Hausaufgaben, Klausuren, Noten (Punkte oder 1–6), Ziele, Prognose, Zeugnis-Vorschau, Abi-Rechner.</div>
       <div>• Farbthemen, Fach-Symbole, Ausfall-Statistik, Ferien-Countdown.</div>
       <div>• „Seit gestern geändert“ in der Heute-Ansicht, Plan als Bild teilen, Tafel-Foto an Hausaufgaben.</div>
+      <div>• Diktieren und Text aus Tafelfoto (Letzteres lädt beim ersten Mal ein Sprachmodell), Foto-Galerie, eigenes Farbthema, eigene Fachnamen, Listendichte, Zwei-Spalten-Ansicht auf großen Bildschirmen, Offline-Hinweis mit Alter.</div>
       <div class="titel-klein" style={{ color: 'var(--on-surface)', paddingTop: 8 }}>Das geht im Browser nicht</div>
       <div>• Widget und Benachrichtigungen bei Ausfall – dafür gibt es die Android-App.</div>
       <div>• Hintergrund-Aktualisierung: Die Web-App lädt den Plan beim Öffnen.</div>

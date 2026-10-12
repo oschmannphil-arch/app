@@ -133,3 +133,13 @@ export function ganzKurzesDatum(d: Datum): string {
 export function deutschesDatum(d: Datum): string {
   return `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
 }
+
+/** "vor 5 Min", "vor 2 Std 10 Min", "vor 3 Tagen" – wie alt ein gespeicherter Stand ist. */
+export function alterText(seitMs: number, jetztMs: number = Date.now()): string {
+  const min = Math.max(0, Math.floor((jetztMs - seitMs) / 60000));
+  if (min < 1) return 'gerade eben';
+  if (min < 60) return `vor ${min} Min`;
+  if (min < 24 * 60) return `vor ${Math.floor(min / 60)} Std${min % 60 > 0 ? ` ${min % 60} Min` : ''}`;
+  const t = Math.floor(min / (24 * 60));
+  return `vor ${t} ${t === 1 ? 'Tag' : 'Tagen'}`;
+}

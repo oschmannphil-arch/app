@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useEffect } from 'preact/hooks';
 import './styles.css';
-import { beimStartAufraeumen, designAblage, zugangAblage } from './services/daten';
+import { DICHTE_PX, beimStartAufraeumen, designAblage, zugangAblage } from './services/daten';
 import { konfigurationLaden } from './services/api';
 import { useAblage } from './services/speicher';
 import { speicherAnfragen } from './services/sicherung';
@@ -14,8 +14,12 @@ function Huelle() {
   const design = useAblage(designAblage);
   const dunkel = useDunkel();
   // Die Farben setzen, bevor etwas gezeichnet wird, damit nichts aufblitzt.
-  paletteAnwenden(dunkel, design.thema);
-  useEffect(() => paletteAnwenden(dunkel, design.thema), [dunkel, design.thema]);
+  const ton = design.eigenerTon ?? 30;
+  paletteAnwenden(dunkel, design.thema, ton);
+  useEffect(() => paletteAnwenden(dunkel, design.thema, ton), [dunkel, design.thema, ton]);
+  useEffect(() => {
+    document.documentElement.style.setProperty('--zeile-abstand', `${DICHTE_PX[design.dichte ?? 'NORMAL']}px`);
+  }, [design.dichte]);
   return <App />;
 }
 

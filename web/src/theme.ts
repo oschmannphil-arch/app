@@ -35,7 +35,9 @@ export const THEMEN: Record<string, { anzeige: string; warm: number | null; kalt
   OZEAN: { anzeige: 'Ozean', warm: 208, kalt: 188 },
   WALD: { anzeige: 'Wald', warm: 125, kalt: 150 },
   ROSE: { anzeige: 'Rose', warm: 340, kalt: 318 },
-  VIOLETT: { anzeige: 'Violett', warm: 272, kalt: 250 }
+  VIOLETT: { anzeige: 'Violett', warm: 272, kalt: 250 },
+  /** Farbton frei wählbar (Regler in den Einstellungen); die Werte hier sind Platzhalter. */
+  EIGEN: { anzeige: 'Eigen', warm: 30, kalt: 8 }
 };
 
 // ---------- Farbumrechnung ----------
@@ -80,9 +82,10 @@ function umfaerben(hex: string, warm: number, kalt: number, hell: boolean): stri
 const FEHLER = new Set(['error', 'onError', 'errorContainer', 'onErrorContainer']);
 
 /** Die Farbtöne für Hell/Dunkel und ein Thema. */
-export function paletteFuer(dunkel: boolean, thema: string): Palette {
+export function paletteFuer(dunkel: boolean, thema: string, eigenerTon = 30): Palette {
   const basis = dunkel ? DUNKEL : HELL;
-  const t = THEMEN[thema] ?? THEMEN.MOCHA;
+  const vorlage = THEMEN[thema] ?? THEMEN.MOCHA;
+  const t = thema === 'EIGEN' ? { ...vorlage, warm: eigenerTon, kalt: (eigenerTon + 338) % 360 } : vorlage;
   if (t.warm === null || t.kalt === null) return basis;
   const out: Palette = {};
   for (const [k, v] of Object.entries(basis)) out[k] = FEHLER.has(k) ? v : umfaerben(v, t.warm, t.kalt, !dunkel);
@@ -92,11 +95,11 @@ export function paletteFuer(dunkel: boolean, thema: string): Palette {
 const kebab = (s: string) => s.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
 
 /** Setzt die Farben als CSS-Variablen ("--primary-container" usw.) am Wurzelelement. */
-export function paletteAnwenden(dunkel: boolean, thema: string): void {
+export function paletteAnwenden(dunkel: boolean, thema: string, eigenerTon = 30): void {
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(paletteFuer(dunkel, thema))) root.style.setProperty(`--${kebab(k)}`, v);
+  for (const [k, v] of Object.entries(paletteFuer(dunkel, thema, eigenerTon))) root.style.setProperty(`--${kebab(k)}`, v);
   root.style.colorScheme = dunkel ? 'dark' : 'light';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', paletteFuer(dunkel, thema).container);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', paletteFuer(dunkel, thema, eigenerTon).container);
 }
 
 // ---------- Fachfarben ----------

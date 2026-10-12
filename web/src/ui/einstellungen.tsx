@@ -7,7 +7,7 @@ import { lesen as freundLinkLesen, nachricht as freundNachricht } from '../logic
 import type { Zugang } from '../logic/models';
 import { halbjahr, halbjahrGrenzen } from '../logic/noten';
 import { heute } from '../logic/zeit';
-import { type DesignModus, type FarbThemaName, ausfallAblage, designAblage, designAendern, kursAblage, zugangAblage } from '../services/daten';
+import { type Dichte, type DesignModus, type FarbThemaName, ausfallAblage, designAblage, designAendern, kursAblage, zugangAblage } from '../services/daten';
 import { type SpeicherStatus, sicherungAblage, sicherungAlterText, sicherungSpeichern, speicherAnfragen, speicherStatus } from '../services/sicherung';
 import { useAblage } from '../services/speicher';
 import { FACH_FARB_AUSWAHL, THEMEN } from '../theme';
@@ -42,6 +42,28 @@ function FachFarbenDialog(p: { faecher: string[]; onZu: () => void }) {
             {FACH_FARB_AUSWAHL.map((f) => <button key={f} class="farbpunkt" aria-label={f} style={{ background: f }} onClick={() => setzen(fach, f)} />)}
           </div>
         </div>
+      ))}
+    </Dialog>
+  );
+}
+
+/** Eigene Anzeigenamen (z. B. "Mathe" statt "MAT") pro Fach; leer = Name aus dem Plan. */
+function FachNamenDialog(p: { faecher: string[]; onZu: () => void }) {
+  const design = useAblage(designAblage);
+  const namen = design.fachNamen ?? {};
+  const setzen = (fach: string, name: string) => {
+    const k = FachName.schluessel(fach);
+    const rest = Object.fromEntries(Object.entries(namen).filter(([key]) => key !== k));
+    designAendern({ fachNamen: name.trim() === '' ? rest : { ...rest, [k]: name.slice(0, 24) } });
+  };
+  return (
+    <Dialog titel="Eigene Fachnamen" onZu={p.onZu} knoepfe={<button class="textknopf" onClick={p.onZu}>Fertig</button>}>
+      {p.faecher.length === 0 && <div>Sobald dein Plan geladen ist, erscheinen hier deine Fächer.</div>}
+      {p.faecher.map((fach) => (
+        <label key={fach} class="feld">
+          {fach}
+          <input type="text" placeholder="Name aus dem Plan" value={namen[FachName.schluessel(fach)] ?? ''} onInput={(e) => setzen(fach, (e.target as HTMLInputElement).value)} />
+        </label>
       ))}
     </Dialog>
   );
@@ -147,6 +169,7 @@ export function Einstellungen(p: {
   const zugang = useAblage(zugangAblage) as Zugang | null;
   const kurse = useAblage(kursAblage);
   const [farbDialog, setFarbDialog] = useState(false);
+  const [namenDialog, setNamenDialog] = useState(false);
   const [verlauf, setVerlauf] = useState(false);
   const [meldung, setMeldung] = useState('');
   return (
@@ -159,7 +182,20 @@ export function Einstellungen(p: {
           <div class="scroll-x">
             {Object.entries(THEMEN).map(([k, t]) => <Chip key={k} an={design.thema === k} onClick={() => designAendern({ thema: k as FarbThemaName })}>{t.anzeige}</Chip>)}
           </div>
+          {design.thema === 'EIGEN' && (
+            <>
+              <div class="sehr-klein">Eigener Farbton: {Math.round(design.eigenerTon ?? 30)}°</div>
+              <input type="range" min={0} max={360} value={design.eigenerTon ?? 30} onInput={(e) => designAendern({ eigenerTon: Number((e.target as HTMLInputElement).value) })} />
+            </>
+          )}
+          <div class="sehr-klein">Stundenliste</div>
+          <div class="zeile">
+            {([['KOMPAKT', 'Kompakt'], ['NORMAL', 'Normal'], ['GROSS', 'Groß']] as Array<[Dichte, string]>).map(([d, t]) => (
+              <Chip key={d} an={(design.dichte ?? 'NORMAL') === d} onClick={() => designAendern({ dichte: d })}>{t}</Chip>
+            ))}
+          </div>
           <button class="knopf breit" onClick={() => setFarbDialog(true)}>Farbe pro Fach anpassen</button>
+          <button class="knopf breit" onClick={() => setNamenDialog(true)}>Eigene Fachnamen</button>
           <div class="zeile">
             <div class="fuell">
               <div style={{ color: 'var(--on-surface)', fontSize: 16 }}>Fach-Symbole</div>
@@ -203,6 +239,7 @@ export function Einstellungen(p: {
 
       <button class="textknopf" onClick={() => setVerlauf(true)}>Web-Version · Was ist neu?</button>
       {farbDialog && <FachFarbenDialog faecher={p.faecher} onZu={() => setFarbDialog(false)} />}
+      {namenDialog && <FachNamenDialog faecher={p.faecher} onZu={() => setNamenDialog(false)} />}
       {verlauf && (
         <Dialog titel="Neuigkeiten" onZu={() => setVerlauf(false)} knoepfe={<button class="textknopf" onClick={() => setVerlauf(false)}>Schließen</button>}>
           <Patchnotes />

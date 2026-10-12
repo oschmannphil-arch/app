@@ -126,7 +126,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .hero .info .alt { font-size: 11px; opacity: .7; text-decoration: line-through; }
 
 .std {
-  background: var(--surface-variant); color: var(--on-surface-variant); border-radius: 14px; padding: 10px 12px; display: flex; align-items: center; gap: 0; position: relative;
+  background: var(--surface-variant); color: var(--on-surface-variant); border-radius: 14px; padding: var(--zeile-abstand, 10px) 12px; display: flex; align-items: center; gap: 0; position: relative;
 }
 .std.hervor { background: var(--secondary-container); color: var(--on-secondary-container); }
 .std.entfall { opacity: .5; }
@@ -169,3 +169,9 @@ a { color: var(--primary); }
 .abschnitt > summary::after { content: '▼'; font-size: 12px; color: var(--on-surface-variant); }
 .abschnitt[open] > summary::after { content: '▲'; }
 .abschnitt > .abschnitt-inhalt { display: flex; flex-direction: column; gap: 10px; padding: 0 8px 8px; }
+
+/* Heute-Ansicht: auf breiten Bildschirmen links die Karten, rechts die Stundenliste */
+.spalte { display: flex; flex-direction: column; gap: 10px; }
+@media (min-width: 900px) {
+  .seite.zwei { max-width: 1100px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+}

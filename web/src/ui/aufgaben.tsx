@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
 import { type Hausaufgabe, type Pruefung, type PruefungsArt, istUeberfaellig, pruefungIstVorbei, pruefungsArtText, tageBis } from '../logic/aufgaben';
+import { FachName } from '../logic/fachname';
 import { type Datum, deutschesDatum, heute as heuteTag, langesDatum, plusTage } from '../logic/zeit';
 import { aufgabenAblage, hausaufgabeBearbeiten, hausaufgabeHinzufuegen, hausaufgabeLoeschen, hausaufgabeUmschalten, pruefungBearbeiten, pruefungHinzufuegen, pruefungLoeschen, pruefungenAblage } from '../services/daten';
 import { fotoIds, fotoLesen, fotoLoeschen, fotoSpeichern, fotoVerkleinern } from '../services/kv';
+import { diktatMoeglich, diktieren } from '../services/diktat';
+import { textAusFoto } from '../services/ocr';
 import { useAblage } from '../services/speicher';
 import { Badge, Chip, Dialog, Karte, LeerHinweis, Ueberschrift, Icon, useFach, useHeute, useJetzt } from './basis';
 
@@ -43,6 +46,57 @@ function useFotoIds(version: number): Set<string> {
   return ids;
 }
 
+/** Alle Tafelfotos, nach Fach gruppiert; ein Tipp öffnet das Foto groß. */
+function FotoGalerie(p: { aufgaben: Hausaufgabe[]; onZu: () => void }) {
+  const { anzeige } = useFach();
+  const [gross, setGross] = useState<string | null>(null);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let aktiv = true;
+    const neu: string[] = [];
+    void (async () => {
+      const m: Record<string, string> = {};
+      for (const a of p.aufgaben) {
+        const b = await fotoLesen(a.id);
+        if (b) {
+          const u = URL.createObjectURL(b);
+          neu.push(u);
+          m[a.id] = u;
+        }
+      }
+      if (aktiv) setUrls(m);
+    })();
+    return () => {
+      aktiv = false;
+      neu.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [p.aufgaben.map((a) => a.id).join(',')]);
+  const gruppen = new Map<string, Hausaufgabe[]>();
+  for (const a of p.aufgaben) {
+    const k = FachName.schluessel(a.fach);
+    gruppen.set(k, [...(gruppen.get(k) ?? []), a]);
+  }
+  return (
+    <>
+      <Dialog titel="Tafelfotos" onZu={p.onZu} knoepfe={<button class="textknopf" onClick={p.onZu}>Schließen</button>}>
+        {[...gruppen.values()].map((liste) => (
+          <div key={liste[0].id} class="stapel" style={{ gap: 6 }}>
+            <div style={{ fontWeight: 600 }}>{anzeige(liste[0].fach.trim() === '' ? 'Ohne Fach' : liste[0].fach)}</div>
+            <div class="scroll-x">
+              {[...liste].sort((a, b) => b.erstelltAm - a.erstelltAm).map((a) => (
+                <button key={a.id} class="icon-knopf" aria-label={`Foto: ${a.text}`} style={{ width: 96, height: 96, padding: 0, borderRadius: 10, overflow: 'hidden', flex: 'none' }} onClick={() => setGross(a.id)}>
+                  {urls[a.id] && <img src={urls[a.id]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </Dialog>
+      {gross && <FotoAnsicht id={gross} onZu={() => setGross(null)} />}
+    </>
+  );
+}
+
 function FotoAnsicht(p: { id: string; onZu: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -75,6 +129,8 @@ export function HausaufgabeDialog(p: {
   const heute = useHeute();
   const [neuesFoto, setNeuesFoto] = useState<Blob | null>(null);
   const [fotoWeg, setFotoWeg] = useState(false);
+  const [status, setStatus] = useState('');
+  const [hoert, setHoert] = useState(false);
   const [fach, setFach] = useState(p.bestehend?.fach ?? p.vorschlagFach ?? '');
   const [text, setText] = useState(p.bestehend?.text ?? '');
   const [faellig, setFaellig] = useState<Datum | null>(p.bestehend ? p.bestehend.faellig : plusTage(heute, 1));
@@ -105,6 +161,44 @@ export function HausaufgabeDialog(p: {
         <Chip onClick={() => setze(null)}>Ohne</Chip>
       </div>
       <DatumsFeld wert={wirksam} onAendern={setze} />
+      <div class="zeile wrap">
+        {diktatMoeglich() && (
+          <button
+            class="knopf"
+            disabled={hoert}
+            onClick={() => {
+              setHoert(true);
+              setStatus('Ich höre zu …');
+              diktieren((t) => {
+                setHoert(false);
+                if (t) {
+                  setText((alt) => (alt.trim() === '' ? t : `${alt.trimEnd()} ${t}`));
+                  setStatus('');
+                } else setStatus('Nichts verstanden oder Mikrofon nicht erlaubt.');
+              });
+            }}
+          >
+            🎤 Diktieren
+          </button>
+        )}
+        {(neuesFoto || (p.hatFoto && !fotoWeg)) && (
+          <button
+            class="knopf"
+            onClick={async () => {
+              setStatus('Text wird gelesen … (beim ersten Mal lädt dafür ein Sprachmodell, das kann dauern)');
+              const bild = neuesFoto ?? (p.bestehend ? await fotoLesen(p.bestehend.id) : null);
+              const t = bild ? await textAusFoto(bild) : null;
+              if (t) {
+                setText((alt) => (alt.trim() === '' ? t : `${alt.trimEnd()}\n${t}`));
+                setStatus('Text übernommen – bitte prüfen.');
+              } else setStatus('Kein Text erkannt (oder keine Verbindung für das Sprachmodell).');
+            }}
+          >
+            🔍 Text aus Foto
+          </button>
+        )}
+      </div>
+      {status && <div class="sehr-klein">{status}</div>}
       <label class="knopf breit" style={{ textAlign: 'center', cursor: 'pointer' }}>
         {neuesFoto ? '📷 Neues Foto bereit' : p.hatFoto && !fotoWeg ? '📷 Foto ersetzen' : '📷 Tafel fotografieren'}
         <input
@@ -164,12 +258,18 @@ export function Aufgaben() {
   const [fotoVersion, setFotoVersion] = useState(0);
   const [fotoOffen, setFotoOffen] = useState<string | null>(null);
   const fotos = useFotoIds(fotoVersion);
+  const [galerie, setGalerie] = useState(false);
   const offen = aufgaben.filter((h) => !h.erledigt);
   const erledigt = aufgaben.filter((h) => h.erledigt);
   const ueber = offen.filter((h) => istUeberfaellig(h, heute)).length;
   return (
     <div class="seite">
       <Ueberschrift titel={offen.length === 0 ? 'Nichts offen' : `${offen.length} offen`} unter={ueber > 0 ? `${ueber} überfällig` : null} />
+      {aufgaben.some((h) => fotos.has(h.id)) && (
+        <button class="textknopf" style={{ alignSelf: 'flex-start' }} onClick={() => setGalerie(true)}>
+          📷 Tafelfotos ({aufgaben.filter((h) => fotos.has(h.id)).length})
+        </button>
+      )}
       {aufgaben.length > 0 && (
         <div>
           <div class="fortschritt"><div style={{ width: `${(erledigt.length / aufgaben.length) * 100}%` }} /></div>
@@ -206,6 +306,7 @@ export function Aufgaben() {
         />
       )}
       {fotoOffen && <FotoAnsicht id={fotoOffen} onZu={() => setFotoOffen(null)} />}
+      {galerie && <FotoGalerie aufgaben={aufgaben.filter((h) => fotos.has(h.id))} onZu={() => setGalerie(false)} />}
     </div>
   );
 }

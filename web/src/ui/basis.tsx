@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { mitSymbol } from '../logic/symbole';
+import { FachName } from '../logic/fachname';
+import { symbolFuer } from '../logic/symbole';
 import { type Datum, heute as heuteTag, jetztMin } from '../logic/zeit';
 import { designAblage } from '../services/daten';
 import { useAblage } from '../services/speicher';
@@ -66,7 +67,11 @@ export function useFach() {
   return {
     dunkel,
     farbe: (fach: string) => fachFarbe(fach, dunkel, design.fachFarben),
-    anzeige: (fach: string) => (design.symbole ? mitSymbol(fach) : fach)
+    anzeige: (fach: string) => {
+      const name = (design.fachNamen ?? {})[FachName.schluessel(fach)] ?? fach;
+      const s = design.symbole ? symbolFuer(fach) : null;
+      return s ? `${s} ${name}` : name;
+    }
   };
 }
 
