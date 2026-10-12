@@ -20,10 +20,20 @@ val LocalFachFarben = compositionLocalOf<Map<String, Int>> { emptyMap() }
 /** Soll vor dem Fachnamen ein Symbol stehen? */
 val LocalFachSymbole = staticCompositionLocalOf { true }
 
-/** Fachname für die Anzeige, je nach Einstellung mit Symbol. */
+/** Eigene Anzeigenamen der Fächer (Fach-Schlüssel → Name). */
+val LocalFachNamen = compositionLocalOf<Map<String, String>> { emptyMap() }
+
+/** Zeilenabstand der Stundenliste in dp. */
+val LocalListenAbstand = staticCompositionLocalOf { 10 }
+
+/** Fachname für die Anzeige: ein eigener Name, sonst der aus dem Plan; je nach Einstellung mit Symbol. */
 @Composable
-fun fachAnzeige(fach: String): String =
-    if (LocalFachSymbole.current) com.nextlesson.app.data.FachSymbole.mitSymbol(fach) else fach
+fun fachAnzeige(fach: String): String {
+    val name = LocalFachNamen.current[com.nextlesson.app.data.FachName.schluessel(fach)] ?: fach
+    // Das Symbol gehört zum Fach aus dem Plan; der Text dahinter ist der eigene Name.
+    val symbol = if (LocalFachSymbole.current) com.nextlesson.app.data.FachSymbole.fuer(fach) else null
+    return if (symbol != null) "$symbol $name" else name
+}
 
 /**
  * Das Mocha-Design.
@@ -42,6 +52,9 @@ fun NaechsteStundeTheme(
     fachFarben: Map<String, Int> = emptyMap(),
     fachSymbole: Boolean = true,
     farbThema: FarbThema = FarbThema.MOCHA,
+    eigenerTon: Float = 30f,
+    fachNamen: Map<String, String> = emptyMap(),
+    listenAbstand: Int = 10,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -49,8 +62,8 @@ fun NaechsteStundeTheme(
         dynamischeFarben && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (dunkel) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        dunkel -> DunklesSchema.mitThema(farbThema, hell = false)
-        else -> HellesSchema.mitThema(farbThema, hell = true)
+        dunkel -> DunklesSchema.mitThema(farbThema, hell = false, eigenerTon = eigenerTon)
+        else -> HellesSchema.mitThema(farbThema, hell = true, eigenerTon = eigenerTon)
     }
 
     MaterialTheme(colorScheme = schema, typography = AppTypografie) {
@@ -58,6 +71,8 @@ fun NaechsteStundeTheme(
             LocalDunkel provides dunkel,
             LocalFachFarben provides fachFarben,
             LocalFachSymbole provides fachSymbole,
+            LocalFachNamen provides fachNamen,
+            LocalListenAbstand provides listenAbstand,
             content = content
         )
     }

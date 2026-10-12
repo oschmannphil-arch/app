@@ -121,7 +121,9 @@ enum class FarbThema(val anzeige: String, val warm: Float?, val kalt: Float?) {
     OZEAN("Ozean", 208f, 188f),
     WALD("Wald", 125f, 150f),
     ROSE("Rose", 340f, 318f),
-    VIOLETT("Violett", 272f, 250f)
+    VIOLETT("Violett", 272f, 250f),
+    /** Farbton frei wählbar (Regler in den Einstellungen); die Werte hier sind nur Platzhalter. */
+    EIGEN("Eigen", 30f, 8f)
 }
 
 private fun umfaerben(farbe: Color, warm: Float, kalt: Float, hell: Boolean): Color {
@@ -135,9 +137,9 @@ private fun umfaerben(farbe: Color, warm: Float, kalt: Float, hell: Boolean): Co
     return Color(android.graphics.Color.HSVToColor((farbe.alpha * 255).roundToInt(), hsv))
 }
 
-fun ColorScheme.mitThema(thema: FarbThema, hell: Boolean): ColorScheme {
-    val warm = thema.warm ?: return this
-    val kalt = thema.kalt ?: return this
+fun ColorScheme.mitThema(thema: FarbThema, hell: Boolean, eigenerTon: Float = 30f): ColorScheme {
+    val warm = (if (thema == FarbThema.EIGEN) eigenerTon else thema.warm) ?: return this
+    val kalt = (if (thema == FarbThema.EIGEN) (eigenerTon + 338f) % 360f else thema.kalt) ?: return this
     fun d(c: Color) = umfaerben(c, warm, kalt, hell)
     return copy(
         primary = d(primary), onPrimary = d(onPrimary),

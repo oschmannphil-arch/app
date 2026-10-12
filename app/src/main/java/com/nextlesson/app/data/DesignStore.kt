@@ -10,6 +10,11 @@ enum class DesignModus(val anzeige: String) {
     SYSTEM("System"), HELL("Hell"), DUNKEL("Dunkel")
 }
 
+/** Wie eng die Stundenliste gesetzt ist. */
+enum class Listendichte(val anzeige: String, val abstandDp: Int) {
+    KOMPAKT("Kompakt", 5), NORMAL("Normal", 10), GROSS("Groß", 16)
+}
+
 /**
  * Darstellung: hell/dunkel/System und eigene Fachfarben. Die Werte sind Compose-State, damit
  * sich die Oberfläche beim Umstellen sofort ändert – ohne ViewModel-Umweg.
@@ -51,6 +56,44 @@ class DesignStore(context: Context) {
         prefs.edit().putBoolean(KEY_SYMBOLE, an).apply()
     }
 
+    /** Farbton (0–360°) des eigenen Farbthemas. */
+    var eigenerFarbton by mutableStateOf(prefs.getFloat(KEY_TON, 30f))
+        private set
+
+    fun eigenerFarbtonSetzen(grad: Float) {
+        eigenerFarbton = grad.coerceIn(0f, 360f)
+        prefs.edit().putFloat(KEY_TON, eigenerFarbton).apply()
+    }
+
+    var dichte by mutableStateOf(
+        runCatching { Listendichte.valueOf(prefs.getString(KEY_DICHTE, null) ?: "") }.getOrDefault(Listendichte.NORMAL)
+    )
+        private set
+
+    fun dichteSetzen(neu: Listendichte) {
+        dichte = neu
+        prefs.edit().putString(KEY_DICHTE, neu.name).apply()
+    }
+
+    /** Eigene Anzeigenamen: Fach (Schlüssel) → Name. */
+    var fachNamen by mutableStateOf(namenLesen())
+        private set
+
+    /** [name] leer oder null = zurück zum Namen aus dem Plan. */
+    fun fachNameSetzen(fach: String, name: String?) {
+        val schluessel = FachName.schluessel(fach)
+        if (schluessel.isEmpty()) return
+        val sauber = name?.trim().orEmpty()
+        fachNamen = if (sauber.isEmpty()) fachNamen - schluessel else fachNamen + (schluessel to sauber)
+        prefs.edit().putStringSet(KEY_NAMEN, fachNamen.map { "${it.key}=${it.value}" }.toSet()).apply()
+    }
+
+    private fun namenLesen(): Map<String, String> =
+        (prefs.getStringSet(KEY_NAMEN, emptySet()) ?: emptySet()).mapNotNull { s ->
+            val i = s.indexOf('=')
+            if (i > 0 && i < s.length - 1) s.substring(0, i) to s.substring(i + 1) else null
+        }.toMap()
+
     /** Fach (klein geschrieben) → Farbe als ARGB-Int. */
     var fachFarben by mutableStateOf(lesen())
         private set
@@ -82,5 +125,8 @@ class DesignStore(context: Context) {
         private const val KEY_FARBEN = "fach_farben"
         private const val KEY_SYMBOLE = "fach_symbole"
         private const val KEY_THEMA = "farb_thema"
+        private const val KEY_TON = "eigener_farbton"
+        private const val KEY_DICHTE = "listendichte"
+        private const val KEY_NAMEN = "fach_namen"
     }
 }

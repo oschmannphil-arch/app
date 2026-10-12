@@ -1,5 +1,6 @@
 package com.nextlesson.app.ui
 
+import androidx.compose.foundation.lazy.LazyListScope
 import com.nextlesson.app.data.Ferien
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -276,12 +277,7 @@ fun HomeScreen(
         }
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+    val karten: LazyListScope.() -> Unit = {
         if (persoenlich.ausCache) {
             item {
                 Spacer(Modifier.height(4.dp))
@@ -356,6 +352,8 @@ fun HomeScreen(
             item { FreundeKarte(freunde, persoenlich, onFreund, onFreundeWoche) }
         }
 
+    }
+    val liste: LazyListScope.() -> Unit = {
         item {
             Row(
                 modifier = Modifier
@@ -406,25 +404,50 @@ fun HomeScreen(
             Spacer(Modifier.height(12.dp))
         }
     }
+    // Auf Tablets und im Querformat: links Karten, rechts die Stundenliste.
+    val breit = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 720
+    if (breit) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp), content = karten)
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp), content = liste)
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            karten()
+            liste()
+        }
+    }
 }
 
 @Composable
 private fun OfflineHinweis(geprueftUm: Long, aktualisiertGerade: Boolean) {
+    // Ab 12 Stunden Alter wird der Hinweis rot: Dann ist der Plan mit hoher Wahrscheinlichkeit überholt.
+    val veraltet = System.currentTimeMillis() - geprueftUm > 12 * 3600_000L
+    val container = if (veraltet) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
+    val inhalt = if (veraltet) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        colors = CardDefaults.cardColors(containerColor = container),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Text(
-            text = buildString {
-                append("Gespeicherter Stand von ${uhrzeit(geprueftUm)}")
-                append(if (aktualisiertGerade) " · wird aktualisiert …" else " · keine Verbindung, Plan kann veraltet sein")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-        )
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text("Offline-Modus", style = MaterialTheme.typography.labelLarge, color = inhalt)
+            Text(
+                text = buildString {
+                    append("Gespeicherter Stand von ${uhrzeit(geprueftUm)} (${com.nextlesson.app.data.alterText(geprueftUm)})")
+                    append(if (aktualisiertGerade) " · wird aktualisiert …" else " · keine Verbindung, Plan kann veraltet sein")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = inhalt
+            )
+        }
     }
 }
 
@@ -811,7 +834,7 @@ internal fun StundenZeile(
                 else Modifier
             )
             .semantics(mergeDescendants = true) { contentDescription = desc }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = com.nextlesson.app.ui.theme.LocalListenAbstand.current.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Vertretungs-Balken links

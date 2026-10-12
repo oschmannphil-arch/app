@@ -58,3 +58,15 @@ fun verzoegerungBis(ziel: LocalTime, jetzt: ZonedDateTime = ZonedDateTime.now())
     }
     return Duration.between(jetzt, zielZeitpunkt)
 }
+
+
+/** "vor 5 Min", "vor 2 Std 10 Min", "vor 3 Tagen" – wie alt ein gespeicherter Stand ist. */
+fun alterText(seitMillis: Long, jetztMillis: Long = System.currentTimeMillis()): String {
+    val min = ((jetztMillis - seitMillis) / 60_000L).coerceAtLeast(0)
+    return when {
+        min < 1 -> "gerade eben"
+        min < 60 -> "vor $min Min"
+        min < 24 * 60 -> "vor ${min / 60} Std" + (if (min % 60 > 0) " ${min % 60} Min" else "")
+        else -> "vor ${min / (24 * 60)} ${if (min / (24 * 60) == 1L) "Tag" else "Tagen"}"
+    }
+}

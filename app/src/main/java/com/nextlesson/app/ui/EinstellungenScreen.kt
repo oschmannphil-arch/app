@@ -100,6 +100,12 @@ fun EinstellungenScreen(
     fachNamen: List<String> = emptyList(),
     fachFarben: Map<String, Int> = emptyMap(),
     onFachFarbe: (String, Int?) -> Unit = { _, _ -> },
+    eigenerTon: Float = 30f,
+    onEigenerTon: (Float) -> Unit = {},
+    dichte: com.nextlesson.app.data.Listendichte = com.nextlesson.app.data.Listendichte.NORMAL,
+    onDichte: (com.nextlesson.app.data.Listendichte) -> Unit = {},
+    fachNamenEigene: Map<String, String> = emptyMap(),
+    onFachName: (String, String?) -> Unit = { _, _ -> },
     update: UpdateZustand = UpdateZustand.Unbekannt,
     installierterBuild: Int = 0,
     onUpdatePruefen: () -> Unit = {},
@@ -107,6 +113,7 @@ fun EinstellungenScreen(
     onUpdateInstallieren: () -> Unit = {}
 ) {
     var farbDialog by rememberSaveable { mutableStateOf(false) }
+    var namenDialog by rememberSaveable { mutableStateOf(false) }
     // Schulnummer und Benutzername überstehen Drehen und App-Wechsel; das Passwort bewusst nicht,
     // damit es nicht im gespeicherten Bildschirmzustand landet.
     var schulnummer by rememberSaveable { mutableStateOf(credentials?.schulnummer.orEmpty()) }
@@ -277,8 +284,25 @@ fun EinstellungenScreen(
                         FilterChip(selected = farbThema == t, onClick = { onFarbThema(t) }, label = { Text(t.anzeige) })
                     }
                 }
+                if (farbThema == FarbThema.EIGEN) {
+                    Text("Eigener Farbton: ${eigenerTon.toInt()}°", style = MaterialTheme.typography.labelMedium)
+                    androidx.compose.material3.Slider(
+                        value = eigenerTon,
+                        onValueChange = onEigenerTon,
+                        valueRange = 0f..360f
+                    )
+                }
+                Text("Stundenliste", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.nextlesson.app.data.Listendichte.entries.forEach { d ->
+                        FilterChip(selected = dichte == d, onClick = { onDichte(d) }, label = { Text(d.anzeige) })
+                    }
+                }
                 OutlinedButton(onClick = { farbDialog = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Farbe pro Fach anpassen")
+                }
+                OutlinedButton(onClick = { namenDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Eigene Fachnamen")
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -359,6 +383,15 @@ fun EinstellungenScreen(
         }
 
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (namenDialog) {
+        FachNamenDialog(
+            faecher = fachNamen,
+            namen = fachNamenEigene,
+            onName = onFachName,
+            onFertig = { namenDialog = false }
+        )
     }
 
     if (farbDialog) {
@@ -680,6 +713,43 @@ private fun FachFarbenDialog(
                             }
                         }
                     }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onFertig) { Text("Fertig") } }
+    )
+}
+
+/** Eigene Anzeigenamen (z. B. "Mathe" statt "MAT") pro Fach; leer = Name aus dem Plan. */
+@Composable
+private fun FachNamenDialog(
+    faecher: List<String>,
+    namen: Map<String, String>,
+    onName: (String, String?) -> Unit,
+    onFertig: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onFertig,
+        title = { Text("Eigene Fachnamen") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (faecher.isEmpty()) {
+                    Text("Sobald dein Plan geladen ist, erscheinen hier deine Fächer.", style = MaterialTheme.typography.bodyMedium)
+                }
+                faecher.forEach { fach ->
+                    // Pro Fach ein eigener Textzustand; gespeichert wird bei jeder Eingabe.
+                    var text by remember(fach) { mutableStateOf(namen[FachName.schluessel(fach)].orEmpty()) }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.take(24); onName(fach, text) },
+                        label = { Text(fach) },
+                        placeholder = { Text("Name aus dem Plan") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         },
