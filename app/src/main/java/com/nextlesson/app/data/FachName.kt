@@ -24,6 +24,21 @@ object FachName {
             .sortedBy { it.lowercase() }
 }
 
+/** Eigene Anzeigenamen der Fächer (Einstellungen → Eigene Fachnamen) – auch für Widget und Meldungen. */
+object EigeneFachNamen {
+
+    /** Fach-Schlüssel → eigener Name, so wie [DesignStore] sie speichert. */
+    fun laden(context: android.content.Context): Map<String, String> =
+        (context.applicationContext.getSharedPreferences("design", android.content.Context.MODE_PRIVATE)
+            .getStringSet("fach_namen", emptySet()) ?: emptySet()).mapNotNull { s ->
+            val i = s.indexOf('=')
+            if (i > 0 && i < s.length - 1) s.substring(0, i) to s.substring(i + 1) else null
+        }.toMap()
+
+    /** Der eigene Name für [fach], sonst [fach] selbst. */
+    fun anwenden(namen: Map<String, String>, fach: String): String = namen[FachName.schluessel(fach)] ?: fach
+}
+
 /** Farbton-Umrechnung für die Farbthemen (rein rechnerisch, damit testbar). */
 object Farbton {
 

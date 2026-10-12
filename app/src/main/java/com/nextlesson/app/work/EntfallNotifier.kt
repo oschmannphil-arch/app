@@ -61,6 +61,7 @@ object EntfallNotifier {
      */
     fun melden(context: Context, datum: LocalDate, alle: List<Aenderung>, neu: List<Aenderung>) {
         if (neu.isEmpty() || !darfBenachrichtigen(context)) return
+        AenderungsText.ersatznamen = com.nextlesson.app.data.EigeneFachNamen.laden(context)
         zeigen(context, datum, alle, AenderungsText.titel(neu, datum, LocalDate.now()), leise = false)
     }
 
@@ -81,6 +82,7 @@ object EntfallNotifier {
             return
         }
         if (!darfBenachrichtigen(context)) return
+        AenderungsText.ersatznamen = com.nextlesson.app.data.EigeneFachNamen.laden(context)
         zeigen(context, datum, alle, AenderungsText.titel(alle, datum, LocalDate.now()), leise = true)
     }
 
@@ -103,6 +105,7 @@ object EntfallNotifier {
 
     private fun zeigen(context: Context, datum: LocalDate, alle: List<Aenderung>, titel: String, leise: Boolean) {
         kanalAnlegen(context)
+        AenderungsText.ersatznamen = com.nextlesson.app.data.EigeneFachNamen.laden(context)
         val text = AenderungsText.text(alle)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)

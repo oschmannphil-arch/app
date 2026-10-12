@@ -140,7 +140,11 @@ object AenderungsText {
         }
     }
 
-    private fun name(l: Lesson): String? = l.anzeigeName()
+    /** Eigene Fachnamen aus den Einstellungen; der Notifier setzt sie vor dem Formulieren der Texte. */
+    @Volatile
+    var ersatznamen: Map<String, String> = emptyMap()
+
+    private fun name(l: Lesson): String? = l.anzeigeName()?.let { EigeneFachNamen.anwenden(ersatznamen, it) }
 
     private fun kurzerHinweis(l: Lesson): String? =
         l.info.takeIf { it.isNotBlank() && it.length <= 60 && ';' !in it }

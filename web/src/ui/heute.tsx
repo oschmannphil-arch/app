@@ -288,7 +288,7 @@ function Tagesplan(p: {
         <Karte art="info">
           <div style={{ fontWeight: 600 }}>Sicherung fällig</div>
           <div>
-            {sicherung.letzte === 0 ? 'Du hast noch keine Sicherung gemacht.' : `Deine letzte Sicherung war ${sicherungAlterText(sicherung.letzte, Date.now())}.`} Speichere sie als Datei, falls der Browser seine Daten verliert.
+            {sicherung.letzte === 0 ? 'Du hast noch keine Sicherung gemacht.' : `Deine letzte Sicherung war ${sicherungAlterText(sicherung.letzte, Date.now())}.`} Speichere sie als Datei, falls der Browser seine Daten verliert (Tafel-Fotos sind darin nicht enthalten).
           </div>
           <div class="zeile" style={{ paddingTop: 6 }}>
             <button class="textknopf" onClick={sicherungSpeichern}>Jetzt sichern</button>

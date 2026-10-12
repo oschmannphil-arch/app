@@ -16,6 +16,8 @@ import java.util.Locale
  */
 class WidgetDataStore(context: Context) {
 
+    private val kontext = context.applicationContext
+
     private val prefs = context.getSharedPreferences("widget_daten", Context.MODE_PRIVATE)
     private val zeitFmt = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -37,7 +39,8 @@ class WidgetDataStore(context: Context) {
 
         val lesson = ergebnis?.lesson
         if (lesson != null) {
-            editor.putString(KEY_FACH, lesson.fach)
+            // Eigene Fachnamen (Einstellungen) gelten auch hier.
+            editor.putString(KEY_FACH, EigeneFachNamen.anwenden(EigeneFachNamen.laden(kontext), lesson.fach))
             editor.putString(KEY_RAUM, lesson.raum)
             editor.putString(KEY_LEHRER, lesson.lehrer)
             editor.putString(KEY_BEGINN, lesson.beginn?.format(zeitFmt))
