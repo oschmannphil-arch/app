@@ -179,10 +179,14 @@ describe('Fach-Namen und Symbole', () => {
 
 describe('Ferien', () => {
   it('Countdown und laufende Ferien', () => {
-    expect(ferienText('2026-10-11')).toBe('Noch 8 Tage bis zu den Herbstferien (19.10.)');
+    // Gezählt wird bis Freitag, den letzten Schultag (16.10.), nicht bis zum Ferienbeginn am Montag
+    expect(ferienText('2026-10-11')).toBe('Noch 5 Tage bis zu den Herbstferien (letzter Schultag: 16.10.)');
+    expect(ferienText('2026-10-15')).toBe('Morgen ist der letzte Schultag vor den Herbstferien');
+    expect(ferienText('2026-10-16')).toBe('Heute ist der letzte Schultag vor den Herbstferien');
+    expect(ferienText('2026-10-17')).toBe('Die Herbstferien beginnen am 19.10.');
     expect(ferienText('2026-10-18')).toBe('Morgen beginnen die Herbstferien');
     expect(ferienText('2026-10-19')).toBe('Herbstferien: noch bis 30.10.');
-    expect(ferienText('2026-10-31')).toBe('Noch 51 Tage bis zu den Weihnachtsferien (21.12.)');
+    expect(ferienText('2026-10-31')).toBe('Noch 48 Tage bis zu den Weihnachtsferien (letzter Schultag: 18.12.)');
     expect(ferienText('2027-09-01')).toBeNull();
     expect(ferienText('2027-04-01')).toBeNull();
   });

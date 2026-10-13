@@ -1,4 +1,4 @@
-import { type Datum, ganzKurzesDatum, tageZwischen } from './zeit';
+import { type Datum, ganzKurzesDatum, plusTage, tageZwischen, wochentag } from './zeit';
 
 /** Ein Ferienabschnitt; [bis] ist der letzte freie Tag. */
 export interface Ferienabschnitt {
@@ -36,8 +36,19 @@ export function ferienText(heute: Datum, liste = FERIEN): string | null {
   if (laufend) return `${laufend.name}: noch bis ${ganzKurzesDatum(laufend.bis)}`;
   const n = naechsteFerien(heute, liste);
   if (!n) return null;
-  const tage = tageZwischen(heute, n.von);
+  // Gezählt wird bis zum letzten Schultag (meist Freitag), nicht bis zum Wochenende davor.
+  const letzter = letzterSchultagVor(n.von);
+  const tage = tageZwischen(heute, letzter);
   if (tage > VORLAUF_TAGE) return null;
-  if (tage === 1) return `Morgen beginnen die ${n.name}`;
-  return `Noch ${tage} Tage bis zu den ${n.name} (${ganzKurzesDatum(n.von)})`;
+  if (tage < 0) return tageZwischen(heute, n.von) === 1 ? `Morgen beginnen die ${n.name}` : `Die ${n.name} beginnen am ${ganzKurzesDatum(n.von)}`;
+  if (tage === 0) return `Heute ist der letzte Schultag vor den ${n.name}`;
+  if (tage === 1) return `Morgen ist der letzte Schultag vor den ${n.name}`;
+  return `Noch ${tage} Tage bis zu den ${n.name} (letzter Schultag: ${ganzKurzesDatum(letzter)})`;
+}
+
+/** Der letzte Tag Montag bis Freitag vor [ferienbeginn]. */
+export function letzterSchultagVor(ferienbeginn: Datum): Datum {
+  let d = plusTage(ferienbeginn, -1);
+  while (wochentag(d) >= 6) d = plusTage(d, -1);
+  return d;
 }

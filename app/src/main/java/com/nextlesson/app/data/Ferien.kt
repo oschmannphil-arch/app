@@ -39,11 +39,24 @@ object Ferien {
     fun text(heute: LocalDate, liste: List<Ferienabschnitt> = ABSCHNITTE): String? {
         laufend(heute, liste)?.let { return "${it.name}: noch bis ${it.bis.format(TAG)}" }
         val n = naechster(heute, liste) ?: return null
-        val tage = ChronoUnit.DAYS.between(heute, n.von)
+        // Gezählt wird bis zum letzten Schultag (meist Freitag), nicht bis zum Wochenende davor.
+        val letzter = letzterSchultagVor(n.von)
+        val tage = ChronoUnit.DAYS.between(heute, letzter)
         return when {
             tage > VORLAUF_TAGE -> null
-            tage == 1L -> "Morgen beginnen die ${n.name}"
-            else -> "Noch $tage Tage bis zu den ${n.name} (${n.von.format(TAG)})"
+            tage < 0L ->
+                if (ChronoUnit.DAYS.between(heute, n.von) == 1L) "Morgen beginnen die ${n.name}"
+                else "Die ${n.name} beginnen am ${n.von.format(TAG)}"
+            tage == 0L -> "Heute ist der letzte Schultag vor den ${n.name}"
+            tage == 1L -> "Morgen ist der letzte Schultag vor den ${n.name}"
+            else -> "Noch $tage Tage bis zu den ${n.name} (letzter Schultag: ${letzter.format(TAG)})"
         }
+    }
+
+    /** Der letzte Tag Montag bis Freitag vor [ferienbeginn]. */
+    fun letzterSchultagVor(ferienbeginn: LocalDate): LocalDate {
+        var d = ferienbeginn.minusDays(1)
+        while (d.dayOfWeek == java.time.DayOfWeek.SATURDAY || d.dayOfWeek == java.time.DayOfWeek.SUNDAY) d = d.minusDays(1)
+        return d
     }
 }
