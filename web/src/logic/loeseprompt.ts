@@ -33,6 +33,7 @@ const passt = (f: string, k: string) => f === k || (k.length >= 3 && f.startsWit
 /** Der Prompt für [fach] (Schreibweise egal: "MAT2", "Mathe", "mat"); [aufgabe] ist der Aufgabentext. */
 export function loesePrompt(fach: string, aufgabe: string): string {
   const f = FachName.schluessel(fach);
-  const text = REGELN.find(([ks]) => ks.some((k) => passt(f, k)))?.[1] ?? ALLGEMEIN;
+  // "Ges…" steht für Geschichte, aber auch für Gesundheit – die bekommt den allgemeinen Prompt.
+  const text = f.startsWith('gesund') ? ALLGEMEIN : (REGELN.find(([ks]) => ks.some((k) => passt(f, k)))?.[1] ?? ALLGEMEIN);
   return text + SCHLUSS + (aufgabe.trim() ? `\n\nAufgabe: ${aufgabe.trim()}` : '');
 }

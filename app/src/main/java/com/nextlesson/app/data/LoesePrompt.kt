@@ -35,7 +35,7 @@ object LoesePrompt {
                 "Bearbeite diese Russisch-Aufgabe. Schreibe die Lösung auf Russisch und erkläre darunter auf Deutsch kurz, warum sie stimmt (Grammatik, Vokabeln)."
             satz(f, "lat") ->
                 "Übersetze bzw. bearbeite diese Latein-Aufgabe. Gib die Übersetzung Satz für Satz und erkläre die Grammatik (Kasus, Tempus, Konstruktionen)."
-            satz(f, "ges") ->
+            satz(f, "ges") && !f.startsWith("gesund") ->
                 "Beantworte diese Geschichts-Aufgabe in klaren Sätzen. Nenne Zeitraum, Ursachen und Folgen und erkläre die Zusammenhänge."
             satz(f, "pol", "sozi", "sk", "gk", "wir") ->
                 "Beantworte diese Aufgabe sachlich in klaren Sätzen. Erkläre die Begriffe, stelle verschiedene Sichtweisen dar und begründe."

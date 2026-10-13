@@ -27,5 +27,11 @@ class LoesePromptTest {
     }
 
     @Test
+    fun gesundheitIstKeineGeschichte() = assertTrue(LoesePrompt.fuer("Gesundheit", "").startsWith("Löse diese Hausaufgabe Schritt für Schritt"))
+
+    @Test
+    fun geschichte() = assertTrue(LoesePrompt.fuer("GES1", "").startsWith("Beantworte diese Geschichts-Aufgabe"))
+
+    @Test
     fun ohneFachAllgemein() = assertTrue(LoesePrompt.fuer("", "").startsWith("Löse diese Hausaufgabe"))
 }
