@@ -317,6 +317,18 @@ internal fun HausaufgabeDialog(
     DisposableEffect(Unit) { onDispose { TafelFotos.zwischendateiLoeschen(context) } }
     // Bricht man die Kamera ab, bleibt ein schon gemachtes Foto erhalten.
     val kamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) { neuesFoto = true; fotoEntfernen = false } }
+    // Ein Bild aus der Galerie landet in derselben Zwischendatei wie ein Kamerabild.
+    val galerie = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val kopiert = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { ein ->
+                    TafelFotos.zwischendatei(context).outputStream().use { aus -> ein.copyTo(aus) }
+                    true
+                } ?: false
+            }.getOrDefault(false)
+            if (kopiert) { neuesFoto = true; fotoEntfernen = false }
+        }
+    }
     var fach by remember { mutableStateOf(bestehendeAufgabe?.fach ?: vorschlagFach ?: "") }
     var text by remember { mutableStateOf(bestehendeAufgabe?.text ?: "") }
     // Diktieren: die Spracherkennung des Geräts liefert Text, der ans Feld angehängt wird.
@@ -397,6 +409,10 @@ internal fun HausaufgabeDialog(
                 }
                 ocrStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 
+                AssistChip(
+                    onClick = { galerie.launch("image/*") },
+                    label = { Text("🖼️ Bild aus Galerie") }
+                )
                 AssistChip(
                     onClick = { kamera.launch(TafelFotos.uriFuerKamera(context)) },
                     label = {

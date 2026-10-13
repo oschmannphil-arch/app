@@ -213,7 +213,7 @@ export function HausaufgabeDialog(p: {
       </div>
       {status && <div class="sehr-klein">{status}</div>}
       <label class="knopf breit" style={{ textAlign: 'center', cursor: 'pointer' }}>
-        {neuesFoto ? '📷 Neues Foto bereit' : p.hatFoto && !fotoWeg ? '📷 Foto ersetzen' : '📷 Tafel fotografieren'}
+        {neuesFoto ? '📷 Neues Foto bereit' : p.hatFoto && !fotoWeg ? '📷 Foto ersetzen' : '📷 Foto aufnehmen oder aus Galerie wählen'}
         <input
           type="file"
           accept="image/*"
