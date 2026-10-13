@@ -85,6 +85,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
     private val aenderungsTracker = AenderungsTracker(app)
     private val aenderungsVerlauf = com.nextlesson.app.data.AenderungsVerlauf(app)
     private val widgetDataStore = WidgetDataStore(app)
+    private val ausfallStatistik = com.nextlesson.app.data.AusfallStatistik(app)
     private val repository = IndiwareRepository(app)
 
     /** Laufende Ladevorgänge – ein neuer ersetzt den alten, damit kein veraltetes Ergebnis überschreibt. */
@@ -147,6 +148,7 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
                 when (ergebnis) {
                     is PlanResult.Success -> {
                         val plan = ergebnis.plan.tagesplanFuer(kurse)
+                        if (ergebnis.aus == Quelle.NETZ) ausfallStatistik.merken(datum, plan.stunden)
                         if (plan.stunden.isEmpty()) {
                             TagAnsicht.Leer(datum, "An diesem Tag hast du laut Plan keinen Unterricht.")
                         } else {
@@ -317,9 +319,12 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             val ergebnisse = repository.holeWoche(creds, referenz, erzwingen)
             val tage = withContext(Dispatchers.Default) {
                 ergebnisse.map { (datum, ergebnis) ->
+                    val plan = (ergebnis as? PlanResult.Success)?.plan?.tagesplanFuer(kurse)
+                    // Auch vergangene Tage der Woche zählen für die Ausfall-Statistik – nur frische Daten.
+                    if (plan != null && (ergebnis as PlanResult.Success).aus == Quelle.NETZ) ausfallStatistik.merken(datum, plan.stunden)
                     WochenTag(
                         datum = datum,
-                        plan = (ergebnis as? PlanResult.Success)?.plan?.tagesplanFuer(kurse),
+                        plan = plan,
                         fehlermeldung = ergebnis.tagesFehler()
                     )
                 }
@@ -379,6 +384,11 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
             is PersoenlicherResult.Erfolg -> {
                 letzterGesamtPlan = ergebnis.plan.gesamt
                 _zustand.value = UiZustand.Angezeigt(ergebnis.plan)
+                // Ausfall-Statistik auch beim Öffnen der App füttern – nicht nur im Hintergrund-Abruf,
+                // den Akku-Sparmodi (z. B. auf Xiaomi) oft ausbremsen.
+                if (!ergebnis.plan.ausCache) {
+                    withContext(Dispatchers.IO) { ausfallStatistik.merken(ergebnis.plan.datum, ergebnis.plan.plan.stunden) }
+                }
             }
             is PersoenlicherResult.AuthFehler -> _zustand.value = fehlerAuth()
             is PersoenlicherResult.KeinPlan -> keinPlanZeigen(creds)

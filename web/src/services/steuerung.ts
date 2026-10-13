@@ -281,6 +281,7 @@ export function tagWaehlen(datum: Datum, standard: Datum, erzwingen = false): vo
     if (!e) neu = { art: 'LEER', datum, grund: 'Laden fehlgeschlagen.' };
     else if (e.art === 'OK') {
       const plan = tagesplanFuer(e.plan, kurse);
+      if (e.aus === 'NETZ') ausfallMerken(datum, ausfallKodieren(plan.stunden));
       neu =
         plan.stunden.length === 0
           ? { art: 'LEER', datum, grund: 'An diesem Tag hast du laut Plan keinen Unterricht.' }
@@ -327,11 +328,16 @@ export async function wocheLaden(referenz: Datum, erzwingen = false): Promise<vo
   store.set({ woche: { art: 'LAEDT' } });
   const ergebnisse = await holeWoche(z, montagVon(referenz), erzwingen);
   if (nr !== wochenNr) return;
-  const tage: WochenTag[] = ergebnisse.map(([datum, e]) => ({
+  const tage: WochenTag[] = ergebnisse.map(([datum, e]) => {
+    const plan = e.art === 'OK' ? tagesplanFuer(e.plan, kurse) : null;
+    // Auch vergangene Tage der Woche zählen für die Ausfall-Statistik – nur frische Daten.
+    if (plan && e.art === 'OK' && e.aus === 'NETZ') ausfallMerken(datum, ausfallKodieren(plan.stunden));
+    return {
     datum,
-    plan: e.art === 'OK' ? tagesplanFuer(e.plan, kurse) : null,
+    plan,
     fehler: e.art === 'OK' ? null : e.art === 'AUTH' ? 'Login fehlgeschlagen' : e.art === 'KEIN_PLAN' ? 'Kein Plan' : 'Laden fehlgeschlagen'
-  }));
+    };
+  });
   store.set({ woche: { art: 'GELADEN', tage } });
 }
 
