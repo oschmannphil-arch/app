@@ -6,7 +6,7 @@ import { type Datum, deutschesDatum, heute as heuteTag, langesDatum, plusTage } 
 import { aufgabenAblage, hausaufgabeBearbeiten, hausaufgabeHinzufuegen, hausaufgabeLoeschen, hausaufgabeUmschalten, pruefungBearbeiten, pruefungHinzufuegen, pruefungLoeschen, pruefungenAblage } from '../services/daten';
 import { fotoIds, fotoLesen, fotoLoeschen, fotoSpeichern, fotoVerkleinern } from '../services/kv';
 import { diktatMoeglich, diktieren } from '../services/diktat';
-import { claudeLoesen } from '../services/claude';
+import { claudeLoesen, promptKopieren } from '../services/claude';
 import { textAusFoto } from '../services/ocr';
 import { useAblage } from '../services/speicher';
 import { Badge, Chip, Dialog, Karte, LeerHinweis, Ueberschrift, Icon, useFach, useHeute, useJetzt } from './basis';
@@ -101,11 +101,15 @@ function FotoGalerie(p: { aufgaben: Hausaufgabe[]; onZu: () => void }) {
 
 function FotoAnsicht(p: { id: string; fach: string; text: string; onZu: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
+  // Das Foto liegt schon bereit, bevor man auf "Mit Claude lösen" tippt – Teilen und Zwischenablage
+  // funktionieren nur direkt nach dem Antippen, ohne Warten auf den Speicher.
+  const [bild, setBild] = useState<Blob | null>(null);
   const [hinweis, setHinweis] = useState('');
   useEffect(() => {
     let u: string | null = null;
     void fotoLesen(p.id).then((b) => {
       if (b) {
+        setBild(b);
         u = URL.createObjectURL(b);
         setUrl(u);
       }
@@ -120,7 +124,8 @@ function FotoAnsicht(p: { id: string; fach: string; text: string; onZu: () => vo
       onZu={p.onZu}
       knoepfe={
         <>
-          <button class="textknopf" onClick={async () => setHinweis(await claudeLoesen(p.id, p.fach, p.text))}>🤖 Mit Claude lösen</button>
+          <button class="textknopf" disabled={!bild} onClick={async () => bild && setHinweis(await claudeLoesen(bild, p.fach, p.text))}>🤖 Mit Claude lösen</button>
+          <button class="textknopf" onClick={async () => setHinweis(await promptKopieren(p.fach, p.text))}>Prompt kopieren</button>
           <button class="textknopf" onClick={p.onZu}>Schließen</button>
         </>
       }
