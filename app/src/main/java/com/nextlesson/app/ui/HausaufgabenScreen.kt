@@ -317,16 +317,29 @@ internal fun HausaufgabeDialog(
     DisposableEffect(Unit) { onDispose { TafelFotos.zwischendateiLoeschen(context) } }
     // Bricht man die Kamera ab, bleibt ein schon gemachtes Foto erhalten.
     val kamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) { neuesFoto = true; fotoEntfernen = false } }
-    // Ein Bild aus der Galerie landet in derselben Zwischendatei wie ein Kamerabild.
+    // Ein Bild aus der Galerie landet in derselben Zwischendatei wie ein Kamerabild. Kopiert wird im
+    // Hintergrund (Bilder aus der Cloud werden dabei erst geladen) und über eine Hilfsdatei, damit ein
+    // abgebrochenes Kopieren kein schon aufgenommenes Foto zerstört.
+    var galerieLaedt by remember { mutableStateOf(false) }
+    val haupt = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     val galerie = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            val kopiert = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { ein ->
-                    TafelFotos.zwischendatei(context).outputStream().use { aus -> ein.copyTo(aus) }
-                    true
-                } ?: false
-            }.getOrDefault(false)
-            if (kopiert) { neuesFoto = true; fotoEntfernen = false }
+            galerieLaedt = true
+            Thread {
+                val ziel = TafelFotos.zwischendatei(context)
+                val hilfe = java.io.File(ziel.parentFile, "galerie.tmp")
+                val kopiert = runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { ein ->
+                        hilfe.outputStream().use { aus -> ein.copyTo(aus) }
+                        true
+                    } ?: false
+                }.getOrDefault(false) && hilfe.length() > 0 && (hilfe.renameTo(ziel) || runCatching { hilfe.copyTo(ziel, overwrite = true); true }.getOrDefault(false))
+                hilfe.delete()
+                haupt.post {
+                    galerieLaedt = false
+                    if (kopiert) { neuesFoto = true; fotoEntfernen = false }
+                }
+            }.start()
         }
     }
     var fach by remember { mutableStateOf(bestehendeAufgabe?.fach ?: vorschlagFach ?: "") }
@@ -411,7 +424,7 @@ internal fun HausaufgabeDialog(
 
                 AssistChip(
                     onClick = { galerie.launch("image/*") },
-                    label = { Text("🖼️ Bild aus Galerie") }
+                    label = { Text(if (galerieLaedt) "🖼️ Bild wird geladen …" else "🖼️ Bild aus Galerie") }
                 )
                 AssistChip(
                     onClick = { kamera.launch(TafelFotos.uriFuerKamera(context)) },
@@ -644,8 +657,12 @@ private fun FotoDialog(id: String, fach: String, aufgabenText: String, onSchlies
  * dem Teilen-Menü). Die App selbst ruft keine KI auf und speichert keinen Schlüssel.
  */
 private fun claudeLoesen(context: android.content.Context, id: String, fach: String, aufgabenText: String) {
+    val quelle = TafelFotos.datei(context, id)
+    if (!quelle.exists() || quelle.length() == 0L) {
+        android.widget.Toast.makeText(context, "Kein Foto gefunden", android.widget.Toast.LENGTH_SHORT).show()
+        return
+    }
     runCatching {
-        val quelle = TafelFotos.datei(context, id)
         val ordner = java.io.File(context.cacheDir, "teilen").apply { mkdirs() }
         val kopie = java.io.File(ordner, "hausaufgabe.jpg")
         quelle.copyTo(kopie, overwrite = true)

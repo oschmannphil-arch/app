@@ -33,5 +33,16 @@ class LoesePromptTest {
     fun geschichte() = assertTrue(LoesePrompt.fuer("GES1", "").startsWith("Beantworte diese Geschichts-Aufgabe"))
 
     @Test
+    fun kurzeKuerzelAusDemPlan() {
+        assertTrue(LoesePrompt.fuer("Ma", "").startsWith("Löse diese Mathe"))
+        assertTrue(LoesePrompt.fuer("Ph", "").contains("gegeben, gesucht"))
+        assertTrue(LoesePrompt.fuer("Ek", "").startsWith("Beantworte diese Geografie"))
+        assertTrue(LoesePrompt.fuer("En", "").contains("auf Englisch"))
+    }
+
+    @Test
+    fun polnischIstKeinePolitik() = assertTrue(LoesePrompt.fuer("Polnisch", "").startsWith("Löse diese Hausaufgabe Schritt für Schritt"))
+
+    @Test
     fun ohneFachAllgemein() = assertTrue(LoesePrompt.fuer("", "").startsWith("Löse diese Hausaufgabe"))
 }

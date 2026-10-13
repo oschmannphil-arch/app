@@ -4,8 +4,8 @@ import { fotoLesen } from './kv';
 const CLAUDE = 'https://claude.ai/new';
 
 /**
- * Schickt das Foto samt Aufgabentext an die Claude-App: über das Teilen-Menü des Geräts, wo man die
- * Claude-App wählt. Geht das nicht (z. B. am PC), wird die Frage kopiert, das Foto heruntergeladen und
+ * Schickt das Foto an die Claude-App (über das Teilen-Menü des Geräts); der Prompt liegt in der
+ * Zwischenablage. Geht das nicht (z. B. am PC), wird die Frage kopiert, das Foto heruntergeladen und
  * Claude im Browser geöffnet. Diese App ruft selbst keine KI auf und speichert keinen Schlüssel.
  */
 export async function claudeLoesen(id: string, fach: string, aufgabenText: string): Promise<string> {
@@ -21,8 +21,9 @@ export async function claudeLoesen(id: string, fach: string, aufgabenText: strin
   }
   try {
     if (navigator.canShare?.({ files: [datei] })) {
-      await navigator.share({ files: [datei], text: frage });
-      return 'Prompt kopiert – falls er in der App fehlt, im Feld einfügen.';
+      // Bewusst ohne Text: Die Claude-App nimmt sonst nur den Text und lässt das Foto fallen.
+      await navigator.share({ files: [datei] });
+      return 'Prompt kopiert – in der App ins Feld einfügen.';
     }
   } catch {
     return ''; // abgebrochen

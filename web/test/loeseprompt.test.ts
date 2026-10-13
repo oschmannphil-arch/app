@@ -16,5 +16,12 @@ describe('Lösen-Prompt je Fach', () => {
   });
   it('Gesundheit ist keine Geschichte', () => expect(loesePrompt('Gesundheit', '')).toMatch(/^Löse diese Hausaufgabe Schritt für Schritt/));
   it('Geschichte', () => expect(loesePrompt('GES1', '')).toMatch(/^Beantworte diese Geschichts-Aufgabe/));
+  it('kurze Kürzel aus dem Plan', () => {
+    expect(loesePrompt('Ma', '')).toMatch(/^Löse diese Mathe/);
+    expect(loesePrompt('Ph', '')).toContain('gegeben, gesucht');
+    expect(loesePrompt('Ek', '')).toMatch(/^Beantworte diese Geografie/);
+    expect(loesePrompt('En', '')).toContain('auf Englisch');
+  });
+  it('Polnisch ist keine Politik', () => expect(loesePrompt('Polnisch', '')).toMatch(/^Löse diese Hausaufgabe Schritt für Schritt/));
   it('ohne Fach allgemein', () => expect(loesePrompt('', '')).toMatch(/^Löse diese Hausaufgabe/));
 });

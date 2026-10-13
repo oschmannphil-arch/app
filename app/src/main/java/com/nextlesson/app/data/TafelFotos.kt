@@ -53,6 +53,25 @@ object TafelFotos {
     }
 
     /** Schritt 2 (im Hintergrund): das gesicherte Bild verkleinern und als Foto der Aufgabe [id] ablegen. */
+    /** Dreht [bild] so, wie es die EXIF-Angabe der Datei [pfad] verlangt (Fotos aus Kamera und Galerie). */
+    private fun aufrichten(bild: Bitmap, pfad: String): Bitmap {
+        val ausrichtung = runCatching {
+            android.media.ExifInterface(pfad).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+        }.getOrDefault(android.media.ExifInterface.ORIENTATION_NORMAL)
+        val m = android.graphics.Matrix()
+        when (ausrichtung) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> m.postRotate(90f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> m.postRotate(180f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> m.postRotate(270f)
+            android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.postScale(-1f, 1f)
+            android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.postScale(1f, -1f)
+            android.media.ExifInterface.ORIENTATION_TRANSPOSE -> { m.postRotate(90f); m.postScale(-1f, 1f) }
+            android.media.ExifInterface.ORIENTATION_TRANSVERSE -> { m.postRotate(270f); m.postScale(-1f, 1f) }
+            else -> return bild
+        }
+        return Bitmap.createBitmap(bild, 0, 0, bild.width, bild.height, m, true)
+    }
+
     fun uebernehmen(context: Context, id: String): Boolean {
         val quelle = rohDatei(context, id)
         if (!quelle.exists() || quelle.length() == 0L) return false
@@ -61,8 +80,10 @@ object TafelFotos {
             BitmapFactory.decodeFile(quelle.path, grenzen)
             var stufe = 1
             while (maxOf(grenzen.outWidth, grenzen.outHeight) / stufe > MAX_KANTE * 2) stufe *= 2
-            val bitmap = BitmapFactory.decodeFile(quelle.path, BitmapFactory.Options().apply { inSampleSize = stufe })
+            val roh = BitmapFactory.decodeFile(quelle.path, BitmapFactory.Options().apply { inSampleSize = stufe })
                 ?: return false
+            // Kameras speichern das Bild oft quer und vermerken die Drehung nur in den EXIF-Daten.
+            val bitmap = aufrichten(roh, quelle.path)
             val faktor = MAX_KANTE.toFloat() / maxOf(bitmap.width, bitmap.height)
             val klein = if (faktor < 1f) Bitmap.createScaledBitmap(bitmap, (bitmap.width * faktor).toInt(), (bitmap.height * faktor).toInt(), true) else bitmap
             datei(context, id).outputStream().use { klein.compress(Bitmap.CompressFormat.JPEG, QUALITAET, it) }
