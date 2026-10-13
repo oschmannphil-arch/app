@@ -2,7 +2,6 @@ package com.nextlesson.app.ui
 
 import com.nextlesson.app.ui.theme.fachAnzeige
 import com.nextlesson.app.data.Noten
-import com.nextlesson.app.data.AusfallStatistik
 import com.nextlesson.app.ui.theme.FarbThema
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -373,9 +372,7 @@ fun EinstellungenScreen(
         }
         }
 
-        Abschnitt("App, Update & Statistik", offen = "app" in offene, onKlick = { offeneText = if ("app" in offene) offene.filter { it != "app" }.joinToString(",") else (offene + "app").joinToString(",") }) {
-        // --- Statistik ---
-        AusfallKarte()
+        Abschnitt("App & Update", offen = "app" in offene, onKlick = { offeneText = if ("app" in offene) offene.filter { it != "app" }.joinToString(",") else (offene + "app").joinToString(",") }) {
 
             UpdateKarte(update, installierterBuild, onUpdatePruefen, onUpdateLaden, onUpdateInstallieren)
             WebAppKarte()
@@ -841,63 +838,5 @@ private fun UpdateKarte(
                 }
             }
         }
-    }
-}
-
-
-/** Wie viele Stunden fielen in diesem Halbjahr aus – ab dem Moment, an dem die App den Plan sah. */
-@Composable
-private fun AusfallKarte() {
-    val context = LocalContext.current
-    var offen by remember { mutableStateOf(false) }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ausfall-Statistik", style = MaterialTheme.typography.titleMedium)
-            OutlinedButton(onClick = { offen = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("Ausgefallene Stunden anzeigen")
-            }
-        }
-    }
-    if (offen) {
-        val heute = remember { java.time.LocalDate.now() }
-        val (von, bis) = remember { Noten.halbjahrGrenzen(heute) }
-        val ergebnis = remember { AusfallStatistik(context).auswerten(von, bis, heute) }
-        AlertDialog(
-            onDismissRequest = { offen = false },
-            title = { Text("Ausfälle · ${Noten.halbjahr(heute)}") },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (ergebnis.tage == 0 && ergebnis.kommend == 0) {
-                        Text("Noch keine Daten – die App merkt sich den Plan, sobald sie ihn lädt.")
-                    } else {
-                        Text(
-                            "${ergebnis.ausgefallen} von ${ergebnis.stundenGesamt} Stunden fielen aus (${ergebnis.anteilProzent} %) – an ${ergebnis.tage} Schultagen.",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        if (ergebnis.kommend > 0) Text("Dazu kommen ${ergebnis.kommend} angekündigte Ausfälle.")
-                        ergebnis.proFach.forEach { (fach, anzahl) ->
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(fachAnzeige(fach))
-                                Text("$anzahl", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                            }
-                        }
-                    }
-                    Text(
-                        "Gezählt wird ab dem ersten Mal, dass die App den Plan geladen hat – Tage davor fehlen. Klausuren zählen nicht als Ausfall.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = { TextButton(onClick = { offen = false }) { Text("Schließen") } }
-        )
     }
 }

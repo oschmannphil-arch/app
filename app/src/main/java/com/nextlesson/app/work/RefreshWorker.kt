@@ -1,6 +1,5 @@
 package com.nextlesson.app.work
 
-import com.nextlesson.app.data.AusfallStatistik
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -106,8 +105,6 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
         var anzeigeGeprueftUm: Long = System.currentTimeMillis()
         var naechsteGrenzzeitMillis: Long = Long.MAX_VALUE
         val klausurenProTag = HashMap<LocalDate, List<PlanKlausur>>()
-        val ausfallStatistik = AusfallStatistik(applicationContext)
-        ausfallStatistik.aufraeumen()
         val aenderungsVerlauf = AenderungsVerlauf(applicationContext)
         aenderungsVerlauf.aufraeumen()
 
@@ -138,9 +135,6 @@ class RefreshWorker(appContext: Context, params: WorkerParameters) :
 
                 // Klausuren aus dem Plan (nur eigene Kurse, da der Plan schon gefiltert ist).
                 klausurenProTag[datum] = PlanKlausur.ausStunden(datum, plan.stunden)
-
-                // Für die Ausfall-Statistik (Einstellungen).
-                ausfallStatistik.merken(datum, plan.stunden)
 
                 // Neue gemeinsame Freistunde mit einem Freund (z.B. weil bei ihm etwas ausfällt).
                 // Nur rechnen, wenn sich der Plan dieses Tages oder die Auswahl geändert hat: Das

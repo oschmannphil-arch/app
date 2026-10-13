@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'preact/hooks';
-import { kodieren as ausfallKodieren } from '../logic/ausfall';
 import { planKlausurenAusStunden, type PlanKlausur } from '../logic/aufgaben';
 import { type GesamtPlan, type KursInfo, type TagesPlan, type Zugang, alleKurse, tagesplanFuer } from '../logic/models';
 import { type Datum, heute, plusTage } from '../logic/zeit';
@@ -8,8 +7,6 @@ import { cacheAufraeumen, fotosAufraeumen } from './kv';
 import {
   aenderungsVerlaufAblage,
   aufgabenAblage,
-  ausfallAufraeumen,
-  ausfallMerken,
   kursAblage,
   planKlausurenSynchronisieren,
   zugangAblage
@@ -131,10 +128,8 @@ async function hintergrundAbgleich(z: Zugang, kurse: ReadonlySet<string>) {
       if (e.art !== 'OK' || e.aus !== 'NETZ') continue;
       const plan = tagesplanFuer(e.plan, kurse);
       klausuren.set(datum, planKlausurenAusStunden(datum, plan.stunden));
-      ausfallMerken(datum, ausfallKodieren(plan.stunden));
     }
     planKlausurenSynchronisieren(klausuren);
-    ausfallAufraeumen();
     void cacheAufraeumen(21 * 24 * 3600 * 1000);
     void fotosAufraeumen(aufgabenAblage.get().map((h) => h.id));
   } catch {
@@ -281,7 +276,6 @@ export function tagWaehlen(datum: Datum, standard: Datum, erzwingen = false): vo
     if (!e) neu = { art: 'LEER', datum, grund: 'Laden fehlgeschlagen.' };
     else if (e.art === 'OK') {
       const plan = tagesplanFuer(e.plan, kurse);
-      if (e.aus === 'NETZ') ausfallMerken(datum, ausfallKodieren(plan.stunden));
       neu =
         plan.stunden.length === 0
           ? { art: 'LEER', datum, grund: 'An diesem Tag hast du laut Plan keinen Unterricht.' }
@@ -328,16 +322,11 @@ export async function wocheLaden(referenz: Datum, erzwingen = false): Promise<vo
   store.set({ woche: { art: 'LAEDT' } });
   const ergebnisse = await holeWoche(z, montagVon(referenz), erzwingen);
   if (nr !== wochenNr) return;
-  const tage: WochenTag[] = ergebnisse.map(([datum, e]) => {
-    const plan = e.art === 'OK' ? tagesplanFuer(e.plan, kurse) : null;
-    // Auch vergangene Tage der Woche zählen für die Ausfall-Statistik – nur frische Daten.
-    if (plan && e.art === 'OK' && e.aus === 'NETZ') ausfallMerken(datum, ausfallKodieren(plan.stunden));
-    return {
+  const tage: WochenTag[] = ergebnisse.map(([datum, e]) => ({
     datum,
-    plan,
+    plan: e.art === 'OK' ? tagesplanFuer(e.plan, kurse) : null,
     fehler: e.art === 'OK' ? null : e.art === 'AUTH' ? 'Login fehlgeschlagen' : e.art === 'KEIN_PLAN' ? 'Kein Plan' : 'Laden fehlgeschlagen'
-    };
-  });
+  }));
   store.set({ woche: { art: 'GELADEN', tage } });
 }
 

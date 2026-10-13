@@ -6,7 +6,7 @@ export function Patchnotes() {
       <div>• Plan, Woche, Blöcke, Wischen zwischen den Tagen, Klausuren, Ausfall und Vertretungen wie in der App.</div>
       <div>• Suche nach Lehrkräften und Räumen, freie Räume, Freunde und gemeinsame Freistunden.</div>
       <div>• Hausaufgaben, Klausuren, Noten (Punkte oder 1–6), Ziele, Prognose, Zeugnis-Vorschau, Abi-Rechner.</div>
-      <div>• Farbthemen, Fach-Symbole, Ausfall-Statistik, Ferien-Countdown.</div>
+      <div>• Farbthemen, Fach-Symbole, Ferien-Countdown.</div>
       <div>• „Seit gestern geändert“ in der Heute-Ansicht, Plan als Bild teilen, Tafel-Foto an Hausaufgaben.</div>
       <div>• Diktieren und Text aus Tafelfoto (Letzteres lädt beim ersten Mal ein Sprachmodell), Foto-Galerie, eigenes Farbthema, eigene Fachnamen, Listendichte, Zwei-Spalten-Ansicht auf großen Bildschirmen, Offline-Hinweis mit Alter.</div>
       <div class="titel-klein" style={{ color: 'var(--on-surface)', paddingTop: 8 }}>Das geht im Browser nicht</div>

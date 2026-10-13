@@ -1,13 +1,12 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { auswerten as ausfallAuswerten, anteilProzent } from '../logic/ausfall';
 import { FachName } from '../logic/fachname';
 import type { Freund } from '../logic/freizeit';
 import { lesen as freundLinkLesen, nachricht as freundNachricht } from '../logic/freundteilen';
 import type { Zugang } from '../logic/models';
 import { halbjahr, halbjahrGrenzen } from '../logic/noten';
 import { heute } from '../logic/zeit';
-import { type Dichte, type DesignModus, type FarbThemaName, ausfallAblage, designAblage, designAendern, kursAblage, zugangAblage } from '../services/daten';
+import { type Dichte, type DesignModus, type FarbThemaName, designAblage, designAendern, kursAblage, zugangAblage } from '../services/daten';
 import { type SpeicherStatus, sicherungAblage, sicherungAlterText, sicherungSpeichern, speicherAnfragen, speicherStatus } from '../services/sicherung';
 import { useAblage } from '../services/speicher';
 import { FACH_FARB_AUSWAHL, THEMEN } from '../theme';
@@ -66,37 +65,6 @@ function FachNamenDialog(p: { faecher: string[]; onZu: () => void }) {
         </label>
       ))}
     </Dialog>
-  );
-}
-
-function AusfallKarte() {
-  const [offen, setOffen] = useState(false);
-  const eintraege = useAblage(ausfallAblage);
-  const h = heute();
-  const [von, bis] = halbjahrGrenzen(h);
-  const e = ausfallAuswerten(eintraege, von, bis, h);
-  const { anzeige } = useFach();
-  return (
-    <Karte>
-      <div class="stapel">
-        <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--on-surface)' }}>Ausfall-Statistik</div>
-        <button class="knopf breit" onClick={() => setOffen(true)}>Ausgefallene Stunden anzeigen</button>
-      </div>
-      {offen && (
-        <Dialog titel={`Ausfälle · ${halbjahr(h)}`} onZu={() => setOffen(false)} knoepfe={<button class="textknopf" onClick={() => setOffen(false)}>Schließen</button>}>
-          {e.tage === 0 && e.kommend === 0 ? (
-            <div>Noch keine Daten – die App merkt sich den Plan, sobald sie ihn lädt.</div>
-          ) : (
-            <>
-              <div style={{ fontWeight: 600 }}>{e.ausgefallen} von {e.stundenGesamt} Stunden fielen aus ({anteilProzent(e)} %) – an {e.tage} Schultagen.</div>
-              {e.kommend > 0 && <div>Dazu kommen {e.kommend} angekündigte Ausfälle.</div>}
-              {e.proFach.map(([fach, n]) => <div key={fach} class="tabelle-zeile"><span>{anzeige(fach)}</span><b>{n}</b></div>)}
-            </>
-          )}
-          <div class="sehr-klein">Gezählt wird ab dem ersten Mal, dass die App den Plan geladen hat – Tage davor fehlen. Klausuren zählen nicht als Ausfall.</div>
-        </Dialog>
-      )}
-    </Karte>
   );
 }
 
@@ -238,8 +206,7 @@ export function Einstellungen(p: {
       </Karte>
       </Abschnitt>
 
-      <Abschnitt titel="Statistik & Sicherung">
-        <AusfallKarte />
+      <Abschnitt titel="Sicherung">
         <SicherungKarte />
       </Abschnitt>
 

@@ -143,6 +143,13 @@ object Patchnotes {
                 "Tablets und Querformat: Karten links, Stundenliste rechts.",
                 "Offline-Modus: Hinweis mit Alter des gespeicherten Plans, rot ab 12 Stunden."
             )
+        ),
+        PatchEintrag(
+            id = 14,
+            titel = "Ausfall-Statistik entfernt",
+            punkte = listOf(
+                "Die Ausfall-Statistik in den Einstellungen gibt es nicht mehr; die gesammelten Daten wurden gelöscht."
+            )
         )
     )
 

@@ -137,6 +137,12 @@ export function planKlausurenSynchronisieren(tage: Map<Datum, PlanKlausur[]>): v
 
 /** Wird genau einmal beim Start aufgerufen: Abgehakte Aufgaben und alte Prüfungen verschwinden. */
 export function beimStartAufraeumen(): void {
+  // Die frühere Ausfall-Statistik ist entfernt – ihre gespeicherten Daten werden gelöscht.
+  try {
+    localStorage.removeItem('nl.ausfall');
+  } catch {
+    /* egal */
+  }
   aufgabenAblage.set((l) => l.filter((h) => !h.erledigt));
   const grenze = plusTage(heute(), -AUFBEWAHRUNG_TAGE);
   pruefungenAblage.set((l) => l.filter((p) => p.datum > grenze));
@@ -189,20 +195,6 @@ export const verlaufMerken = (t: Treffer) =>
   verlaufAblage.set((l) => [trefferSchluessel(t), ...l.filter((x) => x !== trefferSchluessel(t))].slice(0, VERLAUF_MAX));
 export const verlaufEntfernen = (t: Treffer) => verlaufAblage.set((l) => l.filter((x) => x !== trefferSchluessel(t)));
 export const verlaufLeeren = () => verlaufAblage.set([]);
-
-// ---------- Ausfall-Statistik ----------
-
-export const ausfallAblage = ablage<Record<string, string>>('ausfall', {});
-
-export function ausfallMerken(datum: Datum, kodiert: string): void {
-  if (ausfallAblage.get()[datum] === kodiert) return;
-  ausfallAblage.set((a) => ({ ...a, [datum]: kodiert }));
-}
-
-export function ausfallAufraeumen(): void {
-  const grenze = plusTage(heute(), -365);
-  ausfallAblage.set((a) => Object.fromEntries(Object.entries(a).filter(([d]) => d >= grenze)));
-}
 
 void tageZwischen;
 
