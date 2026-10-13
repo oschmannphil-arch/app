@@ -326,6 +326,9 @@ internal fun HausaufgabeDialog(
     // abgebrochenes Kopieren kein schon aufgenommenes Foto zerstört.
     var galerieLaedt by remember { mutableStateOf(false) }
     val haupt = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+    // Wird der Dialog geschlossen, während ein Bild noch lädt, soll das Laden nichts mehr ablegen.
+    val dialogOffen = remember { java.util.concurrent.atomic.AtomicBoolean(true) }
+    DisposableEffect(Unit) { onDispose { dialogOffen.set(false) } }
     val galerie = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             galerieLaedt = true
@@ -337,7 +340,7 @@ internal fun HausaufgabeDialog(
                         hilfe.outputStream().use { aus -> ein.copyTo(aus) }
                         true
                     } ?: false
-                }.getOrDefault(false) && hilfe.length() > 0 && (hilfe.renameTo(ziel) || runCatching { hilfe.copyTo(ziel, overwrite = true); true }.getOrDefault(false))
+                }.getOrDefault(false) && dialogOffen.get() && hilfe.length() > 0 && (hilfe.renameTo(ziel) || runCatching { hilfe.copyTo(ziel, overwrite = true); true }.getOrDefault(false))
                 hilfe.delete()
                 haupt.post {
                     galerieLaedt = false
@@ -492,7 +495,8 @@ internal fun HausaufgabeDialog(
                         }
                     )
                 },
-                enabled = text.isNotBlank()
+                // Erst speichern, wenn ein Galerie-Bild fertig geladen ist – sonst ginge es verloren.
+                enabled = text.isNotBlank() && !galerieLaedt
             ) { Text("Speichern") }
         },
         dismissButton = {
@@ -678,14 +682,16 @@ private fun claudeLoesen(context: android.content.Context, id: String, fach: Str
         runCatching {
             val zwischenablage = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             zwischenablage.setPrimaryClip(android.content.ClipData.newPlainText("Hausaufgabe", frage))
-            android.widget.Toast.makeText(context, "Prompt kopiert – in Claude ins Feld einfügen", android.widget.Toast.LENGTH_LONG).show()
         }
         // Erst direkt an die Claude-App; gibt es sie nicht, zeigt Android das normale Teilen-Menü.
         val direkt = android.content.Intent(senden).setPackage("com.anthropic.claude")
-        try {
+        val ziel = try {
             context.startActivity(direkt)
+            "Claude"
         } catch (e: android.content.ActivityNotFoundException) {
             context.startActivity(android.content.Intent.createChooser(senden, "Mit KI-App lösen"))
+            "der KI-App"
         }
+        android.widget.Toast.makeText(context, "Prompt kopiert – in $ziel ins Feld einfügen", android.widget.Toast.LENGTH_LONG).show()
     }
 }
