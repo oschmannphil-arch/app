@@ -208,6 +208,19 @@ export function Einstellungen(p: {
       </Abschnitt>
 
       <Abschnitt titel="Kurse & Freunde">
+      <Karte>
+        <div class="stapel">
+          <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--on-surface)' }}>Deine Kurse</div>
+          <div class="klein">{kurse.length} {kurse.length === 1 ? 'Kurs' : 'Kurse'} gewählt – legt fest, welche Stunden angezeigt werden.</div>
+          <button class="knopf breit" onClick={p.onKurse}>Kurse ändern</button>
+          {kurse.length > 0 && (
+            <button class="knopf breit" onClick={async () => setMeldung(await teilen(freundNachricht(location.href, '', kurse, true), 'Meine Kurse'))}>
+              Meine Kurse als Link teilen
+            </button>
+          )}
+          {meldung && <div class="klein">{meldung}</div>}
+        </div>
+      </Karte>
       <FreundeEinstellungen freunde={p.freunde} onBearbeiten={p.onFreundBearbeiten} onLink={p.onFreundLink} />
       </Abschnitt>
 
@@ -220,13 +233,6 @@ export function Einstellungen(p: {
             <div class="klein">Nicht angemeldet.</div>
           )}
           <button class="knopf breit" onClick={p.onZugang}>Zugangsdaten ändern</button>
-          <button class="knopf breit" onClick={p.onKurse}>Kurse ändern</button>
-          {kurse.length > 0 && (
-            <button class="knopf breit" onClick={async () => setMeldung(await teilen(freundNachricht(location.href, '', kurse, true), 'Meine Kurse'))}>
-              Meine Kurse teilen
-            </button>
-          )}
-          {meldung && <div class="klein">{meldung}</div>}
           <button class="knopf breit" style={{ color: 'var(--error)' }} onClick={p.onAbmelden}>Abmelden und Daten dieses Plans entfernen</button>
         </div>
       </Karte>
