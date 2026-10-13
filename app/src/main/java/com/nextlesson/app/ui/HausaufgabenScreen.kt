@@ -276,7 +276,7 @@ private fun AufgabenZeile(
                 TextButton(onClick = { fotoOffen = true }) { Text("📷") }
             }
             if (fotoOffen) {
-                FotoDialog(aufgabe.id) { fotoOffen = false }
+                FotoDialog(aufgabe.id, aufgabe.text) { fotoOffen = false }
             }
             IconButton(onClick = { onLoeschen(aufgabe.id) }) {
                 Icon(
@@ -596,11 +596,11 @@ private fun FotoGalerie(aufgaben: List<Hausaufgabe>, onSchliessen: () -> Unit) {
         },
         confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } }
     )
-    gross?.let { FotoDialog(it) { gross = null } }
+    gross?.let { id -> FotoDialog(id, aufgaben.firstOrNull { it.id == id }?.text.orEmpty()) { gross = null } }
 }
 
 @Composable
-private fun FotoDialog(id: String, onSchliessen: () -> Unit) {
+private fun FotoDialog(id: String, aufgabenText: String, onSchliessen: () -> Unit) {
     val context = LocalContext.current
     val bild by produceState<ImageBitmap?>(null, id) {
         value = withContext(Dispatchers.IO) { TafelFotos.laden(context, id)?.asImageBitmap() }
@@ -615,6 +615,40 @@ private fun FotoDialog(id: String, onSchliessen: () -> Unit) {
                 Image(bitmap = b, contentDescription = "Foto zur Hausaufgabe", modifier = Modifier.fillMaxWidth())
             }
         },
-        confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } }
+        confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } },
+        dismissButton = {
+            // Das Foto geht an die Gemini-App; dort läuft die Lösung, nicht in dieser App.
+            TextButton(onClick = { geminiLoesen(context, id, aufgabenText) }) { Text("🤖 Mit Gemini lösen") }
+        }
     )
+}
+
+/**
+ * Schickt das Foto samt Aufgabentext an die Gemini-App (oder, wenn sie fehlt, an eine andere App aus
+ * dem Teilen-Menü). Die App selbst ruft keine KI auf und speichert keinen Schlüssel.
+ */
+private fun geminiLoesen(context: android.content.Context, id: String, aufgabenText: String) {
+    runCatching {
+        val quelle = TafelFotos.datei(context, id)
+        val ordner = java.io.File(context.cacheDir, "teilen").apply { mkdirs() }
+        val kopie = java.io.File(ordner, "hausaufgabe.jpg")
+        quelle.copyTo(kopie, overwrite = true)
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", kopie)
+        val frage = buildString {
+            append("Löse diese Hausaufgabe Schritt für Schritt und erkläre den Rechenweg verständlich.")
+            if (aufgabenText.isNotBlank()) append("\n\nAufgabe: ").append(aufgabenText)
+        }
+        val senden = android.content.Intent(android.content.Intent.ACTION_SEND)
+            .setType("image/jpeg")
+            .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            .putExtra(android.content.Intent.EXTRA_TEXT, frage)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Erst direkt an die Gemini-App; gibt es sie nicht, zeigt Android das normale Teilen-Menü.
+        val direkt = android.content.Intent(senden).setPackage("com.google.android.apps.bard")
+        try {
+            context.startActivity(direkt)
+        } catch (e: android.content.ActivityNotFoundException) {
+            context.startActivity(android.content.Intent.createChooser(senden, "Mit KI-App lösen"))
+        }
+    }
 }

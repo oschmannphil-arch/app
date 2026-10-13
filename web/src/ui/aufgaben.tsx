@@ -6,6 +6,7 @@ import { type Datum, deutschesDatum, heute as heuteTag, langesDatum, plusTage } 
 import { aufgabenAblage, hausaufgabeBearbeiten, hausaufgabeHinzufuegen, hausaufgabeLoeschen, hausaufgabeUmschalten, pruefungBearbeiten, pruefungHinzufuegen, pruefungLoeschen, pruefungenAblage } from '../services/daten';
 import { fotoIds, fotoLesen, fotoLoeschen, fotoSpeichern, fotoVerkleinern } from '../services/kv';
 import { diktatMoeglich, diktieren } from '../services/diktat';
+import { geminiLoesen } from '../services/gemini';
 import { textAusFoto } from '../services/ocr';
 import { useAblage } from '../services/speicher';
 import { Badge, Chip, Dialog, Karte, LeerHinweis, Ueberschrift, Icon, useFach, useHeute, useJetzt } from './basis';
@@ -93,13 +94,14 @@ function FotoGalerie(p: { aufgaben: Hausaufgabe[]; onZu: () => void }) {
           </div>
         ))}
       </Dialog>
-      {gross && <FotoAnsicht id={gross} onZu={() => setGross(null)} />}
+      {gross && <FotoAnsicht id={gross} text={p.aufgaben.find((a) => a.id === gross)?.text ?? ''} onZu={() => setGross(null)} />}
     </>
   );
 }
 
-function FotoAnsicht(p: { id: string; onZu: () => void }) {
+function FotoAnsicht(p: { id: string; text: string; onZu: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [hinweis, setHinweis] = useState('');
   useEffect(() => {
     let u: string | null = null;
     void fotoLesen(p.id).then((b) => {
@@ -113,8 +115,18 @@ function FotoAnsicht(p: { id: string; onZu: () => void }) {
     };
   }, [p.id]);
   return (
-    <Dialog titel="Foto" onZu={p.onZu} knoepfe={<button class="textknopf" onClick={p.onZu}>Schließen</button>}>
+    <Dialog
+      titel="Foto"
+      onZu={p.onZu}
+      knoepfe={
+        <>
+          <button class="textknopf" onClick={async () => setHinweis(await geminiLoesen(p.id, p.text))}>🤖 Mit Gemini lösen</button>
+          <button class="textknopf" onClick={p.onZu}>Schließen</button>
+        </>
+      }
+    >
       {url ? <img src={url} alt="Foto zur Hausaufgabe" style={{ width: '100%', borderRadius: 8 }} /> : <div>Kein Foto gefunden.</div>}
+      {hinweis && <div class="sehr-klein">{hinweis}</div>}
     </Dialog>
   );
 }
@@ -322,7 +334,7 @@ export function Aufgaben() {
           }}
         />
       )}
-      {fotoOffen && <FotoAnsicht id={fotoOffen} onZu={() => setFotoOffen(null)} />}
+      {fotoOffen && <FotoAnsicht id={fotoOffen} text={aufgaben.find((a) => a.id === fotoOffen)?.text ?? ''} onZu={() => setFotoOffen(null)} />}
       {galerie && <FotoGalerie aufgaben={aufgaben.filter((h) => fotos.has(h.id))} onZu={() => setGalerie(false)} />}
     </div>
   );
