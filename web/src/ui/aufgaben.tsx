@@ -6,7 +6,6 @@ import { type Datum, deutschesDatum, heute as heuteTag, langesDatum, plusTage } 
 import { aufgabenAblage, hausaufgabeBearbeiten, hausaufgabeHinzufuegen, hausaufgabeLoeschen, hausaufgabeUmschalten, pruefungBearbeiten, pruefungHinzufuegen, pruefungLoeschen, pruefungenAblage } from '../services/daten';
 import { fotoIds, fotoLesen, fotoLoeschen, fotoSpeichern, fotoVerkleinern } from '../services/kv';
 import { diktatMoeglich, diktieren } from '../services/diktat';
-import { claudeLoesen, promptKopieren } from '../services/claude';
 import { textAusFoto } from '../services/ocr';
 import { useAblage } from '../services/speicher';
 import { Badge, Chip, Dialog, Karte, LeerHinweis, Ueberschrift, Icon, useFach, useHeute, useJetzt } from './basis';
@@ -94,22 +93,17 @@ function FotoGalerie(p: { aufgaben: Hausaufgabe[]; onZu: () => void }) {
           </div>
         ))}
       </Dialog>
-      {gross && <FotoAnsicht id={gross} fach={p.aufgaben.find((a) => a.id === gross)?.fach ?? ''} text={p.aufgaben.find((a) => a.id === gross)?.text ?? ''} onZu={() => setGross(null)} />}
+      {gross && <FotoAnsicht id={gross} onZu={() => setGross(null)} />}
     </>
   );
 }
 
-function FotoAnsicht(p: { id: string; fach: string; text: string; onZu: () => void }) {
+function FotoAnsicht(p: { id: string; onZu: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
-  // Das Foto liegt schon bereit, bevor man auf "Mit Claude lösen" tippt – Teilen und Zwischenablage
-  // funktionieren nur direkt nach dem Antippen, ohne Warten auf den Speicher.
-  const [bild, setBild] = useState<Blob | null>(null);
-  const [hinweis, setHinweis] = useState('');
   useEffect(() => {
     let u: string | null = null;
     void fotoLesen(p.id).then((b) => {
       if (b) {
-        setBild(b);
         u = URL.createObjectURL(b);
         setUrl(u);
       }
@@ -119,19 +113,8 @@ function FotoAnsicht(p: { id: string; fach: string; text: string; onZu: () => vo
     };
   }, [p.id]);
   return (
-    <Dialog
-      titel="Foto"
-      onZu={p.onZu}
-      knoepfe={
-        <>
-          <button class="textknopf" disabled={!bild} onClick={async () => bild && setHinweis(await claudeLoesen(bild, p.fach, p.text))}>🤖 Mit Claude lösen</button>
-          <button class="textknopf" onClick={async () => setHinweis(await promptKopieren(p.fach, p.text))}>Prompt kopieren</button>
-          <button class="textknopf" onClick={p.onZu}>Schließen</button>
-        </>
-      }
-    >
+    <Dialog titel="Foto" onZu={p.onZu} knoepfe={<button class="textknopf" onClick={p.onZu}>Schließen</button>}>
       {url ? <img src={url} alt="Foto zur Hausaufgabe" style={{ width: '100%', borderRadius: 8 }} /> : <div>Kein Foto gefunden.</div>}
-      {hinweis && <div class="sehr-klein">{hinweis}</div>}
     </Dialog>
   );
 }
@@ -339,7 +322,7 @@ export function Aufgaben() {
           }}
         />
       )}
-      {fotoOffen && <FotoAnsicht id={fotoOffen} fach={aufgaben.find((a) => a.id === fotoOffen)?.fach ?? ''} text={aufgaben.find((a) => a.id === fotoOffen)?.text ?? ''} onZu={() => setFotoOffen(null)} />}
+      {fotoOffen && <FotoAnsicht id={fotoOffen} onZu={() => setFotoOffen(null)} />}
       {galerie && <FotoGalerie aufgaben={aufgaben.filter((h) => fotos.has(h.id))} onZu={() => setGalerie(false)} />}
     </div>
   );
