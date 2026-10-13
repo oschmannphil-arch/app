@@ -276,7 +276,7 @@ private fun AufgabenZeile(
                 TextButton(onClick = { fotoOffen = true }) { Text("📷") }
             }
             if (fotoOffen) {
-                FotoDialog(aufgabe.id, aufgabe.text) { fotoOffen = false }
+                FotoDialog(aufgabe.id, aufgabe.fach, aufgabe.text) { fotoOffen = false }
             }
             IconButton(onClick = { onLoeschen(aufgabe.id) }) {
                 Icon(
@@ -612,11 +612,11 @@ private fun FotoGalerie(aufgaben: List<Hausaufgabe>, onSchliessen: () -> Unit) {
         },
         confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } }
     )
-    gross?.let { id -> FotoDialog(id, aufgaben.firstOrNull { it.id == id }?.text.orEmpty()) { gross = null } }
+    gross?.let { id -> FotoDialog(id, aufgaben.firstOrNull { it.id == id }?.fach.orEmpty(), aufgaben.firstOrNull { it.id == id }?.text.orEmpty()) { gross = null } }
 }
 
 @Composable
-private fun FotoDialog(id: String, aufgabenText: String, onSchliessen: () -> Unit) {
+private fun FotoDialog(id: String, fach: String, aufgabenText: String, onSchliessen: () -> Unit) {
     val context = LocalContext.current
     val bild by produceState<ImageBitmap?>(null, id) {
         value = withContext(Dispatchers.IO) { TafelFotos.laden(context, id)?.asImageBitmap() }
@@ -634,7 +634,7 @@ private fun FotoDialog(id: String, aufgabenText: String, onSchliessen: () -> Uni
         confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } },
         dismissButton = {
             // Das Foto geht an die Claude-App; dort läuft die Lösung, nicht in dieser App.
-            TextButton(onClick = { claudeLoesen(context, id, aufgabenText) }) { Text("🤖 Mit Claude lösen") }
+            TextButton(onClick = { claudeLoesen(context, id, fach, aufgabenText) }) { Text("🤖 Mit Claude lösen") }
         }
     )
 }
@@ -643,17 +643,14 @@ private fun FotoDialog(id: String, aufgabenText: String, onSchliessen: () -> Uni
  * Schickt das Foto samt Aufgabentext an die Claude-App (oder, wenn sie fehlt, an eine andere App aus
  * dem Teilen-Menü). Die App selbst ruft keine KI auf und speichert keinen Schlüssel.
  */
-private fun claudeLoesen(context: android.content.Context, id: String, aufgabenText: String) {
+private fun claudeLoesen(context: android.content.Context, id: String, fach: String, aufgabenText: String) {
     runCatching {
         val quelle = TafelFotos.datei(context, id)
         val ordner = java.io.File(context.cacheDir, "teilen").apply { mkdirs() }
         val kopie = java.io.File(ordner, "hausaufgabe.jpg")
         quelle.copyTo(kopie, overwrite = true)
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", kopie)
-        val frage = buildString {
-            append("Löse diese Hausaufgabe Schritt für Schritt und erkläre den Rechenweg verständlich.")
-            if (aufgabenText.isNotBlank()) append("\n\nAufgabe: ").append(aufgabenText)
-        }
+        val frage = com.nextlesson.app.data.LoesePrompt.fuer(fach, aufgabenText)
         val senden = android.content.Intent(android.content.Intent.ACTION_SEND)
             .setType("image/jpeg")
             .putExtra(android.content.Intent.EXTRA_STREAM, uri)

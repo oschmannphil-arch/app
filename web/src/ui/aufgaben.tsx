@@ -94,12 +94,12 @@ function FotoGalerie(p: { aufgaben: Hausaufgabe[]; onZu: () => void }) {
           </div>
         ))}
       </Dialog>
-      {gross && <FotoAnsicht id={gross} text={p.aufgaben.find((a) => a.id === gross)?.text ?? ''} onZu={() => setGross(null)} />}
+      {gross && <FotoAnsicht id={gross} fach={p.aufgaben.find((a) => a.id === gross)?.fach ?? ''} text={p.aufgaben.find((a) => a.id === gross)?.text ?? ''} onZu={() => setGross(null)} />}
     </>
   );
 }
 
-function FotoAnsicht(p: { id: string; text: string; onZu: () => void }) {
+function FotoAnsicht(p: { id: string; fach: string; text: string; onZu: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   const [hinweis, setHinweis] = useState('');
   useEffect(() => {
@@ -120,7 +120,7 @@ function FotoAnsicht(p: { id: string; text: string; onZu: () => void }) {
       onZu={p.onZu}
       knoepfe={
         <>
-          <button class="textknopf" onClick={async () => setHinweis(await claudeLoesen(p.id, p.text))}>🤖 Mit Claude lösen</button>
+          <button class="textknopf" onClick={async () => setHinweis(await claudeLoesen(p.id, p.fach, p.text))}>🤖 Mit Claude lösen</button>
           <button class="textknopf" onClick={p.onZu}>Schließen</button>
         </>
       }
@@ -334,7 +334,7 @@ export function Aufgaben() {
           }}
         />
       )}
-      {fotoOffen && <FotoAnsicht id={fotoOffen} text={aufgaben.find((a) => a.id === fotoOffen)?.text ?? ''} onZu={() => setFotoOffen(null)} />}
+      {fotoOffen && <FotoAnsicht id={fotoOffen} fach={aufgaben.find((a) => a.id === fotoOffen)?.fach ?? ''} text={aufgaben.find((a) => a.id === fotoOffen)?.text ?? ''} onZu={() => setFotoOffen(null)} />}
       {galerie && <FotoGalerie aufgaben={aufgaben.filter((h) => fotos.has(h.id))} onZu={() => setGalerie(false)} />}
     </div>
   );

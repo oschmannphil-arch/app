@@ -1,0 +1,31 @@
+package com.nextlesson.app.data
+
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class LoesePromptTest {
+    @Test
+    fun mathe() = assertTrue(LoesePrompt.fuer("MAT2", "").startsWith("Löse diese Mathe-Hausaufgabe"))
+
+    @Test
+    fun physikAuchMitZiffernUndGrossschreibung() {
+        assertTrue(LoesePrompt.fuer("PHY1", "").contains("gegeben, gesucht"))
+        assertTrue(LoesePrompt.fuer("Physik", "").contains("gegeben, gesucht"))
+    }
+
+    @Test
+    fun spracheVerlangtLoesungInDerSprache() = assertTrue(LoesePrompt.fuer("ENG2", "").contains("auf Englisch"))
+
+    @Test
+    fun unbekanntesFachBekommtAllgemeinenPrompt() = assertTrue(LoesePrompt.fuer("XYZ", "").startsWith("Löse diese Hausaufgabe Schritt für Schritt"))
+
+    @Test
+    fun aufgabentextWirdAngehaengt() {
+        val p = LoesePrompt.fuer("DEU1", "  Aufgabe 3  ")
+        assertTrue(p.endsWith("Aufgabe: Aufgabe 3"))
+        assertTrue(p.contains("unleserlich"))
+    }
+
+    @Test
+    fun ohneFachAllgemein() = assertTrue(LoesePrompt.fuer("", "").startsWith("Löse diese Hausaufgabe"))
+}

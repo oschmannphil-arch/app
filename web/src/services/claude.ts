@@ -1,3 +1,4 @@
+import { loesePrompt } from '../logic/loeseprompt';
 import { fotoLesen } from './kv';
 
 const CLAUDE = 'https://claude.ai/new';
@@ -7,8 +8,8 @@ const CLAUDE = 'https://claude.ai/new';
  * Claude-App wählt. Geht das nicht (z. B. am PC), wird die Frage kopiert, das Foto heruntergeladen und
  * Claude im Browser geöffnet. Diese App ruft selbst keine KI auf und speichert keinen Schlüssel.
  */
-export async function claudeLoesen(id: string, aufgabenText: string): Promise<string> {
-  const frage = `Löse diese Hausaufgabe Schritt für Schritt und erkläre den Rechenweg verständlich.${aufgabenText.trim() ? `\n\nAufgabe: ${aufgabenText.trim()}` : ''}`;
+export async function claudeLoesen(id: string, fach: string, aufgabenText: string): Promise<string> {
+  const frage = loesePrompt(fach, aufgabenText);
   const bild = await fotoLesen(id);
   if (!bild) return 'Kein Foto gefunden.';
   const datei = new File([bild], 'hausaufgabe.jpg', { type: bild.type || 'image/jpeg' });
