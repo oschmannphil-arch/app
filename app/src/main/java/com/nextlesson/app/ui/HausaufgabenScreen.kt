@@ -76,7 +76,8 @@ fun HausaufgabenScreen(
     onLoeschen: (String) -> Unit,
     onHinzufuegen: (fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit,
     onBearbeiten: (id: String, fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit,
-    fotoVersion: Int = 0
+    fotoVersion: Int = 0,
+    faecher: List<String> = emptyList()
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
     var galerieOffen by remember { mutableStateOf(false) }
@@ -183,6 +184,7 @@ fun HausaufgabenScreen(
 
     if (dialogOffen) {
         HausaufgabeDialog(
+            faecher = faecher,
             onAbbrechen = { dialogOffen = false },
             onSpeichern = { fach, text, faellig, foto ->
                 onHinzufuegen(fach, text, faellig, foto)
@@ -194,6 +196,7 @@ fun HausaufgabenScreen(
     bearbeitungsAufgabe?.let { aufgabe ->
         HausaufgabeDialog(
             bestehendeAufgabe = aufgabe,
+            faecher = faecher,
             onAbbrechen = { bearbeitungsAufgabe = null },
             onSpeichern = { fach, text, faellig, foto ->
                 onBearbeiten(aufgabe.id, fach, text, faellig, foto)
@@ -306,6 +309,7 @@ internal fun HausaufgabeDialog(
     bestehendeAufgabe: Hausaufgabe? = null,
     vorschlagFach: String? = null,
     naechsteStunde: LocalDate? = null,
+    faecher: List<String> = emptyList(),
     onAbbrechen: () -> Unit,
     onSpeichern: (fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit
 ) {
@@ -371,13 +375,7 @@ internal fun HausaufgabeDialog(
         title = { Text(if (bestehendeAufgabe == null) "Neue Hausaufgabe" else "Hausaufgabe bearbeiten") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = fach,
-                    onValueChange = { fach = it },
-                    label = { Text("Fach") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                FachFeld(wert = fach, onWert = { fach = it }, faecher = faecher, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },

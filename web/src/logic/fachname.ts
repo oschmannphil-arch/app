@@ -25,3 +25,12 @@ export const FachName = {
 };
 
 void distinctBy;
+
+/** Vorschläge fürs Fach-Feld: Fächer, die zur Eingabe passen – erst die, die so anfangen, dann die übrigen Treffer. */
+export function fachVorschlaege(alle: string[], eingabe: string, max = 8): string[] {
+  const e = eingabe.trim().toLowerCase();
+  if (e === '') return [];
+  const passend = alle.filter((f) => f.toLowerCase().includes(e) && f.toLowerCase() !== e);
+  const sortiert = (l: string[]) => [...l].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  return [...sortiert(passend.filter((f) => f.toLowerCase().startsWith(e))), ...sortiert(passend.filter((f) => !f.toLowerCase().startsWith(e)))].slice(0, max);
+}

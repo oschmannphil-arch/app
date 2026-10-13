@@ -61,3 +61,15 @@ object Farbton {
         return ((ergebnis % 360f) + 360f) % 360f
     }
 }
+
+/** Vorschläge fürs Fach-Feld: Fächer, die zur Eingabe passen – erst die, die so anfangen, dann die übrigen Treffer. */
+object FachVorschlaege {
+
+    fun filtern(alle: List<String>, eingabe: String, max: Int = 8): List<String> {
+        val e = eingabe.trim()
+        if (e.isEmpty()) return emptyList()
+        val passend = alle.filter { it.contains(e, ignoreCase = true) && !it.equals(e, ignoreCase = true) }
+        val (anfang, rest) = passend.partition { it.startsWith(e, ignoreCase = true) }
+        return (anfang.sortedBy { it.lowercase() } + rest.sortedBy { it.lowercase() }).take(max)
+    }
+}

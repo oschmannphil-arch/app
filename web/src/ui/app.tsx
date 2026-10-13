@@ -147,6 +147,11 @@ export function App() {
     const ausKursen = kurse.map((id) => id.slice(id.indexOf('::') + 2)).filter((k) => k !== '' && k !== '*');
     return FachName.zusammen([...ausPlan, ...ausWoche, ...ausKursen, ...aufgaben.map((h) => h.fach), ...pruefungen.map((p: Pruefung) => p.fach)]);
   }, [z.ui, z.woche, kurse, aufgaben, pruefungen]);
+  // Vorschläge fürs Fach-Feld: zusätzlich alle Fächer der ganzen Schule aus dem geladenen Plan.
+  const fachVorschlaegeListe = useMemo(() => {
+    const schule = z.ui.art === 'ANGEZEIGT' ? z.ui.plan.gesamt.klassen.flatMap((k) => [...k.stunden.map((l) => l.fach), ...k.kurse.map((x) => x.fach)]) : [];
+    return FachName.zusammen([...fachNamen, ...schule]);
+  }, [fachNamen, z.ui]);
 
   // Kurse, die es in der aktuellen Kursliste nicht mehr gibt (z. B. nach dem Halbjahreswechsel).
   const migration = useMemo(() => pruefeKurse(kurse, kursliste), [kurse, kursliste]);
@@ -249,9 +254,9 @@ export function App() {
   } else if (tab === 'suche') {
     inhalt = <Suche />;
   } else if (tab === 'aufgaben') {
-    inhalt = <Aufgaben />;
+    inhalt = <Aufgaben faecher={fachVorschlaegeListe} />;
   } else {
-    inhalt = <Klausuren />;
+    inhalt = <Klausuren faecher={fachVorschlaegeListe} />;
   }
 
   const einrichtung = !zugang || ui.art === 'LOGIN' || (ui.art === 'KURSE' && overlay?.art !== 'einstellungen') || overlay?.art === 'zugang' || overlay?.art === 'kurse';
@@ -303,6 +308,7 @@ export function App() {
         <HausaufgabeDialog
           vorschlagFach={aufgabeAusStunde.lesson.fach}
           naechsteStunde={naechsteStunde}
+          faecher={fachVorschlaegeListe}
           onZu={() => setAufgabeAusStunde(null)}
           onSpeichern={(fach, text, faellig, foto) => {
             void fotoAnwenden(hausaufgabeHinzufuegen(fach, text, faellig), foto);

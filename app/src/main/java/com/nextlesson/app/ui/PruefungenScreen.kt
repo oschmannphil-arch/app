@@ -59,7 +59,8 @@ fun PruefungenScreen(
     pruefungen: List<Pruefung>,
     onLoeschen: (String) -> Unit,
     onHinzufuegen: (fach: String, titel: String, datum: LocalDate, art: PruefungsArt, notiz: String) -> Unit,
-    onBearbeiten: (id: String, fach: String, titel: String, datum: LocalDate, art: PruefungsArt, notiz: String) -> Unit
+    onBearbeiten: (id: String, fach: String, titel: String, datum: LocalDate, art: PruefungsArt, notiz: String) -> Unit,
+    faecher: List<String> = emptyList()
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
     var bearbeitungsPruefung by remember { mutableStateOf<Pruefung?>(null) }
@@ -140,6 +141,7 @@ fun PruefungenScreen(
 
     if (dialogOffen) {
         PruefungDialog(
+            faecher = faecher,
             onAbbrechen = { dialogOffen = false },
             onSpeichern = { fach, titel, datum, art, notiz ->
                 onHinzufuegen(fach, titel, datum, art, notiz)
@@ -151,6 +153,7 @@ fun PruefungenScreen(
     bearbeitungsPruefung?.let { pruefung ->
         PruefungDialog(
             bestehendePruefung = pruefung,
+            faecher = faecher,
             onAbbrechen = { bearbeitungsPruefung = null },
             onSpeichern = { fach, titel, datum, art, notiz ->
                 onBearbeiten(pruefung.id, fach, titel, datum, art, notiz)
@@ -265,6 +268,7 @@ private fun PruefungsKarte(
 @Composable
 private fun PruefungDialog(
     bestehendePruefung: Pruefung? = null,
+    faecher: List<String> = emptyList(),
     onAbbrechen: () -> Unit,
     onSpeichern: (fach: String, titel: String, datum: LocalDate, art: PruefungsArt, notiz: String) -> Unit
 ) {
@@ -289,13 +293,7 @@ private fun PruefungDialog(
                         )
                     }
                 }
-                OutlinedTextField(
-                    value = fach,
-                    onValueChange = { fach = it },
-                    label = { Text("Fach") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                FachFeld(wert = fach, onWert = { fach = it }, faecher = faecher, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = titel,
                     onValueChange = { titel = it },

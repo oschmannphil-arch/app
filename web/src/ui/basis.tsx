@@ -1,6 +1,6 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { FachName } from '../logic/fachname';
+import { FachName, fachVorschlaege } from '../logic/fachname';
 import { symbolFuer } from '../logic/symbole';
 import { type Datum, heute as heuteTag, jetztMin } from '../logic/zeit';
 import { designAblage } from '../services/daten';
@@ -185,4 +185,39 @@ export async function teilen(text: string, titel: string): Promise<string> {
   } catch {
     return 'Teilen wird hier nicht unterstützt.';
   }
+}
+
+/**
+ * Textfeld fürs Fach mit Vorschlägen aus [faecher] (alle Fächer der Schule, eigene Kurse und frühere
+ * Einträge): Wer "GE" tippt, sieht z. B. "GES" und "GEO" und kann eins antippen.
+ */
+export function FachFeld(p: { wert: string; onWert: (w: string) => void; faecher: string[] }) {
+  const [fokus, setFokus] = useState(false);
+  // Nach dem Antippen eines Vorschlags bleibt die Liste zu, bis wieder getippt wird.
+  const [gewaehlt, setGewaehlt] = useState(false);
+  const { anzeige } = useFach();
+  const liste = fokus && !gewaehlt ? fachVorschlaege(p.faecher, p.wert) : [];
+  return (
+    <label class="feld" style={{ position: 'relative' }}>
+      Fach
+      <input
+        type="text"
+        value={p.wert}
+        autocomplete="off"
+        onInput={(e) => { setGewaehlt(false); p.onWert((e.target as HTMLInputElement).value); }}
+        onFocus={() => setFokus(true)}
+        onBlur={() => setFokus(false)}
+      />
+      {liste.length > 0 && (
+        <div class="vorschlaege" role="listbox">
+          {liste.map((f) => (
+            // mousedown statt click: sonst verliert das Feld vorher den Fokus und die Liste verschwindet.
+            <button key={f} type="button" role="option" class="vorschlag" onMouseDown={(e) => { e.preventDefault(); setGewaehlt(true); p.onWert(f); }}>
+              {anzeige(f)}
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
 }

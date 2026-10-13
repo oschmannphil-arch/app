@@ -8,7 +8,7 @@ import { fotoIds, fotoLesen, fotoLoeschen, fotoSpeichern, fotoVerkleinern } from
 import { diktatMoeglich, diktieren } from '../services/diktat';
 import { textAusFoto } from '../services/ocr';
 import { useAblage } from '../services/speicher';
-import { Badge, Chip, Dialog, Karte, LeerHinweis, Ueberschrift, Icon, useFach, useHeute, useJetzt } from './basis';
+import { Badge, Chip, Dialog, FachFeld, Karte, LeerHinweis, Ueberschrift, Icon, useFach, useHeute, useJetzt } from './basis';
 
 function faelligkeitText(d: Datum, heute: Datum): string {
   if (d === heute) return 'heute fällig';
@@ -123,6 +123,7 @@ export function HausaufgabeDialog(p: {
   bestehend?: Hausaufgabe | null;
   vorschlagFach?: string;
   naechsteStunde?: Datum | null;
+  faecher?: string[];
   onZu: () => void;
   hatFoto?: boolean;
   onSpeichern: (fach: string, text: string, faellig: Datum | null, foto: FotoAenderung) => void;
@@ -153,7 +154,7 @@ export function HausaufgabeDialog(p: {
         </>
       }
     >
-      <label class="feld">Fach<input type="text" value={fach} onInput={(e) => setFach((e.target as HTMLInputElement).value)} /></label>
+      <FachFeld wert={fach} onWert={setFach} faecher={p.faecher ?? []} />
       <label class="feld">Was ist zu tun?<textarea rows={3} value={text} onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} /></label>
       <div class="sehr-klein">Fällig</div>
       <div class="wrap">
@@ -268,7 +269,7 @@ function AufgabenZeile(p: { h: Hausaufgabe; heute: Datum; hatFoto: boolean; onBe
   );
 }
 
-export function Aufgaben() {
+export function Aufgaben(p: { faecher: string[] }) {
   const aufgaben = useAblage(aufgabenAblage);
   const heute = useHeute();
   const [dialog, setDialog] = useState<'neu' | Hausaufgabe | null>(null);
@@ -307,6 +308,7 @@ export function Aufgaben() {
       <button class="fab" onClick={() => setDialog('neu')}><Icon name="plus" />Aufgabe</button>
       {dialog && (
         <HausaufgabeDialog
+          faecher={p.faecher}
           bestehend={dialog === 'neu' ? null : dialog}
           hatFoto={dialog !== 'neu' && fotos.has(dialog.id)}
           onZu={() => setDialog(null)}
@@ -330,7 +332,7 @@ export function Aufgaben() {
 
 // ---------- Klausuren ----------
 
-function PruefungDialog(p: { bestehend?: Pruefung | null; onZu: () => void; onSpeichern: (t: { fach: string; titel: string; datum: Datum; art: PruefungsArt; notiz: string }) => void }) {
+function PruefungDialog(p: { bestehend?: Pruefung | null; faecher?: string[]; onZu: () => void; onSpeichern: (t: { fach: string; titel: string; datum: Datum; art: PruefungsArt; notiz: string }) => void }) {
   const [art, setArt] = useState<PruefungsArt>(p.bestehend?.art ?? 'KLAUSUR');
   const [fach, setFach] = useState(p.bestehend?.fach ?? '');
   const [titel, setTitel] = useState(p.bestehend?.titel ?? '');
@@ -350,7 +352,7 @@ function PruefungDialog(p: { bestehend?: Pruefung | null; onZu: () => void; onSp
       <div class="zeile">
         {(['KLAUSUR', 'TEST'] as PruefungsArt[]).map((a) => <Chip key={a} an={art === a} onClick={() => setArt(a)}>{pruefungsArtText(a)}</Chip>)}
       </div>
-      <label class="feld">Fach<input type="text" value={fach} onInput={(e) => setFach((e.target as HTMLInputElement).value)} /></label>
+      <FachFeld wert={fach} onWert={setFach} faecher={p.faecher ?? []} />
       <label class="feld">Thema (optional)<input type="text" value={titel} onInput={(e) => setTitel((e.target as HTMLInputElement).value)} /></label>
       <label class="feld">Notiz (optional)<input type="text" value={notiz} onInput={(e) => setNotiz((e.target as HTMLInputElement).value)} /></label>
       <label class="feld">Datum<input type="date" value={datum} onInput={(e) => setDatum((e.target as HTMLInputElement).value || datum)} /></label>
@@ -389,7 +391,7 @@ function PruefungsKarte(p: { pr: Pruefung; heute: Datum; jetzt: number; onBearbe
   );
 }
 
-export function Klausuren() {
+export function Klausuren(p: { faecher: string[] }) {
   const liste = useAblage(pruefungenAblage);
   const heute = useHeute();
   const jetzt = useJetzt();
@@ -416,6 +418,7 @@ export function Klausuren() {
       <button class="fab" onClick={() => setDialog('neu')}><Icon name="plus" />Termin</button>
       {dialog && (
         <PruefungDialog
+          faecher={p.faecher}
           bestehend={dialog === 'neu' ? null : dialog}
           onZu={() => setDialog(null)}
           onSpeichern={(t) => {

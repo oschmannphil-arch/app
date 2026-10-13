@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -145,4 +146,41 @@ fun countdownText(lesson: Lesson, jetzt: LocalTime, istHeute: Boolean): String? 
         bisBeginnMs = Duration.between(jetzt, beginn).toMillis(),
         bisEndeMs = lesson.ende?.let { Duration.between(jetzt, it).toMillis() }
     )
+}
+
+
+/**
+ * Textfeld fürs Fach mit Vorschlägen aus [faecher] (alle Fächer der Schule, eigene Kurse und frühere
+ * Einträge): Wer "GE" tippt, sieht z. B. "GES" und "GEO" und kann eins antippen.
+ */
+@Composable
+fun FachFeld(wert: String, onWert: (String) -> Unit, faecher: List<String>, modifier: Modifier = Modifier) {
+    var fokus by remember { mutableStateOf(false) }
+    // Nach dem Antippen eines Vorschlags bleibt die Liste zu, bis wieder getippt wird.
+    var gewaehlt by remember { mutableStateOf(false) }
+    val vorschlaege = remember(wert, faecher) { com.nextlesson.app.data.FachVorschlaege.filtern(faecher, wert) }
+    Box(modifier = modifier) {
+        androidx.compose.material3.OutlinedTextField(
+            value = wert,
+            onValueChange = { gewaehlt = false; onWert(it) },
+            label = { Text("Fach") },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { fokus = it.isFocused }
+        )
+        androidx.compose.material3.DropdownMenu(
+            expanded = fokus && !gewaehlt && vorschlaege.isNotEmpty(),
+            onDismissRequest = { gewaehlt = true },
+            // Nicht fokussierbar, damit die Tastatur offen bleibt und man weitertippen kann.
+            properties = androidx.compose.ui.window.PopupProperties(focusable = false)
+        ) {
+            vorschlaege.forEach { fach ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(com.nextlesson.app.ui.theme.fachAnzeige(fach)) },
+                    onClick = { gewaehlt = true; onWert(fach) }
+                )
+            }
+        }
+    }
 }

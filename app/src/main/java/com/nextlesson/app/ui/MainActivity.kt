@@ -423,6 +423,13 @@ private fun AppInhalt(
         FachName.zusammen(ausPlan + ausWoche + ausKursen + hausaufgaben.map { it.fach } + pruefungen.map { it.fach })
     }
 
+    // Vorschläge fürs Fach-Feld: zusätzlich alle Fächer der ganzen Schule aus dem geladenen Plan.
+    val fachVorschlaege = remember(fachNamen, zustand) {
+        val schule = (zustand as? UiZustand.Angezeigt)?.plan?.gesamt?.klassen
+            ?.flatMap { k -> k.stunden.map { it.fach } + k.kurse.map { it.fach } }.orEmpty()
+        FachName.zusammen(fachNamen + schule)
+    }
+
     val offeneAufgaben = hausaufgaben.count { !it.erledigt }
 
     val titel = when {
@@ -811,14 +818,16 @@ private fun AppInhalt(
                         onLoeschen = aufgabenViewModel::hausaufgabeLoeschen,
                         onHinzufuegen = aufgabenViewModel::hausaufgabeHinzufuegen,
                         onBearbeiten = aufgabenViewModel::hausaufgabeBearbeiten,
-                        fotoVersion = fotoVersion
+                        fotoVersion = fotoVersion,
+                        faecher = fachVorschlaege
                     )
 
                     Tab.PRUEFUNGEN -> PruefungenScreen(
                         pruefungen = pruefungen,
                         onLoeschen = aufgabenViewModel::pruefungLoeschen,
                         onHinzufuegen = aufgabenViewModel::pruefungHinzufuegen,
-                        onBearbeiten = aufgabenViewModel::pruefungBearbeiten
+                        onBearbeiten = aufgabenViewModel::pruefungBearbeiten,
+                        faecher = fachVorschlaege
                     )
                 }
             }
@@ -956,6 +965,7 @@ private fun AppInhalt(
         HausaufgabeDialog(
             vorschlagFach = lesson.anzeigeName().orEmpty(),
             naechsteStunde = naechsteStunde,
+            faecher = fachVorschlaege,
             onAbbrechen = { aufgabeAusStunde = null },
             onSpeichern = { fach, text, faellig, foto ->
                 aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig, foto)
