@@ -659,8 +659,8 @@ private fun claudeLoesen(context: android.content.Context, id: String, aufgabenT
             .putExtra(android.content.Intent.EXTRA_STREAM, uri)
             // Bewusst ohne EXTRA_TEXT: Die Claude-App nimmt sonst nur den Text und lässt das Bild fallen.
             // Die Frage steht stattdessen in der Zwischenablage.
-            .setClipData(android.content.ClipData.newUri(context.contentResolver, "Foto", uri))
             .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        senden.clipData = android.content.ClipData.newUri(context.contentResolver, "Foto", uri)
         // Viele KI-Apps übernehmen beim Teilen nur das Foto, nicht den Text. Darum liegt die Frage zusätzlich
         // in der Zwischenablage und lässt sich dort ins Feld einfügen.
         runCatching {
