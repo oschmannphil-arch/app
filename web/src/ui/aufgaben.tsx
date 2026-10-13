@@ -6,7 +6,7 @@ import { type Datum, deutschesDatum, heute as heuteTag, langesDatum, plusTage } 
 import { aufgabenAblage, hausaufgabeBearbeiten, hausaufgabeHinzufuegen, hausaufgabeLoeschen, hausaufgabeUmschalten, pruefungBearbeiten, pruefungHinzufuegen, pruefungLoeschen, pruefungenAblage } from '../services/daten';
 import { fotoIds, fotoLesen, fotoLoeschen, fotoSpeichern, fotoVerkleinern } from '../services/kv';
 import { diktatMoeglich, diktieren } from '../services/diktat';
-import { geminiLoesen } from '../services/gemini';
+import { claudeLoesen } from '../services/claude';
 import { textAusFoto } from '../services/ocr';
 import { useAblage } from '../services/speicher';
 import { Badge, Chip, Dialog, Karte, LeerHinweis, Ueberschrift, Icon, useFach, useHeute, useJetzt } from './basis';
@@ -120,7 +120,7 @@ function FotoAnsicht(p: { id: string; text: string; onZu: () => void }) {
       onZu={p.onZu}
       knoepfe={
         <>
-          <button class="textknopf" onClick={async () => setHinweis(await geminiLoesen(p.id, p.text))}>🤖 Mit Gemini lösen</button>
+          <button class="textknopf" onClick={async () => setHinweis(await claudeLoesen(p.id, p.text))}>🤖 Mit Claude lösen</button>
           <button class="textknopf" onClick={p.onZu}>Schließen</button>
         </>
       }

@@ -617,17 +617,17 @@ private fun FotoDialog(id: String, aufgabenText: String, onSchliessen: () -> Uni
         },
         confirmButton = { TextButton(onClick = onSchliessen) { Text("Schließen") } },
         dismissButton = {
-            // Das Foto geht an die Gemini-App; dort läuft die Lösung, nicht in dieser App.
-            TextButton(onClick = { geminiLoesen(context, id, aufgabenText) }) { Text("🤖 Mit Gemini lösen") }
+            // Das Foto geht an die Claude-App; dort läuft die Lösung, nicht in dieser App.
+            TextButton(onClick = { claudeLoesen(context, id, aufgabenText) }) { Text("🤖 Mit Claude lösen") }
         }
     )
 }
 
 /**
- * Schickt das Foto samt Aufgabentext an die Gemini-App (oder, wenn sie fehlt, an eine andere App aus
+ * Schickt das Foto samt Aufgabentext an die Claude-App (oder, wenn sie fehlt, an eine andere App aus
  * dem Teilen-Menü). Die App selbst ruft keine KI auf und speichert keinen Schlüssel.
  */
-private fun geminiLoesen(context: android.content.Context, id: String, aufgabenText: String) {
+private fun claudeLoesen(context: android.content.Context, id: String, aufgabenText: String) {
     runCatching {
         val quelle = TafelFotos.datei(context, id)
         val ordner = java.io.File(context.cacheDir, "teilen").apply { mkdirs() }
@@ -643,15 +643,15 @@ private fun geminiLoesen(context: android.content.Context, id: String, aufgabenT
             .putExtra(android.content.Intent.EXTRA_STREAM, uri)
             .putExtra(android.content.Intent.EXTRA_TEXT, frage)
             .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        // Die Gemini-App übernimmt beim Teilen nur das Foto, nicht den Text. Darum liegt die Frage zusätzlich
+        // Viele KI-Apps übernehmen beim Teilen nur das Foto, nicht den Text. Darum liegt die Frage zusätzlich
         // in der Zwischenablage und lässt sich dort ins Feld einfügen.
         runCatching {
             val zwischenablage = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             zwischenablage.setPrimaryClip(android.content.ClipData.newPlainText("Hausaufgabe", frage))
-            android.widget.Toast.makeText(context, "Prompt kopiert – in Gemini ins Feld einfügen", android.widget.Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(context, "Prompt kopiert – in Claude ins Feld einfügen", android.widget.Toast.LENGTH_LONG).show()
         }
-        // Erst direkt an die Gemini-App; gibt es sie nicht, zeigt Android das normale Teilen-Menü.
-        val direkt = android.content.Intent(senden).setPackage("com.google.android.apps.bard")
+        // Erst direkt an die Claude-App; gibt es sie nicht, zeigt Android das normale Teilen-Menü.
+        val direkt = android.content.Intent(senden).setPackage("com.anthropic.claude")
         try {
             context.startActivity(direkt)
         } catch (e: android.content.ActivityNotFoundException) {

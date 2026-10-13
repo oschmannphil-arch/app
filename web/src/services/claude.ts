@@ -1,13 +1,13 @@
 import { fotoLesen } from './kv';
 
-const GEMINI = 'https://gemini.google.com/app';
+const CLAUDE = 'https://claude.ai/new';
 
 /**
- * Schickt das Foto samt Aufgabentext an die Gemini-App: über das Teilen-Menü des Geräts, wo man die
- * Gemini-App wählt. Geht das nicht (z. B. am PC), wird die Frage kopiert, das Foto heruntergeladen und
- * Gemini im Browser geöffnet. Diese App ruft selbst keine KI auf und speichert keinen Schlüssel.
+ * Schickt das Foto samt Aufgabentext an die Claude-App: über das Teilen-Menü des Geräts, wo man die
+ * Claude-App wählt. Geht das nicht (z. B. am PC), wird die Frage kopiert, das Foto heruntergeladen und
+ * Claude im Browser geöffnet. Diese App ruft selbst keine KI auf und speichert keinen Schlüssel.
  */
-export async function geminiLoesen(id: string, aufgabenText: string): Promise<string> {
+export async function claudeLoesen(id: string, aufgabenText: string): Promise<string> {
   const frage = `Löse diese Hausaufgabe Schritt für Schritt und erkläre den Rechenweg verständlich.${aufgabenText.trim() ? `\n\nAufgabe: ${aufgabenText.trim()}` : ''}`;
   const bild = await fotoLesen(id);
   if (!bild) return 'Kein Foto gefunden.';
@@ -26,13 +26,13 @@ export async function geminiLoesen(id: string, aufgabenText: string): Promise<st
   } catch {
     return ''; // abgebrochen
   }
-  // Ohne Teilen-Menü: Foto speichern und Gemini öffnen – dort Foto hochladen und die Frage einfügen.
+  // Ohne Teilen-Menü: Foto speichern und Claude öffnen – dort Foto hochladen und die Frage einfügen.
   const url = URL.createObjectURL(bild);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'hausaufgabe.jpg';
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
-  window.open(GEMINI, '_blank', 'noopener');
-  return 'Frage kopiert, Foto heruntergeladen. In Gemini beides einfügen bzw. hochladen.';
+  window.open(CLAUDE, '_blank', 'noopener');
+  return 'Frage kopiert, Foto heruntergeladen. In Claude beides einfügen bzw. hochladen.';
 }
