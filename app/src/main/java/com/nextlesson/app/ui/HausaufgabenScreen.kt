@@ -643,6 +643,13 @@ private fun geminiLoesen(context: android.content.Context, id: String, aufgabenT
             .putExtra(android.content.Intent.EXTRA_STREAM, uri)
             .putExtra(android.content.Intent.EXTRA_TEXT, frage)
             .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Die Gemini-App übernimmt beim Teilen nur das Foto, nicht den Text. Darum liegt die Frage zusätzlich
+        // in der Zwischenablage und lässt sich dort ins Feld einfügen.
+        runCatching {
+            val zwischenablage = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            zwischenablage.setPrimaryClip(android.content.ClipData.newPlainText("Hausaufgabe", frage))
+            android.widget.Toast.makeText(context, "Prompt kopiert – in Gemini ins Feld einfügen", android.widget.Toast.LENGTH_LONG).show()
+        }
         // Erst direkt an die Gemini-App; gibt es sie nicht, zeigt Android das normale Teilen-Menü.
         val direkt = android.content.Intent(senden).setPackage("com.google.android.apps.bard")
         try {
