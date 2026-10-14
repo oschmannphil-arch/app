@@ -12,6 +12,7 @@ import { useAblage } from '../services/speicher';
 import { FACH_FARB_AUSWAHL, THEMEN } from '../theme';
 import { Chip, Dialog, Karte, Schalter, teilen, useFach } from './basis';
 import { FreundeEinstellungen } from './freunde';
+import { AndroidDownload } from './androidapp';
 import { Patchnotes } from './patchnotes';
 
 const MODI: Array<[DesignModus, string]> = [['SYSTEM', 'System'], ['HELL', 'Hell'], ['DUNKEL', 'Dunkel']];
@@ -204,6 +205,10 @@ export function Einstellungen(p: {
           <button class="knopf breit" style={{ color: 'var(--error)' }} onClick={p.onAbmelden}>Abmelden und Daten dieses Plans entfernen</button>
         </div>
       </Karte>
+      </Abschnitt>
+
+      <Abschnitt titel="Android-App">
+        <AndroidDownload mitKarte />
       </Abschnitt>
 
       <Abschnitt titel="Sicherung">

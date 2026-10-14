@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { KursInfo, Zugang } from '../logic/models';
 import { deutschesDatum, langesDatum } from '../logic/zeit';
+import { AndroidDownload } from './androidapp';
 import { Laden } from './basis';
 import { KursListe } from './kurse';
 
@@ -25,6 +26,7 @@ export function Anmeldung(p: { start: Zugang | null; onSpeichern: (z: Zugang) =>
         </button>
         {p.onAbbrechen && <button class="knopf breit" onClick={p.onAbbrechen}>Abbrechen</button>}
       </div>
+      <AndroidDownload mitKarte />
     </div>
   );
 }
