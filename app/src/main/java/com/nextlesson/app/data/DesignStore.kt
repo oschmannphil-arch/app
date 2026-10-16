@@ -56,15 +56,6 @@ class DesignStore(context: Context) {
         prefs.edit().putBoolean(KEY_SYMBOLE, an).apply()
     }
 
-    /** Spaßbanner "Gold Spin" oben und unten (nur ein Scherz). */
-    var fakeWerbung by mutableStateOf(prefs.getBoolean(KEY_WERBUNG, true))
-        private set
-
-    fun fakeWerbungSetzen(an: Boolean) {
-        fakeWerbung = an
-        prefs.edit().putBoolean(KEY_WERBUNG, an).apply()
-    }
-
     /** Farbton (0–360°) des eigenen Farbthemas. */
     var eigenerFarbton by mutableStateOf(prefs.getFloat(KEY_TON, 30f))
         private set
@@ -135,7 +126,6 @@ class DesignStore(context: Context) {
         private const val KEY_SYMBOLE = "fach_symbole"
         private const val KEY_THEMA = "farb_thema"
         private const val KEY_TON = "eigener_farbton"
-        private const val KEY_WERBUNG = "fake_werbung"
         private const val KEY_DICHTE = "listendichte"
         private const val KEY_NAMEN = "fach_namen"
     }
