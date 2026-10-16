@@ -541,7 +541,9 @@ private fun AppInhalt(
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
+        Column(modifier = Modifier.padding(innerPadding)) {
+            if (design.fakeWerbung && !einrichtung) FakeWerbung(oben = true)
+            Box(modifier = Modifier.weight(1f)) {
             when {
                 // Freund anlegen/bearbeiten (aus den Einstellungen oder der Freund-Ansicht)
                 entwurf != null && !brauchtZugang -> {
@@ -599,6 +601,8 @@ private fun AppInhalt(
                         onModus = design::modusSetzen,
                         farbThema = design.farbThema,
                         onFarbThema = design::farbThemaSetzen,
+                        fakeWerbung = design.fakeWerbung,
+                        onFakeWerbung = design::fakeWerbungSetzen,
                         eigenerTon = design.eigenerFarbton,
                         onEigenerTon = design::eigenerFarbtonSetzen,
                         dichte = design.dichte,
@@ -831,6 +835,8 @@ private fun AppInhalt(
                     )
                 }
             }
+        }
+            if (design.fakeWerbung && !einrichtung) FakeWerbung(oben = false)
         }
     }
     // Patchnotes: einmalig nach einem Update. "Gesehen" wird erst beim Schließen gemerkt.

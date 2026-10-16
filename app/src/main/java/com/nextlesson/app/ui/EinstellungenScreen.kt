@@ -99,6 +99,8 @@ fun EinstellungenScreen(
     fachNamen: List<String> = emptyList(),
     fachFarben: Map<String, Int> = emptyMap(),
     onFachFarbe: (String, Int?) -> Unit = { _, _ -> },
+    fakeWerbung: Boolean = true,
+    onFakeWerbung: (Boolean) -> Unit = {},
     eigenerTon: Float = 30f,
     onEigenerTon: (Float) -> Unit = {},
     dichte: com.nextlesson.app.data.Listendichte = com.nextlesson.app.data.Listendichte.NORMAL,
@@ -317,6 +319,21 @@ fun EinstellungenScreen(
                         )
                     }
                     Switch(checked = fachSymbole, onCheckedChange = onFachSymbole)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Gold-Spin-Banner", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = "Fake-Werbung oben und unten – nur zum Spaß.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = fakeWerbung, onCheckedChange = onFakeWerbung)
                 }
             }
         }
