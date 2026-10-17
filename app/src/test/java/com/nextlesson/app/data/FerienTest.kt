@@ -19,6 +19,15 @@ class FerienTest {
     }
 
     @Test
+    fun freiSeitZaehltSchonDasWochenendeVorDenFerien() {
+        assertEquals(null, Ferien.freiSeit(LocalDate.of(2026, 10, 16)))            // Freitag: noch Schule
+        assertEquals("Herbstferien", Ferien.freiSeit(LocalDate.of(2026, 10, 17))?.name) // Samstag davor
+        assertEquals("Herbstferien", Ferien.freiSeit(LocalDate.of(2026, 10, 19))?.name)
+        assertEquals("Herbstferien", Ferien.freiSeit(LocalDate.of(2026, 10, 30))?.name)
+        assertEquals(null, Ferien.freiSeit(LocalDate.of(2026, 10, 31)))
+    }
+
+    @Test
     fun waehrendDerFerien() {
         assertEquals("Herbstferien: noch bis 30.10.", Ferien.text(LocalDate.of(2026, 10, 19)))
         assertEquals("Herbstferien: noch bis 30.10.", Ferien.text(LocalDate.of(2026, 10, 30)))

@@ -53,6 +53,13 @@ object Ferien {
         }
     }
 
+    /**
+     * Der Ferienabschnitt, in dem man schon "frei hat": Er zählt ab dem Tag nach dem letzten Schultag
+     * (also schon am Wochenende davor) bis zum letzten Ferientag. Fürs Widget: "Du hast Ferien".
+     */
+    fun freiSeit(heute: LocalDate, liste: List<Ferienabschnitt> = ABSCHNITTE): Ferienabschnitt? =
+        liste.firstOrNull { !heute.isBefore(letzterSchultagVor(it.von).plusDays(1)) && !heute.isAfter(it.bis) }
+
     /** Der letzte Tag Montag bis Freitag vor [ferienbeginn]. */
     fun letzterSchultagVor(ferienbeginn: LocalDate): LocalDate {
         var d = ferienbeginn.minusDays(1)

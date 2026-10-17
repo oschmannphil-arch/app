@@ -77,7 +77,8 @@ class NextLessonWidget : GlanceAppWidget() {
 
         val alarm = inhalt.hatAenderung || inhalt.entfaellt
         // Läuft ein Ferienabschnitt und gibt es keine Stunde zu zeigen, steht im Widget: "Du hast Ferien".
-        val ferien = if (inhalt.fach == null) com.nextlesson.app.data.Ferien.laufend(java.time.LocalDate.now()) else null
+        val heuteDatum = java.time.LocalDate.now()
+        val ferien = if (inhalt.fach == null) com.nextlesson.app.data.Ferien.freiSeit(heuteDatum) else null
         val kontext = LocalContext.current
         // Tippen aufs Widget öffnet die App (Aktualisieren geht über den ↻-Knopf im Kopf).
         val oeffnen = Intent(kontext, MainActivity::class.java).apply {
@@ -111,7 +112,11 @@ class NextLessonWidget : GlanceAppWidget() {
                         maxLines = 2
                     )
                     Text(
-                        text = "${ferien.name} noch bis ${ferien.bis.format(java.time.format.DateTimeFormatter.ofPattern("d.M."))}",
+                        text = if (heuteDatum.isBefore(ferien.von)) {
+                            "${ferien.name} beginnen am ${ferien.von.format(java.time.format.DateTimeFormatter.ofPattern("d.M."))}"
+                        } else {
+                            "${ferien.name} noch bis ${ferien.bis.format(java.time.format.DateTimeFormatter.ofPattern("d.M."))}"
+                        },
                         style = TextStyle(color = TextSchwach, fontSize = scaled(if (kompakt) 12 else 14)),
                         maxLines = 2
                     )
