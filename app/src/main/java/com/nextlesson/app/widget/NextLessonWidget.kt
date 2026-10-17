@@ -76,6 +76,8 @@ class NextLessonWidget : GlanceAppWidget() {
         val niedrig = groesse.height < 130.dp
 
         val alarm = inhalt.hatAenderung || inhalt.entfaellt
+        // Läuft ein Ferienabschnitt und gibt es keine Stunde zu zeigen, steht im Widget: "Du hast Ferien".
+        val ferien = if (inhalt.fach == null) com.nextlesson.app.data.Ferien.laufend(java.time.LocalDate.now()) else null
         val kontext = LocalContext.current
         // Tippen aufs Widget öffnet die App (Aktualisieren geht über den ↻-Knopf im Kopf).
         val oeffnen = Intent(kontext, MainActivity::class.java).apply {
@@ -94,9 +96,27 @@ class NextLessonWidget : GlanceAppWidget() {
             val scaling = if (inhalt.grosserText) 1.4f else 1.0f
             fun scaled(size: Int): TextUnit = (size * scaling).sp
 
-            Kopfzeile(inhalt, kompakt, alarm, ::scaled)
+            Kopfzeile(inhalt, kompakt, alarm, ::scaled, ferien != null)
 
             when {
+                ferien != null -> {
+                    Spacer(GlanceModifier.height(4.dp))
+                    Text(
+                        text = "Du hast Ferien! 🏖️",
+                        style = TextStyle(
+                            color = TextStark,
+                            fontSize = scaled(if (kompakt) 20 else 24),
+                            fontWeight = FontWeight.Bold
+                        ),
+                        maxLines = 2
+                    )
+                    Text(
+                        text = "${ferien.name} noch bis ${ferien.bis.format(java.time.format.DateTimeFormatter.ofPattern("d.M."))}",
+                        style = TextStyle(color = TextSchwach, fontSize = scaled(if (kompakt) 12 else 14)),
+                        maxLines = 2
+                    )
+                }
+
                 inhalt.fehlermeldung != null -> {
                     Spacer(GlanceModifier.height(4.dp))
                     Text(
@@ -137,9 +157,10 @@ class NextLessonWidget : GlanceAppWidget() {
         inhalt: WidgetDataStore.WidgetInhalt,
         kompakt: Boolean,
         alarm: Boolean,
-        scaled: (Int) -> TextUnit
+        scaled: (Int) -> TextUnit,
+        ferien: Boolean = false
     ) {
-        val countdown = inhalt.countdown()
+        val countdown = if (ferien) null else inhalt.countdown()
 
         if (kompakt) {
             // Auf 2x2 nur ein kurzes Wort, sonst rutscht der Kopf über zwei Zeilen.
@@ -148,7 +169,7 @@ class NextLessonWidget : GlanceAppWidget() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = kurzerKopf(inhalt),
+                    text = if (ferien) "Ferien" else kurzerKopf(inhalt),
                     style = TextStyle(
                         color = if (alarm) AlarmFarbe else TextSchwach,
                         fontSize = scaled(11),
@@ -172,7 +193,7 @@ class NextLessonWidget : GlanceAppWidget() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = langerKopf(inhalt),
+                    text = if (ferien) "Ferien" else langerKopf(inhalt),
                     style = TextStyle(
                         color = if (alarm) AlarmFarbe else TextSchwach,
                         fontSize = scaled(12),
