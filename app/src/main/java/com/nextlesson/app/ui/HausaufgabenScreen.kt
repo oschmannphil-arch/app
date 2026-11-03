@@ -77,7 +77,8 @@ fun HausaufgabenScreen(
     onHinzufuegen: (fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit,
     onBearbeiten: (id: String, fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit,
     fotoVersion: Int = 0,
-    faecher: List<String> = emptyList()
+    faecher: List<String> = emptyList(),
+    naechsterBlock: (suspend (String) -> LocalDate?)? = null
 ) {
     var dialogOffen by remember { mutableStateOf(false) }
     var galerieOffen by remember { mutableStateOf(false) }
@@ -185,6 +186,7 @@ fun HausaufgabenScreen(
     if (dialogOffen) {
         HausaufgabeDialog(
             faecher = faecher,
+            naechsterBlock = naechsterBlock,
             onAbbrechen = { dialogOffen = false },
             onSpeichern = { fach, text, faellig, foto ->
                 onHinzufuegen(fach, text, faellig, foto)
@@ -310,6 +312,7 @@ internal fun HausaufgabeDialog(
     vorschlagFach: String? = null,
     naechsteStunde: LocalDate? = null,
     faecher: List<String> = emptyList(),
+    naechsterBlock: (suspend (String) -> LocalDate?)? = null,
     onAbbrechen: () -> Unit,
     onSpeichern: (fach: String, text: String, faellig: LocalDate?, foto: FotoAenderung) -> Unit
 ) {
@@ -371,6 +374,17 @@ internal fun HausaufgabeDialog(
 
     LaunchedEffect(naechsteStunde) {
         if (naechsteStunde != null && !datumSelbstGewaehlt) faellig = naechsteStunde
+    }
+
+    // Neue Aufgabe ohne eigenes Datum: Standard ist der nächste Block dieses Fachs, nicht "morgen".
+    var blockDatum by remember { mutableStateOf<LocalDate?>(null) }
+    LaunchedEffect(fach) {
+        blockDatum = null
+        if (bestehendeAufgabe != null || naechsterBlock == null || fach.isBlank()) return@LaunchedEffect
+        kotlinx.coroutines.delay(600) // erst suchen, wenn das Tippen kurz pausiert
+        val d = try { naechsterBlock(fach) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }
+        blockDatum = d
+        if (d != null && !datumSelbstGewaehlt && naechsteStunde == null) faellig = d
     }
 
     AlertDialog(
@@ -460,6 +474,12 @@ internal fun HausaufgabeDialog(
                             label = { Text("Heute") }
                         )
                     }
+                    if (blockDatum != null && blockDatum != naechsteStunde) {
+                        AssistChip(
+                            onClick = { faellig = blockDatum; datumSelbstGewaehlt = true },
+                            label = { Text("Nächster Block") }
+                        )
+                    }
                     AssistChip(
                         onClick = { faellig = heute.plusDays(1); datumSelbstGewaehlt = true },
                         label = { Text("Morgen") }
@@ -476,7 +496,7 @@ internal fun HausaufgabeDialog(
                 Text(
                     text = faellig?.let {
                         "Gewählt: ${it.format(datumFormat)}" +
-                            if (it == naechsteStunde) " (nächste Stunde)" else ""
+                            if (it == naechsteStunde) " (nächste Stunde)" else if (it == blockDatum) " (nächster Block)" else ""
                     } ?: "Ohne Datum",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

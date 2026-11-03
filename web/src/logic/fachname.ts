@@ -1,3 +1,4 @@
+import { symbolFuer } from './symbole';
 import { distinctBy, gruppieren } from './text';
 
 /**
@@ -33,4 +34,17 @@ export function fachVorschlaege(alle: string[], eingabe: string, max = 8): strin
   const passend = alle.filter((f) => f.toLowerCase().includes(e) && f.toLowerCase() !== e);
   const sortiert = (l: string[]) => [...l].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   return [...sortiert(passend.filter((f) => f.toLowerCase().startsWith(e))), ...sortiert(passend.filter((f) => !f.toLowerCase().startsWith(e)))].slice(0, max);
+}
+
+/**
+ * Meinen [a] und [b] dasselbe Fach? Gleicher Schlüssel ("GEO2" = "Geo"), oder beide haben dasselbe
+ * Symbol ("Ma" = "Mathematik" = "MAT2").
+ */
+export function gleichesFach(a: string, b: string): boolean {
+  const ka = FachName.schluessel(a);
+  const kb = FachName.schluessel(b);
+  if (ka === '' || kb === '') return false;
+  if (ka === kb) return true;
+  const sa = symbolFuer(a);
+  return sa !== null && sa === symbolFuer(b);
 }

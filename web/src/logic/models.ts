@@ -1,4 +1,5 @@
 import { AUSFALL_PHRASEN, nenntAusfall } from './hinweis';
+import { gleichesFach } from './fachname';
 import { type Zeitfenster, zeitraster as rechneZeitraster } from './raster';
 import { KURS_MUSTER, SATZ_GRENZE, distinctBy, gleichOhneGross, hatBuchstabeOderZiffer, jahrgang, nurStriche, woerter } from './text';
 import { type Min, TAG_MINUTEN } from './zeit';
@@ -405,6 +406,11 @@ export function hatStundeVon(plan: TagesPlan, vorbild: Lesson): boolean {
     if (vorbild.kursKuerzel !== null) return l.kursKuerzel === vorbild.kursKuerzel && l.klasse === vorbild.klasse;
     return hatBuchstabeOderZiffer(vorbild.fach) && l.fach === vorbild.fach;
   });
+}
+
+/** Findet an diesem Tag Unterricht im Fach [fach] statt (Fach oder Kurskürzel passt)? */
+export function hatFach(plan: TagesPlan, fach: string): boolean {
+  return plan.stunden.some((l) => !l.entfaellt && (gleichesFach(l.fach, fach) || (l.kursKuerzel !== null && gleichesFach(l.kursKuerzel, fach))));
 }
 
 /** Ende der letzten stattfindenden Stunde – "Schulschluss". */

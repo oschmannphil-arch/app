@@ -358,6 +358,11 @@ data class TagesPlan(
         }
     }
 
+    /** Findet an diesem Tag Unterricht im Fach [fach] statt (Fach oder Kurskürzel passt)? */
+    fun hatFach(fach: String): Boolean = stunden.any { l ->
+        !l.entfaellt && (FachName.gleich(l.fach, fach) || (l.kursKuerzel != null && FachName.gleich(l.kursKuerzel, fach)))
+    }
+
     /** Ende der letzten stattfindenden Stunde – "Schulschluss". */
     fun schluss(): LocalTime? = stunden.filter { !it.entfaellt }.mapNotNull { it.ende }.maxOrNull()
 

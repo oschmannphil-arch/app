@@ -819,7 +819,8 @@ private fun AppInhalt(
                         onHinzufuegen = aufgabenViewModel::hausaufgabeHinzufuegen,
                         onBearbeiten = aufgabenViewModel::hausaufgabeBearbeiten,
                         fotoVersion = fotoVersion,
-                        faecher = fachVorschlaege
+                        faecher = fachVorschlaege,
+                        naechsterBlock = planViewModel::naechsterBlockFuerFach
                     )
 
                     Tab.PRUEFUNGEN -> PruefungenScreen(
@@ -966,6 +967,7 @@ private fun AppInhalt(
             vorschlagFach = lesson.anzeigeName().orEmpty(),
             naechsteStunde = naechsteStunde,
             faecher = fachVorschlaege,
+            naechsterBlock = planViewModel::naechsterBlockFuerFach,
             onAbbrechen = { aufgabeAusStunde = null },
             onSpeichern = { fach, text, faellig, foto ->
                 aufgabenViewModel.hausaufgabeHinzufuegen(fach, text, faellig, foto)

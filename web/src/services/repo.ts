@@ -5,6 +5,7 @@ import {
   type TagesPlan,
   type Zugang,
   ersteStunde,
+  hatFach,
   hatStundeVon,
   naechsteStunde,
   tagesplanFuer
@@ -174,6 +175,19 @@ export async function ersterTagMitPlan(z: Zugang, ab: Datum, maxTage = 28): Prom
     const treffer = tage.find(([, e]) => e.art === 'OK');
     if (treffer) return treffer[0];
     if (tage.some(([, e]) => e.art === 'AUTH' || e.art === 'NETZ_FEHLER')) throw new Error('Abruf fehlgeschlagen');
+  }
+  return null;
+}
+
+/**
+ * Datum des nächsten Unterrichts im Fach [fach] ab morgen – Vorschlag fürs Fälligkeitsdatum einer
+ * Hausaufgabe. Sucht bis zu zwei Wochen voraus; null, wenn nichts gefunden wurde.
+ */
+export async function naechsterBlockFuerFach(z: Zugang, kurse: ReadonlySet<string>, fach: string): Promise<Datum | null> {
+  for (let versatz = 0; versatz < 14; versatz += 4) {
+    const tage = await holeTage(z, plusTage(heuteTag(), 1 + versatz), Math.min(4, 14 - versatz));
+    const treffer = tage.find(([, e]) => e.art === 'OK' && hatFach(tagesplanFuer(e.plan, kurse), fach));
+    if (treffer) return treffer[0];
   }
   return null;
 }

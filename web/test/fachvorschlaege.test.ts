@@ -12,3 +12,23 @@ describe('Fach-Vorschläge', () => {
     expect(fachVorschlaege(alle, 'MAT')).toEqual([]);
   });
 });
+
+import { gleichesFach } from '../src/logic/fachname';
+import { hatFach } from '../src/logic/models';
+import { neueStunde } from '../src/logic/models';
+
+describe('Nächster Block eines Fachs', () => {
+  it('gleiches Fach trotz anderer Schreibweise', () => {
+    expect(gleichesFach('Ma', 'MAT2')).toBe(true);
+    expect(gleichesFach('Mathematik', 'MAT2')).toBe(true);
+    expect(gleichesFach('GEO2', 'Geo')).toBe(true);
+    expect(gleichesFach('Mathe', 'Deutsch')).toBe(false);
+    expect(gleichesFach('', 'MAT2')).toBe(false);
+  });
+  it('hatFach findet Fach oder Kurskürzel, aber keinen Ausfall', () => {
+    const plan = { kopf: { datumPlan: '', zeitstempel: '', schulnummer: '' }, klasse: 'x', stunden: [neueStunde({ stunde: 1, fach: 'ENG2', kursKuerzel: 'ENG2' }), neueStunde({ stunde: 2, fach: 'MAT2', entfaellt: true })], hinweise: [] };
+    expect(hatFach(plan as never, 'Englisch')).toBe(true);
+    expect(hatFach(plan as never, 'Mathe')).toBe(false);
+    expect(hatFach(plan as never, 'Sport')).toBe(false);
+  });
+});

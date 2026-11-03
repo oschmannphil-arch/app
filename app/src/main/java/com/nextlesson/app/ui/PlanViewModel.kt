@@ -238,6 +238,25 @@ class PlanViewModel(app: Application) : AndroidViewModel(app) {
      * nächsten Stunde". Sucht bis zu zwei Wochen voraus (nur, soweit Pläne veröffentlicht
      * sind); null, wenn nichts gefunden wurde.
      */
+    /**
+     * Datum des nächsten Unterrichts im Fach [fach] ab morgen – Vorschlag fürs Fälligkeitsdatum einer
+     * Hausaufgabe. Sucht bis zu zwei Wochen voraus; null, wenn nichts gefunden wurde.
+     */
+    suspend fun naechsterBlockFuerFach(fach: String): LocalDate? {
+        val creds = withContext(Dispatchers.IO) { credentialsStore.laden() } ?: return null
+        val kurse = kursSelectionStore.laden()
+        for (versatz in 0 until 14 step 4) {
+            val tage = repository.holeTage(creds, LocalDate.now().plusDays(1L + versatz), anzahl = minOf(4, 14 - versatz))
+            val treffer = withContext(Dispatchers.Default) {
+                tage.firstOrNull { (_, ergebnis) ->
+                    ergebnis is PlanResult.Success && ergebnis.plan.tagesplanFuer(kurse).hatFach(fach)
+                }?.first
+            }
+            if (treffer != null) return treffer
+        }
+        return null
+    }
+
     suspend fun naechsteStundeVon(lesson: Lesson, nach: LocalDate): LocalDate? {
         val creds = withContext(Dispatchers.IO) { credentialsStore.laden() } ?: return null
         val kurse = kursSelectionStore.laden()

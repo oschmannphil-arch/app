@@ -124,6 +124,8 @@ export function HausaufgabeDialog(p: {
   vorschlagFach?: string;
   naechsteStunde?: Datum | null;
   faecher?: string[];
+  /** Datum des nächsten Unterrichts im Fach (für den Standard "nächster Block"). */
+  naechsterBlock?: (fach: string) => Promise<Datum | null>;
   onZu: () => void;
   hatFoto?: boolean;
   onSpeichern: (fach: string, text: string, faellig: Datum | null, foto: FotoAenderung) => void;
@@ -138,7 +140,22 @@ export function HausaufgabeDialog(p: {
   const [faellig, setFaellig] = useState<Datum | null>(p.bestehend ? p.bestehend.faellig : plusTage(heute, 1));
   const [selbst, setSelbst] = useState(p.bestehend != null);
   // Ist die nächste Stunde ermittelt, wird sie übernommen, solange man selbst noch kein Datum gewählt hat.
-  const wirksam = p.naechsteStunde && !selbst ? p.naechsteStunde : faellig;
+  // Neue Aufgabe ohne eigenes Datum: Standard ist der nächste Block dieses Fachs, nicht "morgen".
+  const [blockDatum, setBlockDatum] = useState<Datum | null>(null);
+  useEffect(() => {
+    setBlockDatum(null);
+    if (p.bestehend || !p.naechsterBlock || fach.trim() === '') return;
+    let aktuell = true;
+    const t = setTimeout(() => {
+      // erst suchen, wenn das Tippen kurz pausiert
+      void p.naechsterBlock!(fach).then((d) => aktuell && setBlockDatum(d)).catch(() => undefined);
+    }, 600);
+    return () => {
+      aktuell = false;
+      clearTimeout(t);
+    };
+  }, [fach]);
+  const wirksam = p.naechsteStunde && !selbst ? p.naechsteStunde : blockDatum && !selbst ? blockDatum : faellig;
   const setze = (d: Datum | null) => {
     setFaellig(d);
     setSelbst(true);
@@ -159,6 +176,7 @@ export function HausaufgabeDialog(p: {
       <div class="sehr-klein">Fällig</div>
       <div class="wrap">
         {p.naechsteStunde ? <Chip onClick={() => setze(p.naechsteStunde!)}>Nächste Stunde</Chip> : <Chip onClick={() => setze(heute)}>Heute</Chip>}
+        {blockDatum && blockDatum !== p.naechsteStunde && <Chip onClick={() => setze(blockDatum)}>Nächster Block</Chip>}
         <Chip onClick={() => setze(plusTage(heute, 1))}>Morgen</Chip>
         <Chip onClick={() => setze(null)}>Ohne</Chip>
       </div>
@@ -220,7 +238,7 @@ export function HausaufgabeDialog(p: {
         <button class="textknopf" onClick={() => { setNeuesFoto(null); setFotoWeg(true); }}>Foto entfernen</button>
       )}
       <div class="sehr-klein">
-        {wirksam ? `Gewählt: ${langesDatum(wirksam)}${wirksam === p.naechsteStunde ? ' (nächste Stunde)' : ''}` : 'Ohne Datum'}
+        {wirksam ? `Gewählt: ${langesDatum(wirksam)}${wirksam === p.naechsteStunde ? ' (nächste Stunde)' : wirksam === blockDatum ? ' (nächster Block)' : ''}` : 'Ohne Datum'}
       </div>
     </Dialog>
   );
@@ -269,7 +287,7 @@ function AufgabenZeile(p: { h: Hausaufgabe; heute: Datum; hatFoto: boolean; onBe
   );
 }
 
-export function Aufgaben(p: { faecher: string[] }) {
+export function Aufgaben(p: { faecher: string[]; naechsterBlock?: (fach: string) => Promise<Datum | null> }) {
   const aufgaben = useAblage(aufgabenAblage);
   const heute = useHeute();
   const [dialog, setDialog] = useState<'neu' | Hausaufgabe | null>(null);
@@ -309,6 +327,7 @@ export function Aufgaben(p: { faecher: string[] }) {
       {dialog && (
         <HausaufgabeDialog
           faecher={p.faecher}
+          naechsterBlock={p.naechsterBlock}
           bestehend={dialog === 'neu' ? null : dialog}
           hatFoto={dialog !== 'neu' && fotos.has(dialog.id)}
           onZu={() => setDialog(null)}

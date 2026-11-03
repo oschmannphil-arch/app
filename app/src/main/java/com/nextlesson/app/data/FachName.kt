@@ -8,6 +8,17 @@ object FachName {
 
     private val WORT = Regex("[a-zäöüß]+")
 
+    /**
+     * Meinen [a] und [b] dasselbe Fach? Gleicher Schlüssel ("GEO2" = "Geo"), oder beide haben dasselbe
+     * Symbol ("Ma" = "Mathematik" = "MAT2").
+     */
+    fun gleich(a: String, b: String): Boolean {
+        if (schluessel(a).isEmpty() || schluessel(b).isEmpty()) return false
+        if (schluessel(a) == schluessel(b)) return true
+        val sa = FachSymbole.fuer(a)
+        return sa != null && sa == FachSymbole.fuer(b)
+    }
+
     /** "GEO2" → "geo", "Geo" → "geo", "spo2_3JU" → "spo". */
     fun schluessel(fach: String): String = WORT.find(fach.lowercase())?.value ?: fach.trim().lowercase()
 

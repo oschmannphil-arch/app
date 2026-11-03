@@ -18,7 +18,7 @@ import {
   pruefungenAblage,
   zugangAblage
 } from '../services/daten';
-import { naechsteStundeVon } from '../services/repo';
+import { naechsteStundeVon, naechsterBlockFuerFach } from '../services/repo';
 import { neueId, useAblage } from '../services/speicher';
 import { abmelden, aktualisieren, anmelden, kurseSpeichern, kursListeLaden, tagNeuLaden, useZustand } from '../services/steuerung';
 import { Dialog, Icon, IconKnopf, type IconName, useFach } from './basis';
@@ -126,6 +126,9 @@ export function App() {
     history.pushState({ overlay: true }, '');
     return '';
   }
+
+  // Nächster Unterricht im Fach (Standard-Fälligkeit neuer Hausaufgaben).
+  const naechsterBlock = (fach: string) => (zugang ? naechsterBlockFuerFach(zugang, new Set(kurse), fach) : Promise.resolve(null));
 
   // Die Stunde im Dialog: nächstes Datum mit Unterricht im selben Kurs nachschlagen.
   useEffect(() => {
@@ -254,7 +257,7 @@ export function App() {
   } else if (tab === 'suche') {
     inhalt = <Suche />;
   } else if (tab === 'aufgaben') {
-    inhalt = <Aufgaben faecher={fachVorschlaegeListe} />;
+    inhalt = <Aufgaben faecher={fachVorschlaegeListe} naechsterBlock={naechsterBlock} />;
   } else {
     inhalt = <Klausuren faecher={fachVorschlaegeListe} />;
   }
@@ -309,6 +312,7 @@ export function App() {
           vorschlagFach={aufgabeAusStunde.lesson.fach}
           naechsteStunde={naechsteStunde}
           faecher={fachVorschlaegeListe}
+          naechsterBlock={naechsterBlock}
           onZu={() => setAufgabeAusStunde(null)}
           onSpeichern={(fach, text, faellig, foto) => {
             void fotoAnwenden(hausaufgabeHinzufuegen(fach, text, faellig), foto);
