@@ -674,10 +674,14 @@ private fun AppInhalt(
                 // 3. Tag eines Freundes
                 angezeigterFreund != null -> {
                     val angezeigt = zustand as? UiZustand.Angezeigt
-                    if (angezeigt != null) {
+                    // Der Tag, den man in der Heute-Ansicht gerade ansieht (per Wischen/Pfeil), nicht der Standardtag.
+                    val andererTag = angezeigt?.let { a -> tagAnsicht?.takeIf { it.datum != a.plan.datum } }
+                    if (angezeigt != null && andererTag is TagAnsicht.Leer) {
+                        TagLeerHinweis(andererTag.grund)
+                    } else if (angezeigt != null && andererTag !is TagAnsicht.Laedt) {
                         FreundTagScreen(
                             freund = angezeigterFreund,
-                            persoenlich = angezeigt.plan,
+                            persoenlich = (andererTag as? TagAnsicht.Fertig)?.plan ?: angezeigt.plan,
                             onWoche = {
                                 gruppeStart = setOf(angezeigterFreund.id)
                                 gruppeOffen = true

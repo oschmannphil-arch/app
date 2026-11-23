@@ -215,9 +215,13 @@ export function App() {
     inhalt = <GemeinsamFrei freunde={freunde} startAuswahl={overlay.start} />;
   } else if (overlay?.art === 'freund') {
     const f = freunde.find((x) => x.id === overlay.id);
+    // Der Tag, den man in der Heute-Ansicht gerade ansieht (per Wischen/Pfeil), nicht der Standardtag.
+    const anderer = ui.art === 'ANGEZEIGT' && z.tag && z.tag.datum !== ui.plan.datum ? z.tag : null;
     inhalt =
-      f && ui.art === 'ANGEZEIGT' ? (
-        <FreundTag freund={f} persoenlich={ui.plan} onWoche={() => setOverlayRoh({ art: 'gemeinsam', start: [f.id] })} onBearbeiten={() => setOverlayRoh({ art: 'freundBearbeiten', freund: f, neu: false })} />
+      f && ui.art === 'ANGEZEIGT' && anderer?.art === 'LEER' ? (
+        <div class="vollseite"><div>{anderer.grund}</div></div>
+      ) : f && ui.art === 'ANGEZEIGT' && anderer?.art !== 'LAEDT' ? (
+        <FreundTag freund={f} persoenlich={anderer?.art === 'FERTIG' ? anderer.plan : ui.plan} onWoche={() => setOverlayRoh({ art: 'gemeinsam', start: [f.id] })} onBearbeiten={() => setOverlayRoh({ art: 'freundBearbeiten', freund: f, neu: false })} />
       ) : (
         <LadeSeite />
       );
